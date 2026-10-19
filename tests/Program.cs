@@ -29,13 +29,13 @@ void Check(bool cond, string name, string detail = "")
 
     var tank = CardRegistry.Get(7);
     var once = StatBlock.Compute(new[] { tank });
-    Check(Math.Abs(once[Stat.MaxHp] - 160) < 0.01f, "Tank adds 60 HP", $"{once[Stat.MaxHp]}");
+    Check(Math.Abs(once[Stat.MaxHp] - 145) < 0.01f, "Tank adds 45 HP", $"{once[Stat.MaxHp]}");
 
-    // Adds apply before multipliers regardless of pick order: (100 + 60) * 0.85 = 136
+    // Adds apply before multipliers regardless of pick order: (100 + 45) * 0.85 = 123.25
     var vamp = CardRegistry.Get(14);
     var ab = StatBlock.Compute(new[] { tank, vamp });
     var ba = StatBlock.Compute(new[] { vamp, tank });
-    Check(Math.Abs(ab[Stat.MaxHp] - 136) < 0.01f && Math.Abs(ba[Stat.MaxHp] - 136) < 0.01f,
+    Check(Math.Abs(ab[Stat.MaxHp] - 123.25f) < 0.01f && Math.Abs(ba[Stat.MaxHp] - 123.25f) < 0.01f,
         "Stacking order: adds before multipliers, order-independent", $"{ab[Stat.MaxHp]} / {ba[Stat.MaxHp]}");
 
     var bouncy = CardRegistry.Get(1);

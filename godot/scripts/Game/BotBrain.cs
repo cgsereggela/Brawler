@@ -67,8 +67,11 @@ public sealed class BotBrain : IInputSource
             _strafeDir = _rng.Randf() < 0.5f ? -1 : 1;
         }
         float move;
-        if (dist > _preferredDist + 50) move = Mathf.Sign(to.X);
-        else if (dist < _preferredDist - 50) move = -Mathf.Sign(to.X);
+        // Leech Field only works up close, so its holder hugs the target instead of keeping range.
+        bool hug = self.S[Stat.Leech] > 0;
+        float pref = hug ? 20 : _preferredDist, band = hug ? 15 : 50;
+        if (dist > pref + band) move = Mathf.Sign(to.X);
+        else if (dist < pref - band) move = -Mathf.Sign(to.X);
         else move = _strafeDir * 0.6f;
         if (!los) move = Mathf.Sign(to.X == 0 ? 1 : to.X);
 
@@ -149,13 +152,23 @@ public sealed class BotBrain : IInputSource
         if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 140)) move = -move; // falling into a pit: steer back
         if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
 
+        // Card abilities: spend air jumps or jetpack fuel to climb toward the target or out of a fall,
+        // and glide over pits. Without this, movement cards would only measure how well bots ignore them.
+        bool jet = self.S[Stat.Jetpack] > 0;
+        if (!onFloor && (self.S[Stat.AirJumps] > 0 || jet) && self.Velocity.Y > 20)
+        {
+            bool climbing = navigating && map.Surfaces[_hop].Y < feet.Y - 4;
+            if (to.Y < -40 || climbing || !GroundBelow(self, 140)) wantJump = true;
+        }
+        bool glide = self.S[Stat.Glide] > 0 && !onFloor && self.Velocity.Y > 0 && (to.Y < -20 || !GroundBelow(self, 140));
+
         if (wantJump && _jumpHold <= -0.15f)
         {
             _jumps++;
-            _jumpHold = _rng.RandfRange(0.15f, 0.35f);
+            _jumpHold = jet && !onFloor ? _rng.RandfRange(0.5f, 0.8f) : _rng.RandfRange(0.15f, 0.35f);
         }
         f.MoveX = Mathf.Clamp(move, -1, 1);
-        f.JumpHeld = _jumpHold > 0;
+        f.JumpHeld = _jumpHold > 0 || glide;
         f.JumpPresses = _jumps;
 
         // --- block incoming bullets ---
