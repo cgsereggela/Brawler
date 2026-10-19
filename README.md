@@ -35,13 +35,14 @@ Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe 
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
   scripts/Main.cs           wiring, screens, automated test modes
-  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep
+  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep, StatsModel/StatsReport
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format
   scripts/Net/              NetworkManager: ENet host/join, lobby sync
   scripts/Game/             GameManager (match flow + netcode), Avatar, BulletSystem, BotBrain, CardEffects, MapNode
   scripts/Fx/               particles/rings/popups, procedurally synthesized SFX
   scripts/UI/               menu, lobby, HUD, card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
+tools/CardStats/            card balance report from the stats log (dotnet run)
 ```
 
 ### Netcode in one paragraph
@@ -56,12 +57,39 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
    `A(...)` adds and `M(...)` multiplies. Adds always apply before multipliers, so pick order doesn't matter.
 2. If the card needs behavior beyond stats, give it an effect id (as `"blink"` does), implement `ICardEffect` in `godot/scripts/Game/CardEffects.cs`, and register it in `CardEffects.Create`.
 3. If it needs a new number, add it to the `Stat` enum and `StatBlock.Base()` in `Stats.cs`, then read it where it applies.
+4. Never reuse or renumber an id: the stats log refers to cards by id.
+
+## Card balance stats
+The host records every match to a log so card balance can be tuned from data instead of feel. Full details, including the log schema, metric formulas and how to extend it, are in [docs/card-stats.md](docs/card-stats.md).
+- **Where:** `%APPDATA%\Godot\app_userdata\Brawler\stats\card_stats.jsonl`. Each line is one match in JSON. Change the folder with `--statsdir=PATH`.
+- **What:** for every battle it stores each player's cards (stacks included), the fight length, the winner, shots, hits, damage dealt, taken, self-inflicted and healed, blocks, kills, and when and how each player died. For every card pick it stores what was offered, what was picked, who picked it (human or bot, round winner or not), how long the decision took, and what that player already held. Each record is tagged with its mode (`offline`, `host` or `sim`) and a hash of the card table, so changing a card's numbers starts a fresh balance version.
+- Only the host records. A match you leave early is still saved, flagged `complete: false`. Automated tests don't record unless you pass `--stats`.
+
+**Generate data with bots.** A 4-player match takes about 5 seconds headless:
+```bash
+GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
+"$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=200            # 2–4 players per match
+"$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=200 --players=4
+```
+
+**Read the report.** It gives win ratio, match win ratio, win time, damage, kills, survival, accuracy, pick ratio, stacking and pair synergies:
+```bash
+cd tools/CardStats && dotnet run                      # markdown report to the console
+dotnet run -- --out=report.md --csv=out               # save the report plus cards.csv and pairs.csv for a spreadsheet
+dotnet run -- --humans                                # only human players (what real play looks like)
+dotnet run -- --mode=sim --cards=all --min=50         # filter by mode, include old card versions, raise the sample threshold
+```
+How to read it:
+- **Win ratio** is wins divided by a fair share, where the fair share is 1/players per battle. 1.00 means balanced. The ± is a 95% interval, and the verdict flags a card only when that interval is clearly off 1.0.
+- **Pick ratio** is picked divided by random choice. Bots pick at random, so use the *Human pick* column to see what players actually like.
+- **Synergy** is a pair's win ratio minus what the two cards would predict on their own. Positive means the combo is stronger than its parts.
+- Bot data shows raw power. Human data shows power once players aim and pick on purpose. Compare the two.
 
 ## Tests
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds) and swept collision.
+Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds), swept collision, and card stats aggregation.
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash

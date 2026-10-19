@@ -2,3 +2,6 @@ tests/bin/
 tests/obj/
 .vs/
 *.user
+tools/*/bin/
+tools/*/obj/
+tools/*/out/

@@ -2,6 +2,7 @@ using System.Linq;
 using Brawler.Core;
 using Brawler.Fx;
 using Brawler.Game;
+using Brawler.Logic;
 using Brawler.Net;
 using Brawler.UI;
 using Godot;
@@ -15,6 +16,10 @@ namespace Brawler;
 ///   --autotest            offline match, local player + 3 bots all on autopilot; exits 0 when the match ends
 ///   --autohost[=port]     host a LAN game with 1 bot, autopilot, start once a client joins
 ///   --autojoin[=ip:port]  join a LAN game on autopilot
+///   --simulate=N          play N bot-only matches back to back (2–4 players) to fill the card stats log; exits 0
+///   --players=A[-B]       player count (or range) per simulated match, default 2-4
+///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
+///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 /// </summary>
 public partial class Main : Node
 {
@@ -30,7 +35,7 @@ public partial class Main : Node
     private string _autoMode;
     private bool _matchFinished;
     private long _frames;
-    private const long AutotestMaxFrames = 60L * 60 * 20; // 20 simulated minutes
+    private const long AutotestMaxFrames = 60L * 60 * 30; // 30 simulated minutes per match
 
     public override void _Ready()
     {
@@ -113,7 +118,8 @@ public partial class Main : Node
     {
         Show(_hud, _over);
         _matchFinished = true;
-        if (_autoMode != null)
+        if (_autoMode == "sim") SimMatchEnded(winner);
+        else if (_autoMode != null)
         {
             var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
             t.Timeout += () => Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
@@ -125,8 +131,23 @@ public partial class Main : Node
     private void HandleCommandLine()
     {
         var args = OS.GetCmdlineUserArgs();
+        bool forceStats = false;
         foreach (var a in args)
+        {
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
+            else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
+            else if (a == "--stats") forceStats = true;
+            else if (a.StartsWith("--players="))
+            {
+                var r = a["--players=".Length..].Split('-');
+                if (int.TryParse(r[0], out int lo)) _simMin = _simMax = lo;
+                if (r.Length > 1 && int.TryParse(r[1], out int hi)) _simMax = hi;
+                _simMin = Mathf.Clamp(_simMin, 2, LobbyState.MaxPlayers);
+                _simMax = Mathf.Clamp(_simMax, _simMin, LobbyState.MaxPlayers);
+            }
+        }
+        if (args.Any(a => a is "--autotest" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
+            _game.Stats.Enabled = forceStats;
         if (_shotDir != null)
         {
             _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
@@ -172,6 +193,16 @@ public partial class Main : Node
                 _net.LocalName = "AutoJoin";
                 _net.Join(parts[0], port);
             }
+            else if (a.StartsWith("--simulate"))
+            {
+                _autoMode = "sim";
+                _simTotal = a.Contains('=') && int.TryParse(a.Split('=')[1], out int n) ? Mathf.Max(1, n) : 20;
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _game.Stats.Mode = "sim";
+                Log.Info($"SIMULATE {_simTotal} matches, {_simMin}-{_simMax} players → {ProjectSettings.GlobalizePath(_game.Stats.FilePath)}");
+                SimNextMatch();
+            }
             else if (a == "--menushots" && _shotDir != null)
             {
                 // Screenshot the menu, then an offline lobby with bots, then quit.
@@ -189,6 +220,39 @@ public partial class Main : Node
         }
     }
 
+    // ---------- --simulate: bot-only matches for the card stats log ----------
+
+    private int _simTotal, _simDone, _simMin = 2, _simMax = LobbyState.MaxPlayers;
+    private readonly Rng _simRng = new((ulong)System.DateTime.Now.Ticks);
+    private readonly System.Diagnostics.Stopwatch _simClock = new();
+
+    private void SimNextMatch()
+    {
+        if (!_simClock.IsRunning) _simClock.Start();
+        int players = _simRng.Range(_simMin, _simMax);
+        _net.LocalName = "Sim";
+        _net.StartOffline();
+        for (int i = 1; i < players; i++) _net.AddBot();
+        _net.SetSettings(new MatchSettings()); // the lobby defaults: what people actually play
+        _frames = 0;
+        _matchFinished = false;
+        _game.HostStartMatch();
+    }
+
+    private void SimMatchEnded(int winner)
+    {
+        _simDone++;
+        double secs = _simClock.Elapsed.TotalSeconds;
+        Log.Info($"SIMULATE {_simDone}/{_simTotal} done (winner slot {winner}, {_game.BattleNumber} battles, {secs:0}s elapsed)");
+        // Defer: we're inside the BattleOver RPC; tearing the match down right here would pull state from under it.
+        Callable.From(() =>
+        {
+            _game.HostReturnToLobby();
+            if (_simDone >= _simTotal) Finish(0, $"simulated {_simDone} matches in {secs:0}s");
+            else SimNextMatch();
+        }).CallDeferred();
+    }
+
     private void AutoHostMaybeStart()
     {
         if (_net.InMatch || _net.Lobby.Players.Count(p => !p.IsBot) < 2) return;
@@ -200,7 +264,13 @@ public partial class Main : Node
     public override void _PhysicsProcess(double delta)
     {
         if (_autoMode == null) return;
-        if (++_frames > AutotestMaxFrames) Finish(1, "timed out before the match ended");
+        if (++_frames > AutotestMaxFrames)
+        {
+            if (_autoMode != "sim") { Finish(1, "timed out before the match ended"); return; }
+            Log.Info("SIMULATE match timed out, abandoning it (saved as incomplete)");
+            _frames = 0;
+            SimMatchEnded(-1);
+        }
         if (_shotDir != null && _frames % 240 == 0 && _shotCount < 40) SaveShot();
     }
 

@@ -45,6 +45,9 @@ public partial class GameManager : Node2D
     public bool AutopilotLocal;
     public bool DisableHitStop;
 
+    /// <summary>Host-only card balance log (see StatsRecorder).</summary>
+    public readonly StatsRecorder Stats = new();
+
     public Dictionary<int, List<int>> PickOptions { get; private set; } = new();
     public readonly HashSet<int> Picked = new();
 
@@ -98,6 +101,8 @@ public partial class GameManager : Node2D
 
     public int ColorOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.ColorIdx : 0;
 
+    public bool IsBotPlayer(MatchPlayer p) => p.Info.IsBot || (p == LocalMatchPlayer && AutopilotLocal);
+
     public string NameOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.Name : "?";
 
     private bool IsHost => Net.IsHost;
@@ -111,6 +116,7 @@ public partial class GameManager : Node2D
     {
         if (!IsHost || Net.Lobby.Players.Count < 2) return;
         Net.InMatch = true;
+        if (Stats.Mode != "sim") Stats.Mode = Net.Mode == NetMode.Host ? "host" : "offline";
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         HostStartBattle();
     }
@@ -137,8 +143,13 @@ public partial class GameManager : Node2D
                 if (w.RoundWins >= Settings.RoundsToWin) matchWon = true;
             }
         }
+        Stats.BattleEnd(winner, roundWon, Active());
         Rpc(MethodName.BattleOver, winner, ScoresBytes(), roundWon, matchWon);
-        if (matchWon) return;
+        if (matchWon)
+        {
+            Stats.MatchEnd(winner, true, Slots.Where(p => p != null));
+            return;
+        }
         if (roundWon) HostAfter(1.6f, () => HostBeginCardPick(winner));
         else HostAfter(1.4f, HostStartBattle);
     }
@@ -166,17 +177,22 @@ public partial class GameManager : Node2D
         _hostPicked.Clear();
         _botPickT.Clear();
         _pickTimeoutT = PickTimeout;
-        foreach (var (slot, _) in entries)
-            if (Slots[slot].Info.IsBot || (Slots[slot] == LocalMatchPlayer && AutopilotLocal))
-                _botPickT[slot] = HostRng.Range(0.5f, 1.5f);
+        int completedRounds = Slots.Where(p => p != null).Sum(p => p.RoundWins);
+        foreach (var (slot, ids) in entries)
+        {
+            bool bot = IsBotPlayer(Slots[slot]);
+            if (bot) _botPickT[slot] = HostRng.Range(0.5f, 1.5f);
+            Stats.PickOffered(completedRounds, Slots[slot], bot, slot == roundWinner, ids);
+        }
         Rpc(MethodName.BeginCardPick, w.Done());
     }
 
-    private void HostApplyPick(int slot, int cardId)
+    private void HostApplyPick(int slot, int cardId, bool timedOut = false)
     {
         if (Phase != Phase.CardPick || _hostPicked.Contains(slot)) return;
         if (!PickOptions.TryGetValue(slot, out var opts) || !opts.Contains(cardId)) return;
         _hostPicked.Add(slot);
+        Stats.Picked(slot, cardId, timedOut);
         Rpc(MethodName.CardPicked, slot, cardId);
         HostCheckPicksDone();
     }
@@ -205,7 +221,7 @@ public partial class GameManager : Node2D
         if (Phase == Phase.Idle) return;
         var mp = Slots.FirstOrDefault(p => p != null && !p.Info.IsBot && p.Info.PeerId == peer);
         if (mp == null) return;
-        if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar);
+        if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar, KillCause.Left);
         Rpc(MethodName.PlayerLeft, mp.Slot);
         if (Phase == Phase.CardPick) HostCheckPicksDone();
 
@@ -213,6 +229,7 @@ public partial class GameManager : Node2D
         if (remaining.Count < 2 && Phase != Phase.MatchOver)
         {
             _hostNext = null;
+            Stats.MatchEnd(remaining.Count == 1 ? remaining[0].Slot : -1, false, Slots.Where(p => p != null));
             Rpc(MethodName.BattleOver, remaining.Count == 1 ? remaining[0].Slot : -1, ScoresBytes(), true, true);
         }
     }
@@ -235,6 +252,7 @@ public partial class GameManager : Node2D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        if (IsHost) Stats.Tick(dt, Phase);
         if (IsHost && _hostNext != null)
         {
             _hostNextT -= dt;
@@ -269,6 +287,7 @@ public partial class GameManager : Node2D
             {
                 Phase = Phase.Fighting;
                 foreach (var a in LiveAvatars()) a.Frozen = false;
+                if (IsHost) Stats.FightBegan();
                 Banner?.Invoke("FIGHT!", Palette.Accent, 0.7f);
                 Sfx.Play("go");
             }
@@ -293,7 +312,7 @@ public partial class GameManager : Node2D
             if (a == null || !a.Alive) continue;
             var f = p.Input?.Next(a, dt) ?? new InputFrame { Aim = a.GlobalPosition + Vector2.Right };
             a.Step(f, dt, authority: true);
-            if (a.GlobalPosition.Y > MapLayout.KillY) HostKill(a);
+            if (a.GlobalPosition.Y > MapLayout.KillY) HostKill(a, KillCause.Fall);
         }
     }
 
@@ -346,7 +365,7 @@ public partial class GameManager : Node2D
         if (_pickTimeoutT <= 0)
         {
             foreach (var (slot, opts) in PickOptions)
-                if (!_hostPicked.Contains(slot)) HostApplyPick(slot, opts[HostRng.Range(0, opts.Count - 1)]);
+                if (!_hostPicked.Contains(slot)) HostApplyPick(slot, opts[HostRng.Range(0, opts.Count - 1)], timedOut: true);
             _pickTimeoutT = float.MaxValue;
         }
     }
@@ -376,7 +395,11 @@ public partial class GameManager : Node2D
         if (queued) Bullets.AddQueued(b);
         else Bullets.Add(b);
         if (Net.Mode == NetMode.Host) Rpc(MethodName.SpawnBullet, b.Serialize());
-        if (!queued) OnShotFx(b);
+        if (!queued)
+        {
+            OnShotFx(b);
+            Stats.Shot(b.Owner);
+        }
     }
 
     public void HostBulletDestroyed(Bullet b, bool impact)
@@ -387,25 +410,36 @@ public partial class GameManager : Node2D
 
     public void HostDamage(Avatar victim, float damage, Vector2 knockback, int attackerSlot, Vector2 at)
     {
+        float hpBefore = victim.Hp;
         if (!victim.TakeHit(damage, knockback))
         {
+            if (victim.Alive) Stats.HitBlocked(victim.Player.Slot);
             HostBlocked(victim, at);
             return;
         }
+        Stats.Damage(attackerSlot, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
         var attacker = attackerSlot >= 0 ? Slots[attackerSlot]?.Avatar : null;
         if (attacker != null && attacker != victim && attacker.Alive)
         {
             float steal = attacker.S[Stat.Lifesteal];
-            if (steal > 0) attacker.Heal(damage * steal);
+            if (steal > 0)
+            {
+                float before = attacker.Hp;
+                attacker.Heal(damage * steal);
+                Stats.Healed(attacker.Player.Slot, attacker.Hp - before);
+            }
             foreach (var e in attacker.Player.Effects) e.OnDealDamage(attacker, victim, damage, this);
         }
         Rpc(MethodName.Damaged, victim.Player.Slot, victim.Hp, knockback, at, damage);
         if (victim.Hp <= 0) HostKill(victim);
     }
 
-    public void HostKill(Avatar a)
+    public enum KillCause { Shot, Fall, Left }
+
+    public void HostKill(Avatar a, KillCause cause = KillCause.Shot)
     {
         if (!a.Alive) return;
+        if (cause != KillCause.Left) Stats.Death(a.Player.Slot, fell: cause == KillCause.Fall);
         a.Alive = false;
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition);
     }
@@ -429,7 +463,11 @@ public partial class GameManager : Node2D
 
     public void HostBlocked(Avatar a, Vector2 at) => HostFx(FxKind.Blocked, at, 0, a.Player.Slot, at);
 
-    public void HostOnBlock(Avatar a) => HostFx(FxKind.Block, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
+    public void HostOnBlock(Avatar a)
+    {
+        Stats.BlockUsed(a.Player.Slot);
+        HostFx(FxKind.Block, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
+    }
 
     public void HostFx(FxKind kind, Vector2 pos, float value, int slot, Vector2 pos2)
         => Rpc(MethodName.FxEvent, (int)kind, pos, value, slot, pos2);
@@ -478,6 +516,7 @@ public partial class GameManager : Node2D
         MatchWinner = -1;
         Net.InMatch = true;
         Visible = true;
+        if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
         Log.Info($"match begins: {lobby.Players.Count} players, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
         MatchBegan?.Invoke();
     }
@@ -515,8 +554,11 @@ public partial class GameManager : Node2D
             p.Avatar = av;
         }
         if (IsHost)
+        {
             foreach (var p in active)
                 foreach (var e in p.Effects) e.OnBattleStart(p.Avatar, this);
+            Stats.BattleStart(BattleNumber, Slots.Where(p => p != null).Sum(p => p.RoundWins) + 1, seed, active);
+        }
 
         Phase = Phase.Countdown;
         CountdownLeft = CountdownTime;
@@ -796,6 +838,8 @@ public partial class GameManager : Node2D
 
     public void ResetWorld()
     {
+        // Leaving mid-match: keep whatever finished battles there were, flagged as incomplete.
+        Stats.MatchEnd(-1, false, Slots.Where(p => p != null));
         foreach (var c in _avatars.GetChildren()) c.QueueFree();
         Bullets.Clear();
         Fx.Clear();
@@ -808,6 +852,11 @@ public partial class GameManager : Node2D
         _hostNext = null;
         Visible = false;
         Engine.TimeScale = 1;
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMCloseRequest) Stats.MatchEnd(-1, false, Slots.Where(p => p != null));
     }
 
     public void Shake(float amount) => _trauma = Mathf.Min(1, _trauma + amount);
