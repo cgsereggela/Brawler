@@ -34,7 +34,7 @@ public sealed class MatchPlayer
 /// </summary>
 public partial class Avatar : CharacterBody2D
 {
-    public const float BaseW = 10, BaseH = 14;
+    public const float BaseW = Body.W, BaseH = Body.H;
     private const float CoyoteTime = 0.1f, JumpBuffer = 0.12f, WallSlideSpeed = 45f, MaxFall = 520f;
 
     public MatchPlayer Player;
@@ -64,6 +64,11 @@ public partial class Avatar : CharacterBody2D
     private float _hurtFlash;
     private Vector2 _netTarget;
     private bool _hasNetTarget;
+
+    // Animation only (never affects the simulation).
+    private int _facing = 1;
+    private float _walkPhase, _animT, _blinkT, _nextBlink = 2f, _kick, _flash;
+    public GunLook Gun = GunLook.Default;
 
     public void Setup(MatchPlayer owner, GameManager game, Vector2 pos)
     {
@@ -99,8 +104,7 @@ public partial class Avatar : CharacterBody2D
             Weapon(f, dt);
             Block(blockPressed, dt);
         }
-        _hurtFlash = Mathf.Max(0, _hurtFlash - dt);
-        QueueRedraw();
+        Animate(dt);
     }
 
     private static bool Edge(ref int last, byte value)
@@ -218,7 +222,7 @@ public partial class Avatar : CharacterBody2D
         float spread = S[Stat.Spread];
         if (n > 1 && spread <= 0) spread = 0.08f * (n - 1);
         float baseAngle = AimDir.Angle();
-        var origin = GlobalPosition + AimDir * (HalfSize.X + 3);
+        var origin = MuzzlePoint();
         for (int i = 0; i < n; i++)
         {
             float t = n == 1 ? 0.5f : i / (float)(n - 1);
@@ -275,37 +279,76 @@ public partial class Avatar : CharacterBody2D
         if (!_hasNetTarget) return;
         _netTarget += Velocity * dt; // extrapolate between snapshots
         GlobalPosition = GlobalPosition.Lerp(_netTarget, 0.5f);
-        _hurtFlash = Mathf.Max(0, _hurtFlash - dt);
-        QueueRedraw();
+        Animate(dt);
     }
 
-    // ---------- drawing ----------
+    // ---------- animation and drawing ----------
+
+    /// <summary>Called on every peer when this avatar fires a bullet (recoil and muzzle flash).</summary>
+    public void OnFired()
+    {
+        _kick = 1;
+        _flash = 1;
+    }
+
+    /// <summary>Bullet spawn point: the gun's muzzle, pulled back if a wall is in between.</summary>
+    private Vector2 MuzzlePoint()
+    {
+        var from = GlobalPosition;
+        var delta = AvatarArt.Muzzle(AimDir, _facing, S[Stat.Size], Gun);
+        var hit = Sweep.Cast(new System.Numerics.Vector2(from.X, from.Y), new System.Numerics.Vector2(delta.X, delta.Y),
+            Mathf.Max(1, S[Stat.BulletRadius]), Game.Map.Solids);
+        float t = hit is { } h ? Mathf.Max(0, h.T - 0.05f) : 1;
+        return from + delta * t;
+    }
+
+    private void Animate(float dt)
+    {
+        _hurtFlash = Mathf.Max(0, _hurtFlash - dt);
+        _kick = Mathf.Max(0, _kick - dt * 9);
+        _flash = Mathf.Max(0, _flash - dt * 14);
+        _animT += dt;
+        if (Mathf.Abs(AimDir.X) > 0.15f) _facing = AimDir.X < 0 ? -1 : 1;
+        _walkPhase += Mathf.Abs(Velocity.X) * dt / 7f;
+        _blinkT -= dt;
+        if (_blinkT < -_nextBlink)
+        {
+            _blinkT = 0.12f;
+            _nextBlink = 1.8f + (GetInstanceId() % 7) * 0.4f + (_animT % 1.3f);
+        }
+        QueueRedraw();
+    }
 
     public override void _Draw()
     {
         if (!Alive) return;
+        float size = S[Stat.Size];
+        var pose = new AvatarPose
+        {
+            Body = Player.Color,
+            Look = Player.Info.Look,
+            Facing = _facing,
+            Aim = AimDir,
+            Scale = size,
+            Time = _animT,
+            WalkPhase = _walkPhase,
+            Grounded = Mathf.Abs(Velocity.Y) < 1f,
+            Moving = Mathf.Abs(Velocity.X) > 12f,
+            Blink = _blinkT > 0,
+            Hurt = _hurtFlash > 0,
+            Gun = true,
+            GunLook = Gun,
+            Kick = _kick,
+            Flash = _flash,
+        };
+        AvatarArt.Draw(this, Vector2.Zero, pose);
+
         var hs = HalfSize.Round();
-        var body = new Rect2(-hs, hs * 2);
-        var col = _hurtFlash > 0 ? Colors.White : Player.Color;
 
-        DrawRect(new Rect2(body.Position + new Vector2(0, 1), body.Size), new Color(0, 0, 0, 0.35f));
-        DrawRect(body, col);
-        DrawRect(new Rect2(body.Position, new Vector2(body.Size.X, 2)), col.Lightened(0.35f));
-        DrawRect(new Rect2(body.Position + new Vector2(0, body.Size.Y - 2), new Vector2(body.Size.X, 2)), col.Darkened(0.3f));
-
-        // Eye looks toward the aim direction.
-        var eye = (AimDir * new Vector2(hs.X * 0.45f, hs.Y * 0.35f) + new Vector2(0, -hs.Y * 0.25f)).Round();
-        DrawRect(new Rect2(eye - new Vector2(2, 2), new Vector2(4, 4)), Colors.White);
-        DrawRect(new Rect2(eye + (AimDir * 1.2f).Round() - new Vector2(1, 1), new Vector2(2, 2)), Palette.Bg);
-
-        // Gun nub.
-        var gun = (AimDir * (hs.X + 2)).Round();
-        DrawRect(new Rect2(gun - new Vector2(2, 1), new Vector2(4, 3)), col.Darkened(0.45f));
-
-        // HP bar.
+        // HP bar above the head (and hat).
         float frac = Mathf.Clamp(Hp / S[Stat.MaxHp], 0, 1);
-        var barPos = new Vector2(-10, -hs.Y - 7);
-        DrawRect(new Rect2(barPos, new Vector2(20, 3)), new Color(0, 0, 0, 0.6f));
+        var barPos = new Vector2(-10, Mathf.Round(AvatarArt.TopY(Player.Info.Look) * size) - 7);
+        DrawRect(new Rect2(barPos - Vector2.One, new Vector2(22, 5)), new Color(0, 0, 0, 0.6f));
         DrawRect(new Rect2(barPos, new Vector2(Mathf.Round(20 * frac), 3)), frac > 0.35f ? new Color("#5be37d") : new Color("#ff5050"));
 
         // Ammo pips or reload bar.
@@ -329,16 +372,16 @@ public partial class Avatar : CharacterBody2D
         if (BlockActive > 0)
         {
             float r = Mathf.Max(hs.X, hs.Y) + 5;
-            DrawArc(Vector2.Zero, r, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.9f), 1.5f);
-            DrawArc(Vector2.Zero, r + 2, 0, Mathf.Tau, 24, Player.Color with { A = 0.5f }, 1f);
+            DrawArc(Vector2.Zero, r, 0, Mathf.Tau, 32, new Color(1, 1, 1, 0.9f), 1.5f);
+            DrawArc(Vector2.Zero, r + 2, 0, Mathf.Tau, 32, Player.Color with { A = 0.5f }, 1f);
         }
         else if (Player == Game.LocalMatchPlayer)
         {
             // Block cooldown indicator under the local player.
             float ready = 1f - Mathf.Clamp(BlockCd / S[Stat.BlockCooldown], 0, 1);
-            var p = new Vector2(-6, hs.Y + 3);
-            DrawRect(new Rect2(p, new Vector2(12, 1)), new Color(1, 1, 1, 0.15f));
-            DrawRect(new Rect2(p, new Vector2(Mathf.Round(12 * ready), 1)), ready >= 1 ? Colors.White : new Color(1, 1, 1, 0.5f));
+            var p = new Vector2(-7, hs.Y + 3);
+            DrawRect(new Rect2(p, new Vector2(14, 1)), new Color(1, 1, 1, 0.15f));
+            DrawRect(new Rect2(p, new Vector2(Mathf.Round(14 * ready), 1)), ready >= 1 ? Colors.White : new Color(1, 1, 1, 0.5f));
         }
     }
 }

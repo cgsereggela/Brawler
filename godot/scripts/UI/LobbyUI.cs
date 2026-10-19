@@ -7,7 +7,7 @@ namespace Brawler.UI;
 
 public partial class LobbyUI : Control
 {
-    public event Action StartPressed, LeavePressed;
+    public event Action StartPressed, LeavePressed, CustomizePressed;
 
     private readonly NetworkManager _net;
     private Label _info;
@@ -26,12 +26,12 @@ public partial class LobbyUI : Control
         _info.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         body.AddChild(_info);
 
-        _players = UiKit.VBox(3);
+        _players = UiKit.VBox(0);
         body.AddChild(_players);
 
         var row = UiKit.HBox();
         _addBot = UiKit.Button("+ Add Bot", () => _net.AddBot());
-        _color = UiKit.Button("Change Color", () => _net.SetLocalColor((_net.LocalColor + 1) % Palette.Players.Length));
+        _color = UiKit.Button("Customize", () => CustomizePressed?.Invoke());
         row.AddChild(_addBot);
         row.AddChild(_color);
         body.AddChild(row);
@@ -100,14 +100,17 @@ public partial class LobbyUI : Control
             var row = UiKit.HBox(6);
             if (p == null)
             {
-                row.AddChild(UiKit.Swatch(Palette.SolidDark, 10));
-                row.AddChild(UiKit.Label("- empty -", 10, Palette.TextDim));
+                row.AddChild(new Control { CustomMinimumSize = new Vector2(30, 28) });
+                var empty = UiKit.Label("- empty -", 10, Palette.TextDim);
+                empty.VerticalAlignment = VerticalAlignment.Center;
+                row.AddChild(empty);
             }
             else
             {
-                row.AddChild(UiKit.Swatch(Palette.Player(p.ColorIdx), 10));
+                row.AddChild(new AvatarPreview(p.Look, p.ColorIdx) { CustomMinimumSize = new Vector2(30, 28), ShowGun = false });
                 var name = UiKit.Label(p.Name + (p.IsBot ? "  [BOT]" : "") + (p.PeerId == _net.LocalPeer && !p.IsBot ? "  (you)" : ""));
                 name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                name.VerticalAlignment = VerticalAlignment.Center;
                 row.AddChild(name);
                 if (host && p.IsBot)
                 {

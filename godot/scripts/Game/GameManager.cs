@@ -483,6 +483,7 @@ public partial class GameManager : Node2D
         Fx.Spark(b.Pos, Palette.Player(ColorOf(b.Owner)).Lightened(0.4f), 3);
         Sfx.Play("shoot", 0.7f);
         if (LocalMatchPlayer != null && b.Owner == LocalMatchPlayer.Slot) Shake(0.12f);
+        if (b.Owner >= 0 && b.Owner < Slots.Length) Slots[b.Owner]?.Avatar?.OnFired();
     }
 
     // =====================================================================

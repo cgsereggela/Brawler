@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
@@ -137,7 +138,7 @@ public static class StatsJson
         return list;
     }
 
-    /// <summary>Short stable hash of every card's id, name and modifiers.</summary>
+    /// <summary>Short stable hash of the rules that shape balance: every card's id, name and modifiers, the base stats and the body size.</summary>
     public static string CardsHash()
     {
         ulong h = 1469598103934665603UL; // FNV-1a
@@ -150,6 +151,9 @@ public static class StatsJson
             Mix($"{c.Id}|{c.Name}|{c.EffectId}|");
             foreach (var m in c.Mods) Mix($"{m.Stat}{m.Op}{m.Value.ToString("R", CultureInfo.InvariantCulture)};");
         }
+        var b = StatBlock.Base();
+        foreach (Stat s in Enum.GetValues<Stat>()) Mix($"{s}={b[s].ToString("R", CultureInfo.InvariantCulture)};");
+        Mix($"body={Body.W}x{Body.H}");
         return h.ToString("x16")[..8];
     }
 

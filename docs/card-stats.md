@@ -44,7 +44,7 @@ tools/CardStats (dotnet run) ◀── StatsJson.ParseLines + StatsReport.Build 
   "id": "c1792a05b491",
   "startedUtc": "2026-10-19T03:28:40Z",
   "mode": "sim",                 // "offline" | "host" | "sim"
-  "cardsHash": "baf58c9a",       // hash of every card's id/name/effect/mods
+  "cardsHash": "baf58c9a",       // rules version: every card's id/name/effect/mods, the base stats and the body size
   "complete": true,
   "winner": 2,                   // match winner slot, -1 if none
   "durationSec": 446.05,         // simulated time, including countdowns and picks
@@ -131,7 +131,7 @@ dotnet run -- --out=out/report.md --csv=out  # write files (out/ is git-ignored)
 ## Changing or extending it
 
 - **Card ids are permanent.** The log refers to cards by id, so never renumber or reuse one.
-- **Balance changes** alter `cardsHash` automatically. The report then shows only the new version by default. Use `--cards=all` or a specific hash to compare versions.
+- **Balance changes** alter `cardsHash` automatically. Despite the name, it also covers the base stats in `StatBlock.Base()` and the body size in `Body` (`Appearance.cs`), since both shift every card's numbers. The report then shows only the new version by default. Use `--cards=all` or a specific hash to compare versions.
 - **To add a field:**
   1. Add the property to the record class in `StatsModel.cs`.
   2. Fill it in `StatsRecorder` from a hook in `GameManager`.

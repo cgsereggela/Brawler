@@ -7,12 +7,11 @@ namespace Brawler.UI;
 
 public partial class MenuUI : Control
 {
-    public event Action PlayBots, HostLan, JoinLan;
+    public event Action PlayBots, HostLan, JoinLan, Customize;
 
     public LineEdit NameEdit, AddressEdit, PortEdit;
     private Label _status;
-    private Button _colorBtn;
-    private ColorRect _swatch;
+    private AvatarPreview _preview;
     private readonly NetworkManager _net;
 
     public MenuUI(NetworkManager net) => _net = net;
@@ -30,11 +29,18 @@ public partial class MenuUI : Control
         NameEdit = new LineEdit { Text = _net.LocalName, MaxLength = 12, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         NameEdit.TextChanged += t => _net.LocalName = string.IsNullOrWhiteSpace(t) ? "Player" : t.Trim();
         nameRow.AddChild(NameEdit);
-        _swatch = UiKit.Swatch(Palette.Player(_net.LocalColor), 12);
-        nameRow.AddChild(_swatch);
-        _colorBtn = UiKit.Button("Color", CycleColor);
-        nameRow.AddChild(_colorBtn);
         body.AddChild(nameRow);
+
+        var lookRow = UiKit.HBox(6);
+        _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 2, alive: true);
+        lookRow.AddChild(_preview);
+        var customize = UiKit.Button("Customize Character", () => Customize?.Invoke());
+        customize.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        customize.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        lookRow.AddChild(customize);
+        body.AddChild(lookRow);
+
+        VisibilityChanged += RefreshPreview;
 
         body.AddChild(UiKit.Button("Play vs Bots", () => PlayBots?.Invoke()));
         body.AddChild(UiKit.Button("Host LAN Game", () => HostLan?.Invoke()));
@@ -59,9 +65,11 @@ public partial class MenuUI : Control
 
     public void SetStatus(string text) => _status.Text = text ?? "";
 
-    private void CycleColor()
+    private void RefreshPreview()
     {
-        _net.LocalColor = (_net.LocalColor + 1) % Palette.Players.Length;
-        _swatch.Color = Palette.Player(_net.LocalColor);
+        if (!Visible || _preview == null) return;
+        _preview.Look = _net.LocalLook;
+        _preview.ColorIdx = _net.LocalColor;
+        _preview.QueueRedraw();
     }
 }

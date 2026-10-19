@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.Core;
@@ -29,6 +30,10 @@ public static class Palette
     public static readonly Color Text = new("#e8e8f0");
     public static readonly Color TextDim = new("#8a8aa3");
     public static readonly Color Accent = new("#ffd23d");
+    public static readonly Color Outline = new("#15151f");
+
+    private static readonly Color[] DyeColors = System.Array.ConvertAll(Appearance.Dyes, d => new Color(d.Hex));
+    public static Color Dye(int idx) => DyeColors[((idx % DyeColors.Length) + DyeColors.Length) % DyeColors.Length];
 }
 
 public sealed class PlayerInfo
@@ -38,6 +43,7 @@ public sealed class PlayerInfo
     public string Name = "Player";
     public int ColorIdx;
     public bool IsBot;
+    public Appearance Look = Appearance.Default();
 }
 
 public sealed class MatchSettings
@@ -77,7 +83,10 @@ public sealed class LobbyState
         w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices);
         w.U8(Players.Count);
         foreach (var p in Players)
+            {
             w.U8(p.Slot).I64(p.PeerId).Str(p.Name).U8(p.ColorIdx).Bool(p.IsBot);
+            w.Bytes(p.Look.ToBytes());
+        }
         return w.Done();
     }
 
@@ -91,7 +100,7 @@ public sealed class LobbyState
         s.Settings.WinnerChoices = r.U8();
         int n = r.U8();
         for (int i = 0; i < n; i++)
-            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool() });
+            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Look = Appearance.FromBytes(r.Bytes()) });
         return s;
     }
 }
@@ -145,6 +154,7 @@ public sealed class Wire
     public Wire V2(Vector2 v) { _w.Write(v.X); _w.Write(v.Y); return this; }
     public Wire Bool(bool v) { _w.Write(v); return this; }
     public Wire Str(string v) { _w.Write(v ?? ""); return this; }
+    public Wire Bytes(byte[] v) { _w.Write((byte)v.Length); _w.Write(v, 0, System.Math.Min(v.Length, 255)); return this; }
     public byte[] Done() { _w.Flush(); return _ms.ToArray(); }
 }
 
@@ -162,6 +172,7 @@ public sealed class WireReader
     public Vector2 V2() => new(_r.ReadSingle(), _r.ReadSingle());
     public bool Bool() => _r.ReadBoolean();
     public string Str() => _r.ReadString();
+    public byte[] Bytes() => _r.ReadBytes(_r.ReadByte());
 }
 
 public static class Log

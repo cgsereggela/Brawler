@@ -1,5 +1,6 @@
 using System;
 using Brawler.Core;
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.Net;
@@ -20,6 +21,8 @@ public partial class NetworkManager : Node
     public int Port { get; private set; } = DefaultPort;
     public string LocalName = "Player";
     public int LocalColor;
+    public Appearance LocalLook = Appearance.Default();
+    private readonly Rng _botLooks = new((ulong)System.DateTime.Now.Ticks);
 
     public bool IsHost => Mode is NetMode.Host or NetMode.Offline;
     public long LocalPeer => Multiplayer.GetUniqueId();
@@ -104,7 +107,7 @@ public partial class NetworkManager : Node
 
     private void AddHumanLocal()
     {
-        Lobby.Players.Add(new PlayerInfo { Slot = 0, PeerId = 1, Name = LocalName, ColorIdx = LocalColor });
+        Lobby.Players.Add(new PlayerInfo { Slot = 0, PeerId = 1, Name = LocalName, ColorIdx = LocalColor, Look = LocalLook.Clone() });
         LobbyChanged?.Invoke();
     }
 
@@ -116,7 +119,7 @@ public partial class NetworkManager : Node
         int slot = Lobby.FreeSlot();
         if (slot < 0) return;
         int color = Lobby.FreeColor();
-        Lobby.Players.Add(new PlayerInfo { Slot = slot, PeerId = 1, IsBot = true, Name = $"Bot {Palette.Names[color]}", ColorIdx = color });
+        Lobby.Players.Add(new PlayerInfo { Slot = slot, PeerId = 1, IsBot = true, Name = $"Bot {Palette.Names[color]}", ColorIdx = color, Look = Appearance.Random(_botLooks) });
         BroadcastLobby();
     }
 
@@ -149,6 +152,22 @@ public partial class NetworkManager : Node
         }
     }
 
+    public void SetLocalLook(Appearance look)
+    {
+        LocalLook = look.Clone();
+        if (IsHost)
+        {
+            var me = LocalPlayer;
+            if (me == null) return;
+            me.Look = look.Clone();
+            BroadcastLobby();
+        }
+        else if (Mode == NetMode.Client)
+        {
+            RpcId(1, MethodName.RequestLook, look.ToBytes());
+        }
+    }
+
     public void BroadcastLobby()
     {
         if (!IsHost) return;
@@ -160,7 +179,7 @@ public partial class NetworkManager : Node
     private void OnConnectedToServer()
     {
         Status?.Invoke("Connected. Joining lobby...");
-        RpcId(1, MethodName.RequestJoin, LocalName, LocalColor);
+        RpcId(1, MethodName.RequestJoin, LocalName, LocalColor, LocalLook.ToBytes());
     }
 
     private void OnPeerDisconnected(long id)
@@ -176,7 +195,7 @@ public partial class NetworkManager : Node
     // ---------- RPCs ----------
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestJoin(string name, int color)
+    private void RequestJoin(string name, int color, byte[] look)
     {
         if (!IsHost) return;
         long sender = Multiplayer.GetRemoteSenderId();
@@ -188,7 +207,7 @@ public partial class NetworkManager : Node
         if (Lobby.Players.Exists(p => p.ColorIdx == color)) color = Lobby.FreeColor();
         name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
         if (name.Length > 12) name = name[..12];
-        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color });
+        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look) });
         BroadcastLobby();
     }
 
@@ -199,6 +218,16 @@ public partial class NetworkManager : Node
         var p = Lobby.ByPeer(Multiplayer.GetRemoteSenderId());
         if (p == null) return;
         p.ColorIdx = color;
+        BroadcastLobby();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestLook(byte[] look)
+    {
+        if (!IsHost || InMatch) return;
+        var p = Lobby.ByPeer(Multiplayer.GetRemoteSenderId());
+        if (p == null) return;
+        p.Look = Appearance.FromBytes(look);
         BroadcastLobby();
     }
 

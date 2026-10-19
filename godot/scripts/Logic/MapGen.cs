@@ -51,7 +51,7 @@ public static class MapGenerator
     public const int MaxRise = 48;
     public const int MaxGapRising = 56;
     public const int MaxGapFalling = 110;
-    public const int Headroom = 22;
+    public const int Headroom = 26;
     public const int MinSpawnDistance = 140;
     public const int TierSpacing = 40;
 

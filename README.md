@@ -30,17 +30,22 @@ Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe 
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - Each battle gets a newly generated arena.
 
+## Characters
+- **Customize Character** (in the menu or lobby) opens the editor: body color, eyes, nose, mouth, hair, hair color, hat and hat color, plus *Randomize*. The preview follows your mouse.
+- Your name, color and look are saved to `%APPDATA%Godotpp_userdataBrawlerprofile.cfg` and sent to everyone in the lobby. Bots get a random look.
+- Looks are cosmetic only. A hat is drawn above the hitbox and never takes a hit.
+
 ## Project layout
 ```
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
   scripts/Main.cs           wiring, screens, automated test modes
-  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep, StatsModel/StatsReport
-  scripts/Core/Shared.cs    lobby/settings/input types + binary wire format
+  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep, Appearance, StatsModel/StatsReport
+  scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
   scripts/Net/              NetworkManager: ENet host/join, lobby sync
-  scripts/Game/             GameManager (match flow + netcode), Avatar, BulletSystem, BotBrain, CardEffects, MapNode
+  scripts/Game/             GameManager (match flow + netcode), Avatar, AvatarArt (character + gun pixel art), BulletSystem, BotBrain, CardEffects, MapNode
   scripts/Fx/               particles/rings/popups, procedurally synthesized SFX
-  scripts/UI/               menu, lobby, HUD, card pick, match over
+  scripts/UI/               menu, lobby, character editor, HUD, card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
 tools/CardStats/            card balance report from the stats log (dotnet run)
 ```
@@ -58,6 +63,14 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 2. If the card needs behavior beyond stats, give it an effect id (as `"blink"` does), implement `ICardEffect` in `godot/scripts/Game/CardEffects.cs`, and register it in `CardEffects.Create`.
 3. If it needs a new number, add it to the `Stat` enum and `StatBlock.Base()` in `Stats.cs`, then read it where it applies.
 4. Never reuse or renumber an id: the stats log refers to cards by id.
+
+## Adding a face part, hairstyle or hat
+Character art is drawn in code from small pixel maps, so there are no image files to manage.
+1. Add the option name to the end of its list in `godot/scripts/Logic/Appearance.cs` (`EyeNames`, `NoseNames`, `MouthNames`, `HairNames`, `HatNames` or `Dyes`). Saved profiles store indices, so append; don't reorder.
+2. Add the art at the same index in `godot/scripts/Game/AvatarArt.cs`. Noses, mouths, hair and hats are `PixelArt` strings: one string per row, one char per pixel, `.` empty. `#`, `l` and `d` are the part's color (hair or hat dye) with light and dark shades; the other keys are listed in `Pal`. With `true` as the third argument, a dark outline is added automatically. Eyes are drawn in `DrawEyes` because their pupils follow the aim.
+3. Check the result with `--menushots` (see Tests). It saves a gallery page for every part.
+
+Sprite space faces right with the body centered on (0,0): x −7..6, y −9..8 (14×18, feet in the last two rows). The gun is built from `GunLook` parameters (receiver, barrel, magazine, scope, stock). Card-specific guns can be added later by giving each avatar a different `GunLook`.
 
 ## Card balance stats
 The host records every match to a log so card balance can be tuned from data instead of feel. Full details, including the log schema, metric formulas and how to extend it, are in [docs/card-stats.md](docs/card-stats.md).
@@ -89,7 +102,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds), swept collision, and card stats aggregation.
+Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -98,4 +111,5 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot -- --autohost=24600 &                 # networked: host + bot...
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
+"$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 ```

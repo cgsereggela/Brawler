@@ -31,6 +31,8 @@ public partial class Main : Node
     private HudUI _hud;
     private CardPickUI _pick;
     private MatchOverUI _over;
+    private CustomizeUI _custom;
+    private Control _customReturn;
 
     private string _autoMode;
     private bool _matchFinished;
@@ -41,8 +43,10 @@ public partial class Main : Node
     {
         LocalInput.RegisterActions();
 
+
         _net = new NetworkManager { Name = "Net" };
         AddChild(_net);
+        (_net.LocalName, _net.LocalColor, _net.LocalLook) = Profile.Load();
         _sfx = new Sfx { Name = "Sfx" };
         AddChild(_sfx);
         _game = new GameManager { Name = "Game", Net = _net, Sfx = _sfx };
@@ -60,7 +64,8 @@ public partial class Main : Node
         _hud = new HudUI(_game) { Name = "Hud" };
         _pick = new CardPickUI(_game) { Name = "CardPick" };
         _over = new MatchOverUI(_game, _net) { Name = "MatchOver" };
-        foreach (var c in new Control[] { _menu, _lobby, _hud, _pick, _over }) root.AddChild(c);
+        _custom = new CustomizeUI(_net) { Name = "Customize" };
+        foreach (var c in Screens) root.AddChild(c);
 
         Wire();
         Show(_menu);
@@ -71,15 +76,24 @@ public partial class Main : Node
     {
         _menu.PlayBots += () =>
         {
+            SaveProfile();
             _net.StartOffline();
             _net.AddBot();
             Show(_lobby);
         };
         _menu.HostLan += () =>
         {
+            SaveProfile();
             if (_net.Host(_menu.Port)) Show(_lobby);
         };
-        _menu.JoinLan += () => _net.Join(_menu.AddressEdit.Text.Trim(), _menu.Port);
+        _menu.JoinLan += () =>
+        {
+            SaveProfile();
+            _net.Join(_menu.AddressEdit.Text.Trim(), _menu.Port);
+        };
+        _menu.Customize += () => OpenCustomize(_menu);
+        _lobby.CustomizePressed += () => OpenCustomize(_lobby);
+        _custom.Closed += () => Show(_customReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
 
         _net.Status += _menu.SetStatus;
         _net.LobbyChanged += () =>
@@ -108,9 +122,19 @@ public partial class Main : Node
         _game.ReturnedToLobby += () => Show(_lobby);
     }
 
+    private Control[] Screens => new Control[] { _menu, _lobby, _hud, _pick, _over, _custom };
+
+    private void OpenCustomize(Control from)
+    {
+        _customReturn = from;
+        Show(_custom);
+    }
+
+    private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
+
     private void Show(params Control[] screens)
     {
-        foreach (var c in new Control[] { _menu, _lobby, _hud, _pick, _over })
+        foreach (var c in Screens)
             c.Visible = screens.Contains(c);
     }
 
@@ -205,17 +229,35 @@ public partial class Main : Node
             }
             else if (a == "--menushots" && _shotDir != null)
             {
-                // Screenshot the menu, then an offline lobby with bots, then quit.
+                // Screenshot the menu, the character editor, an offline lobby with bots, and a gallery
+                // of every option of every look part, then quit.
                 var tree = GetTree();
-                tree.CreateTimer(0.5).Timeout += () =>
+                var steps = new System.Collections.Generic.List<System.Action>
+                {
+                    () => OpenCustomize(_menu),
+                    () =>
+                    {
+                        _net.StartOffline();
+                        _net.AddBot();
+                        _net.AddBot();
+                        _net.AddBot();
+                        Show(_lobby);
+                    },
+                };
+                foreach (LookPart part in System.Enum.GetValues<LookPart>())
+                {
+                    var p = part;
+                    steps.Add(() => ShowGallery(p));
+                }
+                int i = 0;
+                void Next()
                 {
                     SaveShot();
-                    _net.StartOffline();
-                    _net.AddBot();
-                    _net.AddBot();
-                    Show(_lobby);
-                    tree.CreateTimer(0.5).Timeout += () => { SaveShot(); tree.Quit(0); };
-                };
+                    if (i >= steps.Count) { tree.Quit(0); return; }
+                    steps[i++]();
+                    tree.CreateTimer(0.4).Timeout += Next;
+                }
+                tree.CreateTimer(0.5).Timeout += Next;
             }
         }
     }
@@ -277,6 +319,37 @@ public partial class Main : Node
     // --shots=<dir>: save a screenshot every 4 simulated seconds during an autotest (needs a window, not --headless).
     private string _shotDir;
     private int _shotCount;
+
+    private Control _gallery;
+
+    /// <summary>--menushots: every option of one look part side by side, for checking the art.</summary>
+    private void ShowGallery(LookPart part)
+    {
+        Show();
+        _gallery?.QueueFree();
+        _gallery = new PanelContainer();
+        _gallery.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _menu.GetParent().AddChild(_gallery);
+        var v = UiKit.VBox(4);
+        _gallery.AddChild(v);
+        v.AddChild(UiKit.Label(Appearance.PartLabel(part), 16, Palette.Accent));
+        var grid = new GridContainer { Columns = 8 };
+        v.AddChild(grid);
+        for (int o = 0; o < Appearance.Count(part); o++)
+        {
+            var look = Appearance.Default();
+            look[LookPart.Hat] = 0;
+            if (part is LookPart.HairColor) look[LookPart.Hair] = 7;
+            if (part is LookPart.HatColor) look[LookPart.Hat] = 1;
+            look[part] = o;
+            var cell = UiKit.VBox(0);
+            cell.AddChild(new AvatarPreview(look, o % Palette.Players.Length, 2) { ShowGun = false });
+            var tmp = new Appearance();
+            tmp[part] = o;
+            cell.AddChild(UiKit.Label(tmp.OptionName(part), 8, Palette.Text, HorizontalAlignment.Center));
+            grid.AddChild(cell);
+        }
+    }
 
     private void SaveShot()
     {

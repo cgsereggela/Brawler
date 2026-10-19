@@ -35,11 +35,17 @@ public partial class MatchOverUI : Control
         UiKit.ClearChildren(_body);
         var title = winner >= 0 ? $"{_game.NameOf(winner)} WINS!" : "MATCH OVER";
         _body.AddChild(UiKit.Label(title, 20, winner >= 0 ? Palette.Player(_game.ColorOf(winner)) : Palette.Text, HorizontalAlignment.Center));
+        if (winner >= 0 && _game.Slots[winner] is { } champ)
+        {
+            var podium = new CenterContainer();
+            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, 3, alive: true));
+            _body.AddChild(podium);
+        }
 
         foreach (var p in _game.Slots.Where(p => p != null).OrderByDescending(p => p.RoundWins))
         {
             var row = UiKit.HBox(6);
-            row.AddChild(UiKit.Swatch(p.Color, 10));
+            row.AddChild(new AvatarPreview(p.Info.Look, p.Info.ColorIdx) { CustomMinimumSize = new Vector2(30, 28), ShowGun = false });
             row.AddChild(UiKit.Label($"{p.Info.Name}  -  {p.RoundWins} round{(p.RoundWins == 1 ? "" : "s")}{(p.Left ? " (left)" : "")}"));
             _body.AddChild(row);
             var cards = string.Join(", ", CardRegistry.Resolve(p.Cards).Select(c => c.Name));
