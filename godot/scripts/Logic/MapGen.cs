@@ -43,6 +43,10 @@ public sealed class MapLayout
     public int Seed { get; init; }
     public int Attempts { get; set; }
     public bool UsedFallback { get; set; }
+    /// <summary>Clear air a jump or drop between surfaces needs above the higher one (per body size in NavLayout).</summary>
+    public int Headroom { get; init; } = MapGenerator.Headroom;
+    /// <summary>Whether the jump graph counts jump pad launches (bots plan with them; map validation never does).</summary>
+    public bool UsePads { get; init; }
 }
 
 /// <summary>
@@ -449,7 +453,7 @@ public static class MapGenerator
     /// </summary>
     public static bool CanTraverse(MapLayout map, Surface a, Surface b)
     {
-        if (!CanTraverse(a, b)) return false;
+        if (!CanTraverse(a, b)) return map.UsePads && PadTo(map, a, b) is not null;
         int gx1 = Math.Min(a.X2, b.X2), gx2 = Math.Max(a.X1, b.X1);
         if (gx2 <= gx1)
         {
@@ -462,18 +466,43 @@ public static class MapGenerator
             }
             return b.Y - a.Y >= 40 || b.X1 < a.X1 - 8 || b.X2 > a.X2 + 8;
         }
-        int top = Math.Min(a.Y, b.Y) - Headroom, bottom = Math.Max(a.Y, b.Y);
+        int top = Math.Min(a.Y, b.Y) - map.Headroom, bottom = Math.Max(a.Y, b.Y);
         var corridor = new RectI(gx1, top, gx2 - gx1, bottom - top);
         foreach (var o in map.Solids)
             if (o.Intersects(corridor)) return false;
         return true;
     }
 
+    /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~174 px apex minus a margin.</summary>
+    public const int PadRise = (int)(PadVelocity * PadVelocity / (2 * 900f)) - 10;
+
+    /// <summary>
+    /// A jump pad on surface a that launches a body up and onto b (higher, beside the launch column, at most
+    /// <see cref="PadRise"/> up), with clear air above the pad up past b's top; or null.
+    /// </summary>
+    public static JumpPad? PadTo(MapLayout map, Surface a, Surface b)
+    {
+        int rise = a.Y - b.Y;
+        if (rise <= 0 || rise > PadRise) return null;
+        foreach (var p in map.Pads)
+        {
+            if (p.Y != a.Y || p.X1 < a.X1 - 2 || p.X2 > a.X2 + 2) continue;
+            int gap = Math.Max(0, Math.Max(p.X1, b.X1) - Math.Min(p.X2, b.X2));
+            if (gap > 40 || (b.X1 < p.X2 && b.X2 > p.X1)) continue; // too far to drift over, or right overhead
+            var column = new RectI(p.X1, b.Y - map.Headroom, p.X2 - p.X1, a.Y - (b.Y - map.Headroom));
+            bool clear = true;
+            foreach (var o in map.Solids)
+                if (o.Intersects(column)) { clear = false; break; }
+            if (clear) return p;
+        }
+        return null;
+    }
+
     /// <summary>True if [x1, x2] on surface a is wide enough to jump from, with clear air up to above b.</summary>
     private static bool LaunchSpot(MapLayout map, Surface a, Surface b, int x1, int x2)
     {
         if (x2 - x1 < 10) return false;
-        var air = new RectI(x1, b.Y - Headroom, x2 - x1, a.Y - (b.Y - Headroom));
+        var air = new RectI(x1, b.Y - map.Headroom, x2 - x1, a.Y - (b.Y - map.Headroom));
         foreach (var o in map.Solids)
             if (o.Intersects(air)) return false;
         return true;
@@ -537,6 +566,45 @@ public static class MapGenerator
         int step = to;
         while (prev[step] != from) step = prev[step];
         return step;
+    }
+
+    /// <summary>
+    /// The jump graph as a body of the given size sees it: the same solids, but surfaces lose the stretches under
+    /// overhangs too low to stand under, and jumps need headroom for exactly this body. The generator's graph assumes
+    /// 26 px everywhere, so a Giant would try to walk under a 32 px gap forever and a normal bot believed it couldn't
+    /// walk under a 24 px bar out of a floor pocket. It also counts jump pad launches (the generator never relies
+    /// on pads, but a bot stuck in a pocket with one should use it).
+    /// </summary>
+    public static MapLayout NavLayout(MapLayout map, float bodyW, float bodyH)
+    {
+        // The generator plans with a fixed 26 px (a normal body plus margin); a bot only needs room for its own body.
+        int headroom = (int)Math.Ceiling(bodyH) + 1;
+        var nav = new MapLayout { Seed = map.Seed, Style = map.Style, Headroom = headroom, UsePads = true, Attempts = map.Attempts, UsedFallback = map.UsedFallback };
+        nav.Solids.AddRange(map.Solids);
+        nav.Spawns.AddRange(map.Spawns);
+        nav.Pads.AddRange(map.Pads);
+        int hw = (int)Math.Ceiling(bodyW * 0.5f);
+        foreach (var s in map.Surfaces)
+        {
+            var open = new List<(int a, int b)> { (s.X1, s.X2) };
+            foreach (var o in map.Solids)
+            {
+                // Only overhangs (solids ending above this surface) that leave less room than the body needs.
+                if (o.Bottom > s.Y || o.Bottom <= s.Y - bodyH - 1 || o.Right <= s.X1 - hw || o.X >= s.X2 + hw) continue;
+                int x1 = o.X - hw, x2 = o.Right + hw;
+                var next = new List<(int a, int b)>();
+                foreach (var (a, b) in open)
+                {
+                    if (x2 <= a || x1 >= b) { next.Add((a, b)); continue; }
+                    if (x1 > a) next.Add((a, x1));
+                    if (x2 < b) next.Add((x2, b));
+                }
+                open = next;
+            }
+            foreach (var (a, b) in open)
+                if (b - a >= 4) nav.Surfaces.Add(new Surface(a, b, s.Y));
+        }
+        return nav;
     }
 
     public static int SurfaceIndexOf(MapLayout map, SpawnPoint sp)

@@ -42,6 +42,12 @@ public sealed class BlinkEffect : ICardEffect
         var hit = Sweep.Cast(new NVec(from.X, from.Y), new NVec(delta.X, delta.Y), r, game.Map.Solids);
         float t = hit?.T ?? 1f;
         var to = from + delta * Mathf.Max(0, t - 0.02f);
+        // The sweep ignores solids it starts inside of (its radius is the larger half-extent), so a blink from
+        // right under the 8 px ceiling or beside a border wall could land outside the arena, e.g. standing on
+        // the roof where nobody can reach you, stalling the battle. Keep the destination inside the borders.
+        var hs = self.HalfSize;
+        to.X = Mathf.Clamp(to.X, MapGenerator.Wall + hs.X + 1, MapLayout.Width - MapGenerator.Wall - hs.X - 1);
+        to.Y = Mathf.Max(to.Y, MapGenerator.Wall + hs.Y + 1);
         self.GlobalPosition = to;
         game.HostFx(FxKind.Blink, from, 0, self.Player.Slot, to);
     }

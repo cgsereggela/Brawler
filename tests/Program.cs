@@ -138,6 +138,30 @@ void Check(bool cond, string name, string detail = "")
     pathMap.Solids.Add(new RectI(300, 354, 32, 80));
     Check(MapGenerator.NextHop(pathMap, 0, 3) == 1, "Path finding climbs the ledge to get over a tower",
         $"next hop {MapGenerator.NextHop(pathMap, 0, 3)}");
+
+    // Size-aware graph: a shelf 32px over the floor is fine for a normal body but splits it for a Giant.
+    var lowMap = new MapLayout();
+    lowMap.Surfaces.Add(new Surface(8, 792, 434));
+    lowMap.Solids.Add(new RectI(8, 434, 784, 16));
+    lowMap.Solids.Add(new RectI(400, 394, 32, 8));
+    Check(MapGenerator.NavLayout(lowMap, 14, 18).Surfaces.Count == 1, "A normal body walks under a 32px shelf");
+    var giantNav = MapGenerator.NavLayout(lowMap, 25, 33);
+    Check(giantNav.Surfaces.Count == 2 && MapGenerator.NextHop(giantNav, 0, 1) == -1,
+        "A Giant can't walk under a low shelf", $"{giantNav.Surfaces.Count} surfaces");
+    // The generator splits the floor under a bar 24px up (less than its 26px headroom); a normal body still fits.
+    var barMap = new MapLayout();
+    barMap.Surfaces.AddRange(new[] { new Surface(8, 300, 434), new Surface(380, 792, 434) });
+    barMap.Solids.Add(new RectI(8, 434, 784, 16));
+    barMap.Solids.Add(new RectI(300, 394, 80, 16));
+    Check(MapGenerator.NextHop(barMap, 0, 1) == -1 && MapGenerator.NextHop(MapGenerator.NavLayout(barMap, 14, 18), 0, 1) == 1,
+        "Bots know a normal body fits under a 24px bar");
+    // A floor pocket between two 160px towers is a dead end, unless a jump pad in it gets you onto a tower top.
+    var pocket = new MapLayout();
+    pocket.Surfaces.AddRange(new[] { new Surface(648, 720, 434), new Surface(608, 648, 274) });
+    pocket.Solids.AddRange(new[] { new RectI(8, 434, 784, 16), new RectI(608, 274, 40, 160), new RectI(720, 274, 24, 160) });
+    pocket.Pads.Add(new JumpPad(664, 688, 434));
+    Check(MapGenerator.NextHop(pocket, 0, 1) == -1 && MapGenerator.NextHop(MapGenerator.NavLayout(pocket, 14, 18), 0, 1) == 1,
+        "Bots plan with jump pads (map validation doesn't)");
 }
 
 // ---------- Sweep ----------

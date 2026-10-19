@@ -19,6 +19,7 @@ namespace Brawler;
 ///   --simulate=N          play N bot-only matches back to back (2–4 players) to fill the card stats log; exits 0
 ///   --players=A[-B]       player count (or range) per simulated match, default 2-4
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
+///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
@@ -139,6 +140,7 @@ public partial class Main : Node
 
         _game.MatchBegan += () => Show(_hud);
         _game.BattleStarted += () => Show(_hud);
+        _game.BattleStarted += () => _battleFrames = 0;
         _game.CardPickBegan += () => Show(_hud, _pick);
         _game.MatchEnded += OnMatchEnded;
         _game.ReturnedToLobby += () => Show(_lobby);
@@ -205,6 +207,7 @@ public partial class Main : Node
         foreach (var a in args)
         {
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
+            else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
@@ -383,6 +386,20 @@ public partial class Main : Node
     private int _simTotal, _simDone, _simMin = 2, _simMax = LobbyState.MaxPlayers;
     private readonly Rng _simRng = new((ulong)System.DateTime.Now.Ticks);
     private readonly System.Diagnostics.Stopwatch _simClock = new();
+    private long _battleFrames;
+    private float _battleCap; // --battlecap=SECS (diagnostics): abandon a single battle that runs longer than this
+
+    /// <summary>One log line per live fighter, for working out why a simulated battle drags on.</summary>
+    private void LogStall(string why)
+    {
+        Log.Info($"STALL {why}: battle {_game.BattleNumber}, {_battleFrames / 60}s, map seed {_game.Map?.Seed}");
+        foreach (var a in _game.LiveAvatars())
+        {
+            var cards = string.Join(",", a.Player.Cards.Select(id => CardRegistry.Get(id)?.Name ?? id.ToString()));
+            var bot = a.Player.Input is BotBrain b ? b.DebugState : "";
+            Log.Info($"  slot {a.Player.Slot} pos ({a.GlobalPosition.X:0},{a.GlobalPosition.Y:0}) vel ({a.Velocity.X:0},{a.Velocity.Y:0}) hp {a.Hp:0}/{a.S[Stat.MaxHp]:0} floor {a.IsOnFloor()} {bot} cards [{cards}]");
+        }
+    }
 
     private void SimNextMatch()
     {
@@ -422,9 +439,24 @@ public partial class Main : Node
     public override void _PhysicsProcess(double delta)
     {
         if (_autoMode == null) return;
+        if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
+        {
+            _battleFrames++;
+            if (_battleFrames % (60 * 60) == 0) LogStall("long battle");
+            if (_battleCap > 0 && _battleFrames > _battleCap * 60)
+            {
+                LogStall("battle cap");
+                Log.Info("SIMULATE match timed out, abandoning it (saved as incomplete)");
+                _frames = 0;
+                _battleFrames = 0;
+                SimMatchEnded(-1);
+                return;
+            }
+        }
         if (++_frames > AutotestMaxFrames)
         {
             if (_autoMode != "sim") { Finish(1, "timed out before the match ended"); return; }
+            LogStall("match timeout");
             Log.Info("SIMULATE match timed out, abandoning it (saved as incomplete)");
             _frames = 0;
             SimMatchEnded(-1);

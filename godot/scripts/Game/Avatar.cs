@@ -112,9 +112,63 @@ public partial class Avatar : CharacterBody2D
         {
             Weapon(f, dt);
             Block(blockPressed, dt);
+            Unwedge(dt);
             if (!Frozen) Passives(dt);
         }
         Animate(dt);
+    }
+
+    private float _wedgedT;
+    private Vector2 _wedgedAt;
+
+    /// <summary>
+    /// Host: a body can end up a fraction of a pixel inside a gap shorter than itself (a Giant is 32.4 px tall, many
+    /// shelves leave 32), where the physics can push it out neither up nor down and it never moves again. If we've
+    /// overlapped the map without moving for a moment, pop out to the nearest free spot.
+    /// </summary>
+    private void Unwedge(float dt)
+    {
+        var map = Game.Map;
+        if (map == null) return;
+        var hs = HalfSize - new Vector2(0.01f, 0.01f);
+        if (GlobalPosition.DistanceTo(_wedgedAt) > 0.5f || !Squeezed(map, GlobalPosition, hs))
+        {
+            _wedgedAt = GlobalPosition;
+            _wedgedT = 0;
+            return;
+        }
+        _wedgedT += dt;
+        if (_wedgedT < 0.3f) return;
+        _wedgedT = 0;
+        for (int d = 1; d <= 64; d++)
+            foreach (var off in new[] { new Vector2(d, 0), new Vector2(-d, 0), new Vector2(0, -d), new Vector2(0, d) })
+                if (!OverlapsMap(map, GlobalPosition + off, hs + Vector2.One))
+                {
+                    GlobalPosition += off;
+                    return;
+                }
+    }
+
+    /// <summary>Overlapping solids on opposite sides (above and below, or left and right): pinched, not just resting.</summary>
+    private static bool Squeezed(MapLayout map, Vector2 c, Vector2 hs)
+    {
+        bool up = false, down = false, left = false, right = false;
+        foreach (var r in map.Solids)
+        {
+            if (!(c.X + hs.X > r.X && c.X - hs.X < r.Right && c.Y + hs.Y > r.Y && c.Y - hs.Y < r.Bottom)) continue;
+            if (r.Bottom < c.Y) up = true;
+            if (r.Y > c.Y) down = true;
+            if (r.Right < c.X) left = true;
+            if (r.X > c.X) right = true;
+        }
+        return (up && down) || (left && right);
+    }
+
+    private static bool OverlapsMap(MapLayout map, Vector2 c, Vector2 hs)
+    {
+        foreach (var r in map.Solids)
+            if (c.X + hs.X > r.X && c.X - hs.X < r.Right && c.Y + hs.Y > r.Y && c.Y - hs.Y < r.Bottom) return true;
+        return false;
     }
 
     /// <summary>Host: per-tick card effects that aren't tied to an input (regeneration, Leech Field).</summary>
