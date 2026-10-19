@@ -132,7 +132,7 @@ public partial class Backdrop : Node2D
         _t += (float)delta;
         _glow.QueueRedraw();
         _motesLayer.QueueRedraw();
-        if (Theme.Skyline == Skyline.City) _land.QueueRedraw();
+        // The land layer (silhouettes and lit windows) is static: it only redraws when the theme changes.
     }
 
     public override void _Draw()
@@ -183,9 +183,9 @@ public partial class Backdrop : Node2D
     {
         foreach (var (r, kind, phase, isFar) in _windows)
         {
-            if (isFar != far || Mathf.Sin(_t * 0.3f + phase) < -0.85f) continue;
+            if (isFar != far || Mathf.Sin(phase) < -0.85f) continue; // a few windows stay dark
             var c = kind == 0 ? Theme.MoteA : Theme.MoteB;
-            l.DrawColoredPolygon(Shapes.RoundRect(r, 0.6f, 2), c with { A = far ? 0.3f : 0.55f });
+            l.DrawRect(r, c with { A = far ? 0.3f : 0.55f });
         }
     }
 

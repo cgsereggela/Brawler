@@ -20,6 +20,7 @@ public static class CardEffects
     public static ICardEffect Create(string id) => id switch
     {
         "blink" => new BlinkEffect(),
+        "dash" => new DashEffect(),
         _ => null,
     };
 }
@@ -43,5 +44,17 @@ public sealed class BlinkEffect : ICardEffect
         var to = from + delta * Mathf.Max(0, t - 0.02f);
         self.GlobalPosition = to;
         game.HostFx(FxKind.Blink, from, 0, self.Player.Slot, to);
+    }
+}
+
+/// <summary>Blocking dashes you toward your cursor (the block still protects you during the dash).</summary>
+public sealed class DashEffect : ICardEffect
+{
+    public void OnBlock(Avatar self, GameManager game)
+    {
+        if (self.Player.Effects.Find(e => e is DashEffect) != this) return;
+        var dir = self.AimDir;
+        self.Launch(dir * self.S[Stat.Dash] + new Vector2(0, -40), 0.2f);
+        game.HostFx(FxKind.Blink, self.GlobalPosition, 0, self.Player.Slot, self.GlobalPosition + dir * 20);
     }
 }

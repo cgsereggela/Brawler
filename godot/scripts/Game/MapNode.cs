@@ -23,7 +23,8 @@ public partial class MapNode : Node2D
     private float _t;
     private float[] _padFlash = Array.Empty<float>();
     private Node2D _bodies;
-    private DrawLayer _solids, _glow;
+    // Static layers are drawn once per arena; only the small animated layers redraw every frame.
+    private DrawLayer _solids, _glow, _anim, _animGlow;
     private readonly List<(Vector2 P, float Size, int Kind, float Phase, bool Below)> _decos = new();
 
     public override void _Ready()
@@ -36,6 +37,10 @@ public partial class MapNode : Node2D
         _glow = new DrawLayer(DrawGlow, additive: true);
         AddChild(_solids);
         AddChild(_glow);
+        _anim = new DrawLayer(DrawAnim);
+        _animGlow = new DrawLayer(DrawAnimGlow, additive: true);
+        AddChild(_anim);
+        AddChild(_animGlow);
     }
 
     public void Build(MapLayout layout)
@@ -58,7 +63,12 @@ public partial class MapNode : Node2D
         }
         _solids.QueueRedraw();
         _glow.QueueRedraw();
+        _anim.QueueRedraw();
+        _animGlow.QueueRedraw();
     }
+
+    /// <summary>Decorations that sway or pulse redraw every frame; the rest are baked into the static layers.</summary>
+    private bool DecoAnimated => Theme.Deco is Deco.Grass or Deco.Weeds or Deco.Mushrooms or Deco.Cracks;
 
     private static bool IsBorder(RectI r) => r.X <= 0 || r.Y <= 0 || r.Right >= MapLayout.Width;
 
@@ -107,8 +117,8 @@ public partial class MapNode : Node2D
                 }
             }
         }
-        _solids.QueueRedraw();
-        _glow.QueueRedraw();
+        _anim.QueueRedraw();
+        _animGlow.QueueRedraw();
     }
 
     // ---------- drawing ----------
@@ -138,7 +148,15 @@ public partial class MapNode : Node2D
                     l.DrawLine(new Vector2(r.X + 3, y), new Vector2(r.Right - 3, y), t.Block.Darkened(0.2f) with { A = 0.6f }, 1, true);
         }
 
-        foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
+        if (!DecoAnimated)
+            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
+    }
+
+    private void DrawAnim(DrawLayer l)
+    {
+        if (Layout == null) return;
+        if (DecoAnimated)
+            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
 
         // Jump pad bases.
         for (int i = 0; i < Layout.Pads.Count; i++)
@@ -147,7 +165,7 @@ public partial class MapNode : Node2D
             var plate = new Rect2(p.X1, p.Y - 4, p.X2 - p.X1, 4);
             Shapes.Fill(l, Shapes.RoundRect(plate, 2), new Color("#2b2f45"), new Color("#11131c"), 0.8f);
             l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(p.X1 + 3, p.Y - 5.5f, p.X2 - p.X1 - 6, 2.2f), 1.1f),
-                Shapes.Hdr(t.Edge, 1.2f + _padFlash[i] * 2));
+                Shapes.Hdr(Theme.Edge, 1.2f + _padFlash[i] * 2));
         }
     }
 
@@ -168,7 +186,16 @@ public partial class MapNode : Node2D
             l.DrawTextureRect(GlowTex.Tex, new Rect2(r.X - 6, r.Y - 9, r.W + 12, 18), false, t.Edge with { A = 0.22f });
         }
 
-        foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: true);
+        if (!DecoAnimated)
+            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: true);
+    }
+
+    private void DrawAnimGlow(DrawLayer l)
+    {
+        if (Layout == null) return;
+        var t = Theme;
+        if (DecoAnimated)
+            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: true);
 
         for (int i = 0; i < Layout.Pads.Count; i++)
         {

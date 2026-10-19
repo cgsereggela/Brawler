@@ -67,6 +67,7 @@ public partial class FxLayer : Node2D
     private readonly List<Rays> _rays = new();
     private readonly List<Glow> _glows = new();
     private readonly List<Text> _texts = new();
+    private readonly List<(Vector2[] Pts, Color Color, float Life, float MaxLife)> _bolts = new();
     private readonly RandomNumberGenerator _rng = new();
     private Color _screenColor;
     private float _screenLife, _screenMax;
@@ -148,6 +149,7 @@ public partial class FxLayer : Node2D
         _rays.Clear();
         _glows.Clear();
         _texts.Clear();
+        _bolts.Clear();
         _screenLife = 0;
     }
 
@@ -181,6 +183,13 @@ public partial class FxLayer : Node2D
         Tick(_rings, dt, (ref Ring r, float d) => { if (r.Delay > 0) r.Delay -= d; else r.Life -= d; return r.Life > 0; });
         Tick(_rays, dt, (ref Rays r, float d) => { r.Life -= d; r.Rot += d * 0.6f; return r.Life > 0; });
         Tick(_glows, dt, (ref Glow g, float d) => { g.Life -= d; return g.Life > 0; });
+        for (int i = _bolts.Count - 1; i >= 0; i--)
+        {
+            var b = _bolts[i];
+            b.Life -= dt;
+            if (b.Life <= 0) _bolts.RemoveAt(i);
+            else _bolts[i] = b;
+        }
         Tick(_texts, dt, (ref Text t, float d) =>
         {
             t.Life -= d;
@@ -247,12 +256,33 @@ public partial class FxLayer : Node2D
         }
     }
 
+    /// <summary>A jagged lightning bolt between two points.</summary>
+    public void Bolt(Vector2 from, Vector2 to, Color color, float life = 0.25f)
+    {
+        int n = Mathf.Clamp((int)(from.DistanceTo(to) / 10), 3, 24);
+        var normal = (to - from).Normalized().Orthogonal();
+        var pts = new Vector2[n + 1];
+        for (int i = 0; i <= n; i++)
+        {
+            float t = i / (float)n;
+            float jag = i == 0 || i == n ? 0 : _rng.RandfRange(-7f, 7f);
+            pts[i] = from.Lerp(to, t) + normal * jag;
+        }
+        _bolts.Add((pts, color, life, life));
+    }
+
     private void DrawAdditive(DrawLayer l)
     {
         foreach (var g in _glows)
         {
             float k = g.Life / g.MaxLife;
             GlowTex.Draw(l, g.Pos, g.Radius * (1.2f - 0.4f * k), g.Color with { A = k * k });
+        }
+        foreach (var b in _bolts)
+        {
+            float k = b.Life / b.MaxLife;
+            l.DrawPolyline(b.Pts, b.Color with { A = 0.5f * k }, 4f, true);
+            l.DrawPolyline(b.Pts, Shapes.Hdr(Colors.White, 1.8f) with { A = k }, 1.3f, true);
         }
         foreach (var r in _rays)
         {

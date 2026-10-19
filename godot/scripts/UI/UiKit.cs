@@ -173,9 +173,9 @@ public static class UiKit
 
     public static Color CategoryColor(CardCategory c) => c switch
     {
-        CardCategory.Bullet => new Color("#ff8a3d"),
+        CardCategory.Gun => new Color("#ff8a3d"),
         CardCategory.Body => new Color("#4ef08a"),
-        CardCategory.Weapon => new Color("#3db4ff"),
+        CardCategory.Movement => new Color("#3db4ff"),
         _ => new Color("#c46cff"),
     };
 

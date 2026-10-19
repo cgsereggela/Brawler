@@ -36,6 +36,33 @@ public enum Stat
     SplitCount,
     Knockback,
     Lifetime,
+    // Movement
+    AirJumps,        // extra jumps in mid-air
+    Accel,           // multiplier on ground/air acceleration
+    WallJump,        // multiplier on wall-jump height (and slower wall slides)
+    Glide,           // 1 = holding jump caps fall speed
+    Jetpack,         // seconds of thrust per landing
+    Dash,            // block dashes this far (px/s burst)
+    // Body
+    Armor,           // fraction of incoming damage ignored
+    Regen,           // HP per second
+    KnockbackTaken,  // multiplier on knockback received
+    ExtraLives,      // revives per battle
+    Thorns,          // fraction of damage taken reflected to the attacker
+    Adrenaline,      // speed and fire-rate bonus while under 40% HP
+    // Chaos
+    Recoil,          // firing pushes you backward
+    Boomerang,       // 1 = bullets fly back to you
+    Phase,           // 1 = bullets pass through walls
+    Sticky,          // seconds a bullet sits as a mine after hitting a wall
+    Guided,          // turn rate toward your crosshair
+    Chain,           // fraction of hit damage that arcs to the next enemy
+    Berserk,         // extra damage at low HP (up to this fraction)
+    Wild,            // 1 = every bullet gets random size, speed and damage
+    Leech,           // damage per second to enemies near you (healing you)
+    Kamikaze,        // explosion radius when you die
+    Pinball,         // 1 = your body bounces off surfaces
+    Warp,            // 1 = you teleport to where your bullets land
 }
 
 public enum ModOp { Add, Mul }
@@ -87,6 +114,9 @@ public sealed class StatBlock
         b[Stat.SplitCount] = 0;
         b[Stat.Knockback] = 140;
         b[Stat.Lifetime] = 4f;
+        b[Stat.Accel] = 1;
+        b[Stat.WallJump] = 1;
+        b[Stat.KnockbackTaken] = 1;
         return b;
     }
 
@@ -124,5 +154,12 @@ public sealed class StatBlock
         b[Stat.Damage] = MathF.Max(1, b[Stat.Damage]);
         b[Stat.BulletRadius] = Math.Clamp(b[Stat.BulletRadius], 1, 14);
         b[Stat.SplitCount] = Math.Clamp(b[Stat.SplitCount], 0, 12);
+        b[Stat.JumpVelocity] = Math.Clamp(b[Stat.JumpVelocity], 150, 720);
+        b[Stat.AirJumps] = Math.Clamp(b[Stat.AirJumps], 0, 5);
+        b[Stat.Accel] = Math.Clamp(b[Stat.Accel], 0.2f, 4f);
+        b[Stat.Armor] = Math.Clamp(b[Stat.Armor], 0, 0.75f);
+        b[Stat.KnockbackTaken] = Math.Clamp(b[Stat.KnockbackTaken], 0.1f, 4f);
+        b[Stat.Thorns] = Math.Clamp(b[Stat.Thorns], 0, 1.5f);
+        b[Stat.Lifetime] = Math.Clamp(b[Stat.Lifetime], 0.5f, 8f);
     }
 }

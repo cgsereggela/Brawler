@@ -203,7 +203,7 @@ public partial class CardView : Control
         float spin = _t * 0.8f;
         switch (_card.Category)
         {
-            case CardCategory.Bullet:
+            case CardCategory.Gun:
                 for (int i = 3; i >= 1; i--)
                     DrawCircle(c + new Vector2(-i * 9, 0), 6 - i * 1.2f, ink with { A = 0.25f * (4 - i) }, true, -1, true);
                 DrawCircle(c + new Vector2(2, 2), 10, shadow, true, -1, true);
@@ -223,16 +223,21 @@ public partial class CardView : Control
                 DrawColoredPolygon(pts, ink);
                 break;
             }
-            case CardCategory.Weapon:
-                DrawArc(c + new Vector2(2, 2), 13, 0, Mathf.Tau, 40, shadow, 3.5f, true);
-                DrawArc(c, 13, 0, Mathf.Tau, 40, ink, 3.5f, true);
-                for (int i = 0; i < 4; i++)
+            case CardCategory.Movement:
+            {
+                // A bouncing double chevron with speed lines.
+                float hop = Mathf.Abs(Mathf.Sin(_t * 3)) * -4;
+                for (int k = 0; k < 2; k++)
                 {
-                    var d = Vector2.FromAngle(i * Mathf.Pi / 2 + spin * 0.3f);
-                    DrawLine(c + d * 6, c + d * 19, ink, 3f, true);
+                    var o = c + new Vector2(-4 + k * 11, hop);
+                    var chev = new[] { o + new Vector2(-6, -12), o + new Vector2(6, 0), o + new Vector2(-6, 12) };
+                    DrawPolyline(Shapes.Offset(chev, new Vector2(2, 2)), shadow, 4.5f, true);
+                    DrawPolyline(chev, ink with { A = k == 0 ? 0.6f : 0.95f }, 4.5f, true);
                 }
-                DrawCircle(c, 2.5f, ink, true, -1, true);
+                for (int i = 0; i < 3; i++)
+                    DrawLine(c + new Vector2(-24, -7 + i * 7 + hop), c + new Vector2(-14 + (i % 2) * 3, -7 + i * 7 + hop), ink with { A = 0.5f }, 2f, true);
                 break;
+            }
             default:
                 DrawColoredPolygon(Shapes.Star(c + new Vector2(2, 2), 17, 7, 5, spin - Mathf.Pi / 2), shadow);
                 DrawColoredPolygon(Shapes.Star(c, 17, 7, 5, spin - Mathf.Pi / 2), ink);

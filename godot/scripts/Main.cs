@@ -20,6 +20,8 @@ namespace Brawler;
 ///   --players=A[-B]       player count (or range) per simulated match, default 2-4
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
+///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
+///                         cards to each player every battle, to exercise the whole card pool
 /// </summary>
 public partial class Main : Node
 {
@@ -179,6 +181,23 @@ public partial class Main : Node
 
     // ---------- automated test modes ----------
 
+    private void ParseDebugCards(string spec)
+    {
+        if (spec.StartsWith("random:") && int.TryParse(spec["random:".Length..], out int n))
+        {
+            _game.DebugCards = slot =>
+            {
+                var hand = new System.Collections.Generic.List<int>();
+                for (int i = 0; i < n; i++) hand.Add(CardRegistry.All[(int)(GD.Randi() % (uint)CardRegistry.All.Count)].Id);
+                Log.Info($"P{slot} cards: {string.Join(", ", hand.Select(id => CardRegistry.Get(id).Name))}");
+                return hand;
+            };
+            return;
+        }
+        var ids = spec.Split(',').Select(s => int.TryParse(s, out int id) ? id : -1).Where(id => CardRegistry.Get(id) != null).ToList();
+        _game.DebugCards = _ => new System.Collections.Generic.List<int>(ids);
+    }
+
     private void HandleCommandLine()
     {
         var args = OS.GetCmdlineUserArgs();
@@ -188,6 +207,7 @@ public partial class Main : Node
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
+            else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
             else if (a.StartsWith("--players="))
             {
                 var r = a["--players=".Length..].Split('-');
@@ -253,6 +273,42 @@ public partial class Main : Node
                 _game.Stats.Mode = "sim";
                 Log.Info($"SIMULATE {_simTotal} matches, {_simMin}-{_simMax} players → {ProjectSettings.GlobalizePath(_game.Stats.FilePath)}");
                 SimNextMatch();
+            }
+            else if (a == "--themebench")
+            {
+                // Average frame time for each arena theme (windowed, vsync off), with bots fighting. Prints and quits.
+                _autoMode = "bench";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var tree = GetTree();
+                int theme = 0;
+                void Next()
+                {
+                    if (theme >= ArenaTheme.All.Length) { tree.Quit(0); return; }
+                    int seed = 1;
+                    while (ArenaTheme.ForSeed(seed) != ArenaTheme.All[theme]) seed++;
+                    _game.MapNode.Build(MapGenerator.Generate(seed, 4));
+                    var name = ArenaTheme.All[theme].Name;
+                    theme++;
+                    tree.CreateTimer(0.5, true, false, true).Timeout += () =>
+                    {
+                        ulong t0 = Time.GetTicksUsec(), f0 = Engine.GetProcessFrames();
+                        tree.CreateTimer(3.0, true, false, true).Timeout += () =>
+                        {
+                            double ms = (Time.GetTicksUsec() - t0) / 1000.0 / Mathf.Max(1, Engine.GetProcessFrames() - f0);
+                            Log.Info($"BENCH {name,-13} {ms:0.00} ms/frame ({1000 / ms:0} fps)");
+                            Next();
+                        };
+                    };
+                }
+                tree.CreateTimer(3.0, true, false, true).Timeout += Next;
             }
             else if (a == "--fxshots" && _shotDir != null)
             {

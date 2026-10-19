@@ -19,6 +19,8 @@ public enum Flavor
     Shotgun = 1 << 8,
     Feather = 1 << 9,
     Burst = 1 << 10,
+    Electric = 1 << 11,
+    Ghost = 1 << 12,
 }
 
 /// <summary>
@@ -35,7 +37,9 @@ public sealed class FxStyle
     {
         [1] = Flavor.Bouncy, [2] = Flavor.Big, [3] = Flavor.Pierce, [4] = Flavor.Split, [5] = Flavor.Homing,
         [6] = Flavor.Fire, [8] = Flavor.Feather, [10] = Flavor.Shotgun, [12] = Flavor.Burst, [14] = Flavor.Vampire,
-        [16] = Flavor.Glass,
+        [16] = Flavor.Glass, [25] = Flavor.Feather, [31] = Flavor.Burst, [32] = Flavor.Shotgun, [33] = Flavor.Shotgun,
+        [36] = Flavor.Big, [37] = Flavor.Big, [39] = Flavor.Bouncy, [55] = Flavor.Shotgun, [56] = Flavor.Feather,
+        [58] = Flavor.Ghost, [59] = Flavor.Fire, [63] = Flavor.Electric, [68] = Flavor.Homing, [69] = Flavor.Vampire,
     };
 
     public int Power { get; }

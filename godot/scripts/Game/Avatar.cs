@@ -63,6 +63,9 @@ public partial class Avatar : CharacterBody2D
     public bool BlockReady => BlockCd <= 0;
 
     private float _coyote, _wallCoyote, _jumpBuffer, _wallJumpLock;
+    private int _airJumpsLeft, _livesUsed;
+    private float _fuel, _leechT;
+    private bool _jetting;
     private float _wallNormalX;
     private int _lastJump = -1, _lastBlock = -1;
     private float _fireCd, _reloadT, _idleT, _burstT;
@@ -109,8 +112,55 @@ public partial class Avatar : CharacterBody2D
         {
             Weapon(f, dt);
             Block(blockPressed, dt);
+            if (!Frozen) Passives(dt);
         }
         Animate(dt);
+    }
+
+    /// <summary>Host: per-tick card effects that aren't tied to an input (regeneration, Leech Field).</summary>
+    private void Passives(float dt)
+    {
+        float regen = S[Stat.Regen];
+        if (regen > 0 && Hp < S[Stat.MaxHp]) Heal(regen * dt);
+        float leech = S[Stat.Leech];
+        if (leech > 0)
+        {
+            _leechT -= dt;
+            if (_leechT <= 0)
+            {
+                const float Pulse = 0.33f;
+                _leechT = Pulse;
+                Game.HostLeech(this, leech * Pulse);
+            }
+        }
+    }
+
+    /// <summary>Under 40% HP with Adrenaline: the bonus (e.g. 0.5 = +50%), else 0. Hp is replicated, so clients agree.</summary>
+    public float Rage => S[Stat.Adrenaline] > 0 && Hp < S[Stat.MaxHp] * 0.4f ? S[Stat.Adrenaline] : 0;
+
+    /// <summary>Host: Second Wind. Brings a lethal hit back to half HP if a revive is left.</summary>
+    public bool TryRevive()
+    {
+        if (_livesUsed >= S.Int(Stat.ExtraLives)) return false;
+        _livesUsed++;
+        Hp = S[Stat.MaxHp] * 0.5f;
+        return true;
+    }
+
+    /// <summary>Recoil Jet: each bullet pushes the shooter back (split across a multi-bullet volley).</summary>
+    public void ApplyRecoil(Vector2 shotDir)
+    {
+        float recoil = S[Stat.Recoil];
+        if (recoil <= 0 || Frozen) return;
+        var v = Velocity - shotDir * recoil / Mathf.Max(1, S[Stat.Projectiles]);
+        Velocity = v.LimitLength(620);
+    }
+
+    /// <summary>Sets velocity and briefly reduces steering, so a dash or launch carries.</summary>
+    public void Launch(Vector2 velocity, float lockTime)
+    {
+        Velocity = velocity;
+        _wallJumpLock = lockTime;
     }
 
     private static bool Edge(ref int last, byte value)
@@ -124,10 +174,15 @@ public partial class Avatar : CharacterBody2D
     {
         var v = Velocity;
         float g = S[Stat.Gravity];
-        float speed = S[Stat.MoveSpeed];
+        float speed = S[Stat.MoveSpeed] * (1 + Rage);
         bool onFloor = IsOnFloor();
         bool onWall = IsOnWallOnly();
 
+        if (onFloor || onWall)
+        {
+            _airJumpsLeft = S.Int(Stat.AirJumps);
+            _fuel = S[Stat.Jetpack];
+        }
         if (onFloor) _coyote = CoyoteTime; else _coyote -= dt;
         if (onWall)
         {
@@ -139,14 +194,24 @@ public partial class Avatar : CharacterBody2D
         _wallJumpLock -= dt;
 
         float control = _wallJumpLock > 0 ? 0.25f : 1f;
-        float accel = (onFloor ? 1500f : 950f) * control;
+        float accel = (onFloor ? 1500f : 950f) * control * S[Stat.Accel];
         v.X = Mathf.MoveToward(v.X, f.MoveX * speed, accel * dt);
 
         v.Y += g * dt;
-        if (!f.JumpHeld && v.Y < 0) v.Y += g * 1.2f * dt; // short hop on release
+        if (!f.JumpHeld && v.Y < 0 && !_jetting) v.Y += g * 1.2f * dt; // short hop on release
         bool pushingWall = onWall && f.MoveX * _wallNormalX < -0.1f;
-        if (pushingWall && !onFloor && v.Y > WallSlideSpeed) v.Y = WallSlideSpeed;
+        float slide = WallSlideSpeed / S[Stat.WallJump];
+        if (pushingWall && !onFloor && v.Y > slide) v.Y = slide;
+        if (S[Stat.Glide] > 0 && !onFloor && f.JumpHeld && v.Y > 50) v.Y = 50; // Glider
         v.Y = Mathf.Min(v.Y, MaxFall);
+
+        // Jetpack: once armed by a mid-air jump press, holding jump thrusts upward until the fuel runs out.
+        if (!f.JumpHeld || _fuel <= 0 || onFloor) _jetting = false;
+        if (_jetting)
+        {
+            _fuel -= dt;
+            v.Y = Mathf.MoveToward(v.Y, -210, 2200 * dt);
+        }
 
         if (_jumpBuffer > 0)
         {
@@ -160,12 +225,24 @@ public partial class Avatar : CharacterBody2D
             }
             else if (_wallCoyote > 0)
             {
-                v.Y = -jv * 0.95f;
+                v.Y = -jv * 0.95f * S[Stat.WallJump];
                 v.X = _wallNormalX * speed * 1.5f;
                 _wallCoyote = 0;
                 _jumpBuffer = 0;
                 _wallJumpLock = 0.14f;
                 Game.OnJump(this);
+            }
+            else if (_airJumpsLeft > 0)
+            {
+                v.Y = -jv * 0.9f;
+                _airJumpsLeft--;
+                _jumpBuffer = 0;
+                Game.OnJump(this, air: true);
+            }
+            else if (_fuel > 0 && jumpPressed)
+            {
+                _jetting = true;
+                _jumpBuffer = 0;
             }
         }
 
@@ -178,6 +255,21 @@ public partial class Avatar : CharacterBody2D
 
         Velocity = v;
         MoveAndSlide();
+
+        // Pinball: bounce off whatever we hit hard enough, keeping most of the speed.
+        if (S[Stat.Pinball] > 0)
+        {
+            for (int i = 0; i < GetSlideCollisionCount(); i++)
+            {
+                var n = GetSlideCollision(i).GetNormal();
+                float into = v.Dot(n);
+                if (into > -130) continue;
+                v -= n * into * 1.85f; // reflect with 85% restitution on the normal component
+                Velocity = v;
+                _wallJumpLock = 0.12f;
+                break;
+            }
+        }
     }
 
     private void Weapon(InputFrame f, float dt)
@@ -204,7 +296,7 @@ public partial class Avatar : CharacterBody2D
         if (f.Shoot && _fireCd <= 0 && _burstLeft == 0 && Ammo > 0 && !Reloading)
         {
             Ammo--;
-            _fireCd = S[Stat.FireCooldown];
+            _fireCd = S[Stat.FireCooldown] / (1 + Rage);
             _burstLeft = S.Int(Stat.BurstCount);
             _burstT = 0;
             _idleT = 0;
@@ -236,13 +328,27 @@ public partial class Avatar : CharacterBody2D
         if (n > 1 && spread <= 0) spread = 0.08f * (n - 1);
         float baseAngle = AimDir.Angle();
         var origin = MuzzlePoint();
+        // Berserk: more damage the lower your HP.
+        float rage = 1 + S[Stat.Berserk] * (1 - Mathf.Clamp(Hp / S[Stat.MaxHp], 0, 1));
+        bool wild = S[Stat.Wild] > 0;
         for (int i = 0; i < n; i++)
         {
             float t = n == 1 ? 0.5f : i / (float)(n - 1);
             float jitter = n > 1 ? Game.HostRng.Range(-0.03f, 0.03f) : 0;
             float a = baseAngle + (t - 0.5f) * spread + jitter;
             var dir = Vector2.FromAngle(a);
-            Game.HostSpawnBullet(BulletSystem.FromStats(Player.Slot, origin, dir * S[Stat.BulletSpeed], S));
+            var b = BulletSystem.FromStats(Player.Slot, origin, dir * S[Stat.BulletSpeed], S);
+            b.Damage *= rage;
+            if (wild)
+            {
+                // Wild Rounds: big ones are slow and hit hard, small ones are quick.
+                float size = Game.HostRng.Range(0.4f, 2.8f);
+                b.Radius = Mathf.Clamp(b.Radius * size, 1, 14);
+                b.Vel *= Game.HostRng.Range(0.55f, 1.6f) / Mathf.Sqrt(size);
+                b.Damage *= Game.HostRng.Range(0.6f, 1.3f) * Mathf.Sqrt(size);
+                b.Knockback *= size;
+            }
+            Game.HostSpawnBullet(b);
         }
     }
 
@@ -343,6 +449,39 @@ public partial class Avatar : CharacterBody2D
         QueueRedraw();
     }
 
+    /// <summary>Visible tells for cards that change how a player works (everyone can read them at a glance).</summary>
+    private void DrawCardAuras(float size)
+    {
+        float leech = S[Stat.Leech];
+        if (leech > 0)
+        {
+            float r = 44 * size + 10;
+            var red = new Color("#ff2a4a");
+            GlowTex.Draw(this, Vector2.Zero, r * 1.1f, red with { A = 0.12f });
+            float spin = _animT * 1.5f;
+            for (int i = 0; i < 12; i++)
+            {
+                float a0 = spin + i * Mathf.Tau / 12;
+                DrawArc(Vector2.Zero, r, a0, a0 + 0.3f, 4, Shapes.Hdr(red, 1.3f) with { A = 0.55f }, 1.2f, true);
+            }
+        }
+        if (Rage > 0)
+        {
+            float pulse = 0.5f + 0.5f * Mathf.Sin(_animT * 12);
+            GlowTex.Draw(this, Vector2.Zero, 30 * size, new Color("#ff3d3d") with { A = 0.25f + 0.25f * pulse });
+        }
+        // Jetpack flame: from the local sim, or (for remote players) the steady climb the thrust settles at.
+        bool thrust = _jetting || (S[Stat.Jetpack] > 0 && Mathf.Abs(Velocity.Y + 210) < 8);
+        if (thrust)
+        {
+            var nozzle = new Vector2(-_facing * HalfSize.X * 0.6f, HalfSize.Y * 0.4f);
+            float flick = 0.8f + 0.2f * Mathf.Sin(_animT * 40);
+            var flame = new[] { nozzle + new Vector2(-2.5f, 0), nozzle + new Vector2(2.5f, 0), nozzle + new Vector2(0, 11 * flick * size) };
+            GlowTex.Draw(this, nozzle + new Vector2(0, 5), 10 * size, new Color("#ffa33b") with { A = 0.6f });
+            DrawColoredPolygon(flame, Shapes.Hdr(new Color("#ffb347"), 1.6f));
+        }
+    }
+
     public override void _Draw()
     {
         if (!Alive) return;
@@ -367,6 +506,7 @@ public partial class Avatar : CharacterBody2D
         };
         // A soft aura in the player color keeps characters readable on any backdrop.
         GlowTex.Draw(this, Vector2.Zero, 22 * size, Player.Color with { A = 0.22f });
+        DrawCardAuras(size);
         AvatarArt.Draw(this, Vector2.Zero, pose);
 
         var hs = HalfSize;

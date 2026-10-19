@@ -47,6 +47,30 @@ void Check(bool cond, string name, string detail = "")
 
     Check(CardRegistry.All.Select(c => c.Id).Distinct().Count() == CardRegistry.All.Count, "Card ids are unique");
     Check(CardRegistry.All.Count >= 15, "At least 15 cards", $"{CardRegistry.All.Count}");
+    foreach (var cat in Enum.GetValues<CardCategory>())
+    {
+        int n = CardRegistry.All.Count(c => c.Category == cat);
+        Check(n >= 12, $"At least 12 {cat} cards", $"{n}");
+    }
+
+    var oneShot = StatBlock.Compute(new[] { CardRegistry.Get(13), CardRegistry.Get(42), CardRegistry.Get(65) });
+    Check(oneShot.Int(Stat.Ammo) == 1, "One Shot leaves exactly 1 ammo even with ammo cards", $"{oneShot.Int(Stat.Ammo)}");
+    var hell = StatBlock.Compute(new[] { CardRegistry.Get(55) });
+    Check(hell.Int(Stat.Projectiles) == 12, "Bullet Hell fires 12 bullets", $"{hell.Int(Stat.Projectiles)}");
+    var giant = StatBlock.Compute(Enumerable.Repeat(CardRegistry.Get(43), 3));
+    Check(giant[Stat.Size] <= 2.5f && giant[Stat.MoveSpeed] >= 40, "Stacked Giants stay inside size and speed clamps", $"{giant[Stat.Size]} / {giant[Stat.MoveSpeed]}");
+    var armor = StatBlock.Compute(Enumerable.Repeat(CardRegistry.Get(48), 4));
+    Check(armor[Stat.Armor] <= 0.75f, "Armor is capped so nobody is invulnerable", $"{armor[Stat.Armor]}");
+    var jumps = StatBlock.Compute(new[] { CardRegistry.Get(18), CardRegistry.Get(19) });
+    Check(jumps.Int(Stat.AirJumps) == 3, "Air jumps stack", $"{jumps.Int(Stat.AirJumps)}");
+    var upside = StatBlock.Compute(new[] { CardRegistry.Get(56) });
+    Check(upside[Stat.BulletGravity] < 0, "Upside Down makes bullet gravity negative", $"{upside[Stat.BulletGravity]}");
+    foreach (var c in CardRegistry.All)
+    {
+        var s = StatBlock.Compute(new[] { c });
+        Check(s[Stat.MaxHp] >= 10 && s[Stat.Damage] >= 1 && s[Stat.BulletSpeed] >= 60 && s[Stat.FireCooldown] > 0,
+            $"{c.Name} keeps core stats sane");
+    }
 
     var opts = CardRegistry.RollOptions(new Rng(1), 5);
     Check(opts.Distinct().Count() == 5, "Rolled card options are distinct");

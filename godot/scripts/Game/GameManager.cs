@@ -11,7 +11,7 @@ namespace Brawler.Game;
 
 public enum Phase { Idle, Countdown, Fighting, Intermission, CardPick, MatchOver }
 
-public enum FxKind { Explosion, Block, Blocked, Blink }
+public enum FxKind { Explosion, Block, Blocked, Blink, Zap, Revive }
 
 /// <summary>
 /// Match flow and the battle simulation. The host is authoritative: it runs every avatar, resolves hits,
@@ -113,9 +113,13 @@ public partial class GameManager : Node2D
 
     public bool IsBotPlayer(MatchPlayer p) => p.Info.IsBot || (p == LocalMatchPlayer && AutopilotLocal);
 
+    /// <summary>The live avatar in a slot, or null.</summary>
+    public Avatar AvatarOf(int slot) =>
+        slot >= 0 && slot < Slots.Length && Slots[slot]?.Avatar is { Alive: true } a && !Slots[slot].Left ? a : null;
+
     public string NameOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.Name : "?";
 
-    private bool IsHost => Net.IsHost;
+    public bool IsHost => Net.IsHost;
     private bool Networked => Net.Mode is NetMode.Host or NetMode.Client;
 
     // =====================================================================
@@ -424,15 +428,20 @@ public partial class GameManager : Node2D
         if (Net.Mode == NetMode.Host) Rpc(MethodName.BulletGone, b.Id, b.Pos, impact);
     }
 
-    public void HostDamage(Avatar victim, float damage, Vector2 knockback, int attackerSlot, Vector2 at)
+    /// <param name="reflected">Thorns damage: never reflected again (so two Thorns players can't loop).</param>
+    public void HostDamage(Avatar victim, float damage, Vector2 knockback, int attackerSlot, Vector2 at, bool reflected = false)
     {
         float hpBefore = victim.Hp;
+        damage *= 1f - victim.S[Stat.Armor];
+        knockback *= victim.S[Stat.KnockbackTaken];
         if (!victim.TakeHit(damage, knockback))
         {
             if (victim.Alive) Stats.HitBlocked(victim.Player.Slot);
             HostBlocked(victim, at);
             return;
         }
+        if (victim.Hp <= 0 && victim.TryRevive())
+            HostFx(FxKind.Revive, victim.GlobalPosition, 0, victim.Player.Slot, victim.GlobalPosition);
         if (attackerSlot >= 0 && attackerSlot != victim.Player.Slot)
         {
             victim.LastHitBy = attackerSlot;
@@ -453,6 +462,74 @@ public partial class GameManager : Node2D
         }
         Rpc(MethodName.Damaged, victim.Player.Slot, victim.Hp, knockback, at, damage, attackerSlot);
         if (victim.Hp <= 0) HostKill(victim, KillCause.Shot, attackerSlot);
+
+        float thorns = victim.S[Stat.Thorns];
+        if (!reflected && thorns > 0 && attacker != null && attacker != victim && attacker.Alive)
+            HostDamage(attacker, damage * thorns, Vector2.Zero, victim.Player.Slot, attacker.GlobalPosition, reflected: true);
+    }
+
+    /// <summary>Chain Lightning: a hit arcs to the nearest other enemy.</summary>
+    public void HostChain(Avatar victim, float damage, int ownerSlot)
+    {
+        var owner = ownerSlot >= 0 && ownerSlot < Slots.Length ? Slots[ownerSlot] : null;
+        float chain = owner?.Stats[Stat.Chain] ?? 0;
+        if (chain <= 0) return;
+        Avatar next = null;
+        float best = 150f;
+        foreach (var a in LiveAvatars())
+        {
+            if (a == victim || a.Player.Slot == ownerSlot) continue;
+            float d = a.GlobalPosition.DistanceTo(victim.GlobalPosition);
+            if (d < best) { best = d; next = a; }
+        }
+        if (next == null) return;
+        HostFx(FxKind.Zap, victim.GlobalPosition, 0, ownerSlot, next.GlobalPosition);
+        var kb = (next.GlobalPosition - victim.GlobalPosition).Normalized() * 60;
+        HostDamage(next, damage * chain, kb, ownerSlot, next.GlobalPosition);
+    }
+
+    /// <summary>Warp Rounds: move the shooter to where the bullet landed, if there's room for them.</summary>
+    public void HostWarp(int ownerSlot, Vector2 at, Vector2 bulletVel)
+    {
+        var a = AvatarOf(ownerSlot);
+        if (a == null || a.S[Stat.Warp] <= 0) return;
+        var back = -bulletVel.Normalized();
+        if (back == Vector2.Zero) back = Vector2.Up;
+        var hs = a.HalfSize + new Vector2(1, 1);
+        for (float d = hs.Length(); d < 48; d += 4)
+        {
+            var p = at + back * d;
+            if (p.X < hs.X || p.X > MapLayout.Width - hs.X || p.Y < hs.Y || p.Y > MapLayout.KillY - 20) continue;
+            var box = new Rect2(p - hs, hs * 2);
+            bool clear = true;
+            foreach (var r in Map.Solids)
+                if (box.Intersects(new Rect2(r.X, r.Y, r.W, r.H))) { clear = false; break; }
+            if (!clear) continue;
+            var from = a.GlobalPosition;
+            a.GlobalPosition = p;
+            a.Velocity = Vector2.Zero;
+            HostFx(FxKind.Blink, from, 0, ownerSlot, p);
+            return;
+        }
+    }
+
+    /// <summary>Leech Field: drain enemies near the avatar (called a few times a second).</summary>
+    public void HostLeech(Avatar a, float amount)
+    {
+        float radius = 44 * a.S[Stat.Size] + 10;
+        foreach (var e in LiveAvatars().ToList())
+        {
+            if (e == a || e.GlobalPosition.DistanceTo(a.GlobalPosition) > radius) continue;
+            float before = e.Hp;
+            HostDamage(e, amount, Vector2.Zero, a.Player.Slot, e.GlobalPosition);
+            float dealt = Mathf.Max(0, before - Mathf.Max(0, e.Hp));
+            if (dealt > 0 && a.Alive)
+            {
+                float hp = a.Hp;
+                a.Heal(dealt);
+                Stats.Healed(a.Player.Slot, a.Hp - hp);
+            }
+        }
     }
 
     public enum KillCause { Shot, Fall, Left }
@@ -464,6 +541,9 @@ public partial class GameManager : Node2D
         a.Alive = false;
         if (killer == a.Player.Slot) killer = -1;
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
+        // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
+        float boom = a.S[Stat.Kamikaze];
+        if (boom > 0 && cause == KillCause.Shot) HostExplode(a.GlobalPosition, boom, 70, a.Player.Slot, 480);
     }
 
     public void HostExplode(Vector2 at, float radius, float damage, int ownerSlot, float knockback)
@@ -494,10 +574,11 @@ public partial class GameManager : Node2D
     public void HostFx(FxKind kind, Vector2 pos, float value, int slot, Vector2 pos2)
         => Rpc(MethodName.FxEvent, (int)kind, pos, value, slot, pos2);
 
-    public void OnJump(Avatar a)
+    public void OnJump(Avatar a, bool air = false)
     {
         var feet = a.GlobalPosition + new Vector2(0, a.HalfSize.Y);
         Fx.Emit(feet, PKind.Smoke, new Color(1, 1, 1, 0.5f), 4, 50, 0.35f, 2.2f, 0, Vector2.Up, 2.6f, 5);
+        if (air) Fx.RingFx(feet, 2, 12 * a.S[Stat.Size], Palette.Player(a.Player.Info.ColorIdx).Lightened(0.4f), 0.25f, 1.5f);
         if (a.Player == LocalMatchPlayer) Sfx.Play("jump", 0.6f);
     }
 
@@ -511,7 +592,12 @@ public partial class GameManager : Node2D
         if (st.Has(Flavor.Fire)) Fx.Emit(b.Pos, PKind.Ember, new Color("#ffa33b"), 2, 60, 0.4f, 1.2f, -40, dir, 1.2f);
         Sfx.Play("shoot", 0.7f);
         if (LocalMatchPlayer != null && b.Owner == LocalMatchPlayer.Slot) Shake(0.12f);
-        if (b.Owner >= 0 && b.Owner < Slots.Length) Slots[b.Owner]?.Avatar?.OnFired();
+        if (b.Child) return;
+        var shooter = AvatarOf(b.Owner);
+        if (shooter == null) return;
+        shooter.OnFired();
+        // Recoil Jet: pushed on the host and in the shooter's own client prediction.
+        if (IsHost || shooter.Player == LocalMatchPlayer) shooter.ApplyRecoil(dir);
     }
 
     // =====================================================================
@@ -595,6 +681,9 @@ public partial class GameManager : Node2D
     /// --fxshots: freezes everyone and plays a hit (left) and a kill (right) as if slot 0 held
     /// <paramref name="power"/> cards with <paramref name="flavors"/>, so effect scaling can be screenshotted.
     /// </summary>
+    /// <summary>Test hook (offline only): replaces every player's cards at the start of each battle.</summary>
+    public Func<int, List<int>> DebugCards;
+
     public void DebugShowcase(int power, Flavor flavors)
     {
         if (Slots[0] == null || Slots[1] == null) return;
@@ -728,6 +817,13 @@ public partial class GameManager : Node2D
         foreach (var p in Slots) if (p != null) p.Avatar = null;
         Bullets.Clear();
         Fx.Clear();
+        if (DebugCards != null && !Networked)
+            foreach (var p in Active())
+            {
+                p.Cards.Clear();
+                p.Cards.AddRange(DebugCards(p.Slot));
+                p.RecomputeStats();
+            }
 
         var active = Active().OrderBy(p => p.Slot).ToList();
         var layout = MapGenerator.Generate(seed, active.Count);
@@ -931,6 +1027,26 @@ public partial class GameManager : Node2D
                 }
                 Sfx.Play("blink");
                 break;
+            case FxKind.Zap:
+            {
+                var bolt = new Color("#8fe9ff");
+                Fx.Bolt(pos, pos2, bolt);
+                Fx.Bolt(pos, pos2, col, 0.18f);
+                Fx.Flash(pos2, 18, bolt, 0.18f);
+                Fx.Emit(pos2, PKind.Streak, bolt, 6, 150, 0.2f, 0.8f);
+                Sfx.Play("blink", 0.5f);
+                break;
+            }
+            case FxKind.Revive:
+            {
+                var gold = new Color("#ffe066");
+                Fx.RingFx(pos, 4, 40, gold, 0.45f, 3f);
+                Fx.RaysFx(pos, gold, 10, 50, 0.5f);
+                Fx.Emit(pos, PKind.Star, gold, 12, 120, 0.6f, 2.4f, -40);
+                Fx.Popup(pos + new Vector2(0, -18), "SECOND WIND!", gold, 14, 1f);
+                Sfx.Play("pad");
+                break;
+            }
         }
     }
 

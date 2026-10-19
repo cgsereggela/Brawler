@@ -30,6 +30,13 @@ Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe 
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - Each battle gets a newly generated arena.
 
+## Cards
+There are 69 cards in four categories. Strong cards come with a tradeoff (less damage, HP, ammo, speed, ...). The full list with exact numbers is in `godot/scripts/Logic/Cards.cs`.
+- **Gun** (orange): more, bigger, faster or slower bullets. For example Sniper, Minigun, Twin Shot, Hail Storm, Cannonball, Needles, Ricochet, plus the originals (Bouncy, Big Bullet, Pierce, Splitter, Homing, Explosive, Shotgun, Burst, ...).
+- **Body** (green): size and toughness. Giant (huge, tanky, very slow), Tiny (small, fast, fragile), Armor Plating, Regeneration, Anchor, Rubber Body, Juggernaut, Second Wind (one revive per battle), Thorns, Adrenaline, ...
+- **Movement** (blue): Double Jump, Cloud Walker, Spring Legs, Rocket Boots, Sprinter, Afterburner, Traction, Ice Skates, Glider (hold jump), Wall Runner, Parkour, Dash (on block), Jetpack (jump in mid-air and hold), Feather, Speedy.
+- **Chaos** (purple): cards that change how you play. Bullet Hell (a ring of 12 bullets), Upside Down (bullets fall up), Boomerang, Ghost Rounds (through walls), Kamikaze, Recoil Jet (shooting propels you), Warp Rounds (teleport to where your bullets land), Sticky Mines, Chain Lightning, Berserk, One Shot, Wild Rounds, Pinball (you bounce off surfaces), Mind Control (bullets follow your crosshair), Leech Field, plus Vampire, Blink and Glass Cannon.
+
 ## Arenas
 - The arena is 800×450. Each battle's seed picks a **layout style**:
   - *Tiers*: scattered platforms with the odd pillar.
@@ -51,6 +58,8 @@ Every card you hold makes your shots, hits and kills flashier. Your **power** is
   - Bouncy: ring cascades.
   - Pierce: slash streaks.
   - Feather: drifting feathers.
+  - Chain Lightning: crackling sparks and lightning bolts.
+  - Ghost Rounds: shimmering, see-through bullets.
 - *Streaks:* kills in the same battle call out DOUBLE KILL, TRIPLE KILL and RAMPAGE.
 - *Pit kills:* knocking someone into a pit credits the last player who hit them (for the effects only, not the stats).
 
@@ -90,12 +99,12 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 ## Adding a card
 1. Add a line to `CardRegistry` in `godot/scripts/Logic/Cards.cs`:
    ```csharp
-   Add(17, "Sniper", "+80% bullet speed\n+30% damage\n+50% fire cooldown", CardCategory.Weapon,
+   Add(70, "Longshot", "+80% bullet speed\n+30% damage\n+50% fire cooldown", CardCategory.Gun,
        M(Stat.BulletSpeed, 1.8f), M(Stat.Damage, 1.3f), M(Stat.FireCooldown, 1.5f));
    ```
    `A(...)` adds and `M(...)` multiplies. Adds always apply before multipliers, so pick order doesn't matter.
 2. If the card needs behavior beyond stats, give it an effect id (as `"blink"` does), implement `ICardEffect` in `godot/scripts/Game/CardEffects.cs`, and register it in `CardEffects.Create`.
-3. If it needs a new number, add it to the `Stat` enum and `StatBlock.Base()` in `Stats.cs`, then read it where it applies.
+3. If it needs a new number, add it to the `Stat` enum (and `StatBlock.Base()` if it is not 0) in `Stats.cs`, then read it where it applies. Bullet behaviors that every peer must simulate the same way go on `Bullet` and its wire format in `BulletSystem.cs`; host-only rules (damage, revives, chain hits) go in `GameManager.HostDamage` and friends.
 4. Never reuse or renumber an id: the stats log refers to cards by id.
 5. Optional: give it an effect flavor in `CardFlavors` in `godot/scripts/Game/FxStyle.cs`. Every card adds power on its own, flavored or not.
 
@@ -143,7 +152,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -154,4 +163,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 "$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --cards=random:5  # every battle deals 5 random cards to each player
+"$GODOT" --path godot --fixed-fps 60 -- --autotest --cards=57,62,69    # everyone holds these card ids (offline only)
+"$GODOT" --path godot -- --themebench                                  # frame time per arena theme (vsync off)
 ```
