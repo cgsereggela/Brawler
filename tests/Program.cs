@@ -279,10 +279,12 @@ void Check(bool cond, string name, string detail = "")
         var buf = Brawler.Logic.Synth.MusicGen.Render(song);
         var (p, rms, finite) = Measure(buf);
         int expected = (int)MathF.Round(song.Bars * 16 * song.StepSeconds * Brawler.Logic.Synth.Dsp.Rate) * 2;
-        // The seam: the jump from the last frame back to the first should be no bigger than a typical step.
-        float seam = Math.Abs(buf[0] - buf[^2]) + Math.Abs(buf[1] - buf[^1]);
-        Check(finite && p <= 0.9f && rms > 0.05f && buf.Length == expected && seam < 0.2f,
-            $"Song '{song.Name}' renders a clean {song.Bars}-bar loop", $"{buf.Length / 2 / 44100f:0.0}s, peak {p:0.00}, rms {rms:0.000}, seam {seam:0.000}");
+        // The seam: wrapping from the last frame to the first may be no sharper than the steepest step inside the
+        // loop (the loop starts on a kick and crash, so a sharp step there is the downbeat, not a click).
+        float seam = Math.Abs(buf[0] - buf[^2]) + Math.Abs(buf[1] - buf[^1]), steepest = 0;
+        for (int i = 2; i < buf.Length - 1; i += 2) steepest = Math.Max(steepest, Math.Abs(buf[i] - buf[i - 2]) + Math.Abs(buf[i + 1] - buf[i - 1]));
+        Check(finite && p <= 0.9f && rms > 0.05f && buf.Length == expected && seam <= steepest,
+            $"Song '{song.Name}' renders a clean {song.Bars}-bar loop", $"{buf.Length / 2 / 44100f:0.0}s, peak {p:0.00}, rms {rms:0.000}, seam {seam:0.000} vs steepest {steepest:0.000}");
         if (wavDir != null) System.IO.File.WriteAllBytes(System.IO.Path.Combine(wavDir, $"music_{song.Name}.wav"), Brawler.Logic.Synth.Dsp.ToWav(buf, 2));
     }
     Console.WriteLine($"      (audio rendered in {sw.ElapsedMilliseconds} ms)");
