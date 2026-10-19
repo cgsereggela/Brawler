@@ -43,6 +43,26 @@ public partial class Main : Node
     {
         LocalInput.RegisterActions();
 
+        // Bloom: anything drawn brighter than 1.0 (HDR 2D) glows.
+        var env = new Godot.Environment
+        {
+            BackgroundMode = Godot.Environment.BGMode.Canvas,
+            GlowEnabled = true,
+            GlowIntensity = 0.9f,
+            GlowStrength = 1.1f,
+            GlowBloom = 0.0f,
+            GlowHdrThreshold = 1.0f,
+            GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive,
+        };
+        for (int i = 0; i < 7; i++) env.SetGlowLevel(i, i is >= 1 and <= 4 ? 1f : 0f);
+        AddChild(new WorldEnvironment { Environment = env });
+
+        // Animated scenery behind the menus (the arena has its own).
+        var bgLayer = new CanvasLayer { Name = "MenuBackdrop", Layer = -10 };
+        AddChild(bgLayer);
+        _menuBackdrop = new Backdrop { Name = "Backdrop" };
+        bgLayer.AddChild(_menuBackdrop);
+        _menuBackdrop.Set(ArenaTheme.All[0], 7);
 
         _net = new NetworkManager { Name = "Net" };
         AddChild(_net);
@@ -136,7 +156,14 @@ public partial class Main : Node
     {
         foreach (var c in Screens)
             c.Visible = screens.Contains(c);
+        // The menu scenery shows whenever no arena is on screen, with a new theme each time you come back.
+        bool inArena = screens.Contains(_hud);
+        if (!inArena && !_menuBackdrop.Visible)
+            _menuBackdrop.Set(ArenaTheme.All[(int)(GD.Randi() % (uint)ArenaTheme.All.Length)], (int)GD.Randi());
+        _menuBackdrop.Visible = !inArena;
     }
+
+    private Backdrop _menuBackdrop;
 
     private void OnMatchEnded(int winner)
     {
@@ -226,6 +253,39 @@ public partial class Main : Node
                 _game.Stats.Mode = "sim";
                 Log.Info($"SIMULATE {_simTotal} matches, {_simMin}-{_simMax} players → {ProjectSettings.GlobalizePath(_game.Stats.FilePath)}");
                 SimNextMatch();
+            }
+            else if (a == "--fxshots" && _shotDir != null)
+            {
+                // Screenshot hit and kill effects at every power tier (0 to 12 cards, flavors piling up), then quit.
+                _autoMode = "fx";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 5, RoundsToWin = 5 });
+                _game.HostStartMatch();
+                var tree = GetTree();
+                var tiers = new (int Power, Game.Flavor Flavors)[]
+                {
+                    (0, Game.Flavor.None), (2, Game.Flavor.Bouncy), (4, Game.Flavor.Fire | Game.Flavor.Homing),
+                    (6, Game.Flavor.Fire | Game.Flavor.Vampire | Game.Flavor.Pierce), (9, Game.Flavor.Glass | Game.Flavor.Split | Game.Flavor.Homing),
+                    (12, Game.Flavor.Fire | Game.Flavor.Homing | Game.Flavor.Vampire | Game.Flavor.Glass | Game.Flavor.Feather | Game.Flavor.Bouncy),
+                };
+                int k = 0;
+                void Step()
+                {
+                    if (k >= tiers.Length) { tree.Quit(0); return; }
+                    _game.DebugShowcase(tiers[k].Power, tiers[k].Flavors);
+                    k++;
+                    tree.CreateTimer(0.14, true, false, true).Timeout += () =>
+                    {
+                        SaveShot();
+                        tree.CreateTimer(0.25, true, false, true).Timeout += SaveShot;
+                        tree.CreateTimer(1.4, true, false, true).Timeout += Step;
+                    };
+                }
+                tree.CreateTimer(2.6).Timeout += Step;
             }
             else if (a == "--menushots" && _shotDir != null)
             {
@@ -332,8 +392,8 @@ public partial class Main : Node
         _menu.GetParent().AddChild(_gallery);
         var v = UiKit.VBox(4);
         _gallery.AddChild(v);
-        v.AddChild(UiKit.Label(Appearance.PartLabel(part), 16, Palette.Accent));
-        var grid = new GridContainer { Columns = 8 };
+        v.AddChild(UiKit.Label(Appearance.PartLabel(part), 22, Palette.Accent, font: Brawler.Fx.Fonts.Heavy));
+        var grid = new GridContainer { Columns = 6 };
         v.AddChild(grid);
         for (int o = 0; o < Appearance.Count(part); o++)
         {
@@ -343,10 +403,10 @@ public partial class Main : Node
             if (part is LookPart.HatColor) look[LookPart.Hat] = 1;
             look[part] = o;
             var cell = UiKit.VBox(0);
-            cell.AddChild(new AvatarPreview(look, o % Palette.Players.Length, 2) { ShowGun = false });
+            cell.AddChild(new AvatarPreview(look, o % Palette.Players.Length, 2.6f) { ShowGun = false });
             var tmp = new Appearance();
             tmp[part] = o;
-            cell.AddChild(UiKit.Label(tmp.OptionName(part), 8, Palette.Text, HorizontalAlignment.Center));
+            cell.AddChild(UiKit.Label(tmp.OptionName(part), UiKit.Small, Palette.Text, HorizontalAlignment.Center));
             grid.AddChild(cell);
         }
     }

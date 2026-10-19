@@ -79,11 +79,41 @@ void Check(bool cond, string name, string detail = "")
             $"{fallbacks}/{seeds} fallbacks, avg attempts {totalAttempts / (float)seeds:F1}, max {maxAttempts}");
     }
 
+    var styles = new HashSet<MapStyle>();
+    int pads = 0, badPads = 0;
+    for (int s = 0; s < 400; s++)
+    {
+        var m = MapGenerator.Generate(s * 31 + 5, 4);
+        styles.Add(m.Style);
+        pads += m.Pads.Count;
+        foreach (var p in m.Pads)
+        {
+            if (!m.Surfaces.Any(sf => sf.Y == p.Y && p.X1 >= sf.X1 && p.X2 <= sf.X2)) badPads++;
+            if (m.Spawns.Any(sp => sp.Y == p.Y && sp.X > p.X1 - 24 && sp.X < p.X2 + 24)) badPads++;
+        }
+    }
+    Check(styles.Count == Enum.GetValues<MapStyle>().Length, "Every map style shows up", string.Join(",", styles));
+    Check(pads > 100 && badPads == 0, "Jump pads sit on surfaces, away from spawns", $"{pads} pads, {badPads} bad");
+    Check(MapLayout.Width == 800 && MapLayout.Height == 450, "Arena is 800x450");
+
     // Reachability primitive.
     var floor = new Surface(8, 632, 344);
     Check(MapGenerator.CanTraverse(floor, new Surface(100, 160, 304)), "Can jump up 40px onto a nearby platform");
     Check(!MapGenerator.CanTraverse(floor, new Surface(100, 160, 260)), "Cannot jump up 84px");
     Check(MapGenerator.CanTraverse(new Surface(100, 160, 260), floor), "Can always drop down");
+
+    var towerMap = new MapLayout();
+    towerMap.Solids.Add(new RectI(300, 314, 32, 120));
+    var leftFloor = new Surface(8, 300, 434);
+    var rightFloor = new Surface(332, 792, 434);
+    Check(MapGenerator.CanTraverse(leftFloor, rightFloor) && !MapGenerator.CanTraverse(towerMap, leftFloor, rightFloor),
+        "A tower between two floor segments blocks walking across");
+    var bridge = new Surface(240, 290, 394);
+    var pathMap = new MapLayout();
+    pathMap.Surfaces.AddRange(new[] { leftFloor, bridge, new Surface(300, 332, 354), rightFloor });
+    pathMap.Solids.Add(new RectI(300, 354, 32, 80));
+    Check(MapGenerator.NextHop(pathMap, 0, 3) == 1, "Path finding climbs the ledge to get over a tower",
+        $"next hop {MapGenerator.NextHop(pathMap, 0, 3)}");
 }
 
 // ---------- Sweep ----------

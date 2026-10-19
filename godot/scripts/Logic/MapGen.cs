@@ -21,23 +21,35 @@ public readonly record struct Surface(int X1, int X2, int Y)
 
 public readonly record struct SpawnPoint(int X, int Y);
 
+/// <summary>A jump pad on top of a surface: standing on [X1, X2] at height Y launches you upward.</summary>
+public readonly record struct JumpPad(int X1, int X2, int Y)
+{
+    public int CenterX => (X1 + X2) / 2;
+}
+
+public enum MapStyle { Tiers, Mirror, Islands, Towers }
+
 public sealed class MapLayout
 {
-    public const int Width = 640;
-    public const int Height = 360;
+    public const int Width = 800;
+    public const int Height = 450;
     public const int KillY = Height + 24;
 
     public List<RectI> Solids { get; } = new();
     public List<Surface> Surfaces { get; } = new();
     public List<SpawnPoint> Spawns { get; } = new();
+    public List<JumpPad> Pads { get; } = new();
+    public MapStyle Style { get; init; }
     public int Seed { get; init; }
     public int Attempts { get; set; }
     public bool UsedFallback { get; set; }
 }
 
 /// <summary>
-/// Seeded random-platform arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
-/// Each candidate is validated (spawn spacing, mutual reachability between spawns) and rerolled on failure.
+/// Seeded random arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
+/// Each seed picks a <see cref="MapStyle"/> (scattered tiers, a mirrored layout, floating islands over pits,
+/// or towers). Each candidate is validated (spawn spacing, mutual reachability between spawns) and rerolled on
+/// failure. Jump pads are added afterwards as extras: reachability never relies on them.
 /// </summary>
 public static class MapGenerator
 {
@@ -52,15 +64,18 @@ public static class MapGenerator
     public const int MaxGapRising = 56;
     public const int MaxGapFalling = 110;
     public const int Headroom = 26;
-    public const int MinSpawnDistance = 140;
+    public const int MinSpawnDistance = 175;
     public const int TierSpacing = 40;
+    public const int PadWidth = 24;
+    public const float PadVelocity = 560f;
 
     public static MapLayout Generate(int seed, int playerCount)
     {
         var rng = new Rng((ulong)(uint)seed);
+        var style = (MapStyle)rng.Range(0, 3);
         for (int attempt = 1; attempt <= 300; attempt++)
         {
-            var layout = TryBuild(rng, seed, playerCount);
+            var layout = TryBuild(rng, seed, playerCount, style);
             if (layout != null)
             {
                 layout.Attempts = attempt;
@@ -73,14 +88,51 @@ public static class MapGenerator
         return fb;
     }
 
-    private static MapLayout TryBuild(Rng rng, int seed, int playerCount)
+    private static MapLayout TryBuild(Rng rng, int seed, int playerCount, MapStyle style)
     {
-        var map = new MapLayout { Seed = seed };
+        var map = new MapLayout { Seed = seed, Style = style };
         AddBorders(map);
 
-        // Floor, optionally split by pits.
-        var floorSegments = new List<(int x1, int x2)>();
-        int pits = rng.Range(0, 2);
+        var floor = style switch
+        {
+            MapStyle.Islands => IslandFloor(rng),
+            MapStyle.Mirror => MirrorFloor(rng),
+            _ => PitFloor(rng, rng.Range(0, 2)),
+        };
+        foreach (var s in floor)
+            map.Solids.Add(new RectI(s.x1, FloorY, s.x2 - s.x1, Height - FloorY));
+
+        var placed = new List<RectI>();
+        switch (style)
+        {
+            case MapStyle.Mirror:
+                MirrorPlatforms(rng, placed);
+                break;
+            case MapStyle.Towers:
+                Towers(rng, placed, floor);
+                TierPlatforms(rng, placed, rng.Range(5, 7), 2);
+                break;
+            case MapStyle.Islands:
+                TierPlatforms(rng, placed, rng.Range(5, 8), 3);
+                break;
+            default:
+                TierPlatforms(rng, placed, rng.Range(6, 9), 3);
+                Pillars(rng, placed);
+                break;
+        }
+        map.Solids.AddRange(placed);
+
+        BuildSurfaces(map, floor, placed);
+        if (!PickSpawns(map, rng, playerCount)) return null;
+        if (!SpawnsMutuallyReachable(map)) return null;
+        AddPads(map, rng, style);
+        return map;
+    }
+
+    // ---------- floors ----------
+
+    private static List<(int x1, int x2)> PitFloor(Rng rng, int pits)
+    {
         var pitXs = new List<(int x1, int x2)>();
         for (int i = 0; i < pits; i++)
         {
@@ -92,35 +144,80 @@ public static class MapGenerator
                 if (p.Item1 < q.x2 + 80 && q.x1 < p.Item2 + 80) clash = true;
             if (!clash) pitXs.Add(p);
         }
-        pitXs.Sort((a, b) => a.x1.CompareTo(b.x1));
-        int cursor = Wall;
-        foreach (var p in pitXs)
-        {
-            floorSegments.Add((cursor, p.x1));
-            cursor = p.x2;
-        }
-        floorSegments.Add((cursor, Width - Wall));
-        foreach (var s in floorSegments)
-            map.Solids.Add(new RectI(s.x1, FloorY, s.x2 - s.x1, Height - FloorY));
+        return FloorBetween(pitXs);
+    }
 
-        // Floating platforms in loose height tiers (each tier is one comfortable jump above the last),
-        // with random count, width and x per tier, plus the occasional pillar.
-        var placed = new List<RectI>();
-        int tierCount = rng.Range(4, 7);
+    /// <summary>Three or four islands separated by wide pits.</summary>
+    private static List<(int x1, int x2)> IslandFloor(Rng rng)
+    {
+        int islands = rng.Range(3, 4);
+        var pits = new List<(int x1, int x2)>();
+        int span = (Width - Wall * 2) / islands;
+        for (int i = 1; i < islands; i++)
+        {
+            int w = rng.Range(6, 11) * Tile;
+            int x = (Wall + span * i + rng.Range(-3, 3) * Tile - w / 2) / Tile * Tile;
+            pits.Add((x, x + w));
+        }
+        return FloorBetween(pits);
+    }
+
+    /// <summary>Symmetric floor: solid, a center pit, or a pair of mirrored pits.</summary>
+    private static List<(int x1, int x2)> MirrorFloor(Rng rng)
+    {
+        var pits = new List<(int x1, int x2)>();
+        int kind = rng.Range(0, 2);
+        if (kind == 1)
+        {
+            int w = rng.Range(4, 6) * Tile * 2;
+            pits.Add((Width / 2 - w / 2, Width / 2 + w / 2));
+        }
+        else if (kind == 2)
+        {
+            int w = rng.Range(6, 9) * Tile;
+            int x = rng.Range(12, 30) * Tile;
+            pits.Add((x, x + w));
+            pits.Add((Width - x - w, Width - x));
+        }
+        return FloorBetween(pits);
+    }
+
+    private static List<(int x1, int x2)> FloorBetween(List<(int x1, int x2)> pits)
+    {
+        pits.Sort((a, b) => a.x1.CompareTo(b.x1));
+        var segments = new List<(int x1, int x2)>();
+        int cursor = Wall;
+        foreach (var p in pits)
+        {
+            if (p.x1 > cursor) segments.Add((cursor, p.x1));
+            cursor = Math.Max(cursor, p.x2);
+        }
+        if (cursor < Width - Wall) segments.Add((cursor, Width - Wall));
+        return segments;
+    }
+
+    // ---------- platforms ----------
+
+    /// <summary>Floating platforms in loose height tiers, each tier one comfortable jump above the last.</summary>
+    private static void TierPlatforms(Rng rng, List<RectI> placed, int tierCount, int maxPerTier)
+    {
         for (int tier = 1; tier <= tierCount; tier++)
         {
             int tierY = FloorY - tier * TierSpacing;
-            int count = rng.Range(1, 3);
+            int count = rng.Range(1, maxPerTier);
             for (int i = 0; i < count * 4 && count > 0; i++)
             {
                 int w = rng.Range(3, 14) * Tile;
                 int h = rng.Chance(0.65f) ? Tile : Tile * 2;
                 int x = rng.Range(2, (Width - w) / Tile - 2) * Tile;
                 int y = tierY - (rng.Chance(0.3f) ? Tile : 0);
-                var r = new RectI(x, y, w, h);
-                if (TryPlace(placed, r)) count--;
+                if (TryPlace(placed, new RectI(x, y, w, h))) count--;
             }
         }
+    }
+
+    private static void Pillars(Rng rng, List<RectI> placed)
+    {
         int pillars = rng.Range(0, 2);
         for (int i = 0; i < pillars * 4 && pillars > 0; i++)
         {
@@ -130,22 +227,115 @@ public static class MapGenerator
             int y = rng.Range(6, (FloorY - h - 32) / Tile) * Tile;
             if (TryPlace(placed, new RectI(x, y, w, h))) pillars--;
         }
-        map.Solids.AddRange(placed);
-
-        BuildSurfaces(map, floorSegments, placed);
-        if (!PickSpawns(map, rng, playerCount)) return null;
-        if (!SpawnsMutuallyReachable(map)) return null;
-        return map;
     }
 
-    private static bool TryPlace(List<RectI> placed, RectI r)
+    /// <summary>Platforms on the left half mirrored to the right, with the odd centerpiece straddling the middle.</summary>
+    private static void MirrorPlatforms(Rng rng, List<RectI> placed)
+    {
+        int tiers = rng.Range(6, 8);
+        for (int tier = 1; tier <= tiers; tier++)
+        {
+            int tierY = FloorY - tier * TierSpacing;
+            if (rng.Chance(0.35f))
+            {
+                int w = rng.Range(3, 8) * Tile * 2;
+                TryPlace(placed, new RectI(Width / 2 - w / 2, tierY, w, rng.Chance(0.7f) ? Tile : Tile * 2));
+            }
+            int count = rng.Range(1, 2);
+            for (int i = 0; i < count * 4 && count > 0; i++)
+            {
+                int w = rng.Range(3, 12) * Tile;
+                int h = rng.Chance(0.65f) ? Tile : Tile * 2;
+                int x = rng.Range(2, (Width / 2 - w) / Tile - 2) * Tile;
+                int y = tierY - (rng.Chance(0.3f) ? Tile : 0);
+                var r = new RectI(x, y, w, h);
+                var m = new RectI(Width - x - w, y, w, h);
+                if (r.Grow(16, 22).Intersects(m) || !Fits(placed, r) || !Fits(placed, m)) continue;
+                placed.Add(r);
+                placed.Add(m);
+                count--;
+            }
+        }
+    }
+
+    /// <summary>Two or three solid towers rising from the floor.</summary>
+    private static void Towers(Rng rng, List<RectI> placed, List<(int x1, int x2)> floor)
+    {
+        int towers = rng.Range(2, 3);
+        for (int i = 0; i < towers * 6 && towers > 0; i++)
+        {
+            var seg = floor[rng.Range(0, floor.Count - 1)];
+            int w = rng.Range(3, 5) * Tile;
+            int h = rng.Range(2, 4) * TierSpacing;
+            int lo = (seg.x1 + 24) / Tile, hi = (seg.x2 - w - 24) / Tile;
+            if (hi <= lo) continue;
+            int x = rng.Range(lo, hi) * Tile;
+            var tower = new RectI(x, FloorY - h, w, h);
+            bool clash = false;
+            foreach (var o in placed)
+                if (tower.Grow(48, 22).Intersects(o)) clash = true;
+            if (clash) continue;
+            placed.Add(tower);
+            towers--;
+            // A staircase of ledges up one side, so the top (and the far side) can always be reached.
+            bool left = rng.Chance(0.5f);
+            for (int y = FloorY - TierSpacing; y > tower.Y; y -= TierSpacing)
+            {
+                int sw = rng.Range(3, 5) * Tile;
+                int sx = left ? x - 24 - sw : tower.Right + 24;
+                TryPlace(placed, new RectI(sx, y, sw, Tile));
+            }
+        }
+    }
+
+    private static bool Fits(List<RectI> placed, RectI r)
     {
         if (r.Y < Wall + 32 || r.Bottom > FloorY - 24) return false; // keep corridors under the ceiling and above the floor
         foreach (var o in placed)
             if (r.Grow(16, 22).Intersects(o)) return false;
+        return true;
+    }
+
+    private static bool TryPlace(List<RectI> placed, RectI r)
+    {
+        if (!Fits(placed, r)) return false;
         placed.Add(r);
         return true;
     }
+
+    // ---------- jump pads ----------
+
+    private static void AddPads(MapLayout map, Rng rng, MapStyle style)
+    {
+        int want = style == MapStyle.Islands ? rng.Range(1, 3) : rng.Range(0, 2);
+        for (int i = 0; i < want * 8 && map.Pads.Count < want; i++)
+        {
+            var s = map.Surfaces[rng.Range(0, map.Surfaces.Count - 1)];
+            if (s.Width < PadWidth + 32) continue;
+            int x = rng.Range((s.X1 + 16) / 4, (s.X2 - 16 - PadWidth) / 4) * 4;
+            var pad = new JumpPad(x, x + PadWidth, s.Y);
+            bool ok = true;
+            foreach (var sp in map.Spawns)
+                if (sp.Y == s.Y && sp.X > x - 24 && sp.X < pad.X2 + 24) ok = false;
+            foreach (var p in map.Pads)
+                if (Math.Abs(p.CenterX - pad.CenterX) < 100) ok = false;
+            // It needs open air above, or it just bonks you into a ceiling.
+            var air = new RectI(x - 4, s.Y - 90, PadWidth + 8, 90);
+            foreach (var o in map.Solids)
+                if (o.Intersects(air)) ok = false;
+            if (ok) map.Pads.Add(pad);
+        }
+    }
+
+    /// <summary>The pad under a point standing on a surface at height <paramref name="feetY"/>, if any.</summary>
+    public static bool OnPad(MapLayout map, float x, float feetY)
+    {
+        foreach (var p in map.Pads)
+            if (x >= p.X1 - 2 && x <= p.X2 + 2 && Math.Abs(feetY - p.Y) < 3) return true;
+        return false;
+    }
+
+    // ---------- shared ----------
 
     private static void AddBorders(MapLayout map)
     {
@@ -156,8 +346,25 @@ public static class MapGenerator
 
     private static void BuildSurfaces(MapLayout map, List<(int x1, int x2)> floor, List<RectI> platforms)
     {
+        // Floor segments are split around anything standing on them (towers), so nobody spawns inside one.
         foreach (var s in floor)
-            if (s.x2 - s.x1 >= 16) map.Surfaces.Add(new Surface(s.x1, s.x2, FloorY));
+        {
+            var open = new List<(int a, int b)> { (s.x1, s.x2) };
+            foreach (var o in platforms)
+            {
+                if (!o.Intersects(new RectI(s.x1, FloorY - Headroom, s.x2 - s.x1, Headroom))) continue;
+                var next = new List<(int a, int b)>();
+                foreach (var (a, b) in open)
+                {
+                    if (o.Right <= a || o.X >= b) { next.Add((a, b)); continue; }
+                    if (o.X > a) next.Add((a, o.X));
+                    if (o.Right < b) next.Add((o.Right, b));
+                }
+                open = next;
+            }
+            foreach (var (a, b) in open)
+                if (b - a >= 16) map.Surfaces.Add(new Surface(a, b, FloorY));
+        }
         foreach (var p in platforms)
         {
             if (p.W < 16 || p.Y < Wall + Headroom) continue;
@@ -171,11 +378,14 @@ public static class MapGenerator
 
     private static bool PickSpawns(MapLayout map, Rng rng, int playerCount)
     {
-        // Candidate spawn points every 16px along each wide-enough surface (so the floor can host several).
+        // Candidate spawn points every 16px along each wide-enough surface (so the floor can host several),
+        // only on the biggest group of surfaces that can all reach each other.
+        var core = MutualCore(map);
         var candidates = new List<SpawnPoint>();
-        foreach (var s in map.Surfaces)
+        for (int i = 0; i < map.Surfaces.Count; i++)
         {
-            if (s.Width < 24) continue;
+            var s = map.Surfaces[i];
+            if (s.Width < 24 || !core[i]) continue;
             for (int x = s.X1 + 12; x <= s.X2 - 12; x += 16) candidates.Add(new SpawnPoint(x, s.Y));
         }
         if (candidates.Count < playerCount) return false;
@@ -202,6 +412,27 @@ public static class MapGenerator
         return false;
     }
 
+    /// <summary>The largest set of surfaces that are all reachable from each other (a strongly connected component).</summary>
+    private static bool[] MutualCore(MapLayout map)
+    {
+        int n = map.Surfaces.Count;
+        var reach = new bool[n][];
+        for (int i = 0; i < n; i++) reach[i] = ReachableFrom(map, i);
+        var best = new bool[n];
+        int bestSize = 0;
+        var done = new bool[n];
+        for (int root = 0; root < n; root++)
+        {
+            if (done[root]) continue;
+            var comp = new bool[n];
+            int size = 0;
+            for (int j = 0; j < n; j++)
+                if (reach[root][j] && reach[j][root]) { comp[j] = true; done[j] = true; size++; }
+            if (size > bestSize) { bestSize = size; best = comp; }
+        }
+        return best;
+    }
+
     /// <summary>Directed jump graph between surfaces. Exposed for tests.</summary>
     public static bool CanTraverse(Surface a, Surface b)
     {
@@ -209,6 +440,56 @@ public static class MapGenerator
         int rise = a.Y - b.Y; // positive: b is higher
         if (rise > 0) return rise <= MaxRise && gap <= MaxGapRising;
         return gap <= MaxGapFalling;
+    }
+
+    /// <summary>
+    /// <see cref="CanTraverse"/> plus obstacles: a jump or drop across a horizontal gap needs the space between the
+    /// two surfaces (from a little above the higher one down to the lower one) to be free of solids, so a tower
+    /// standing between two floor segments really separates them.
+    /// </summary>
+    public static bool CanTraverse(MapLayout map, Surface a, Surface b)
+    {
+        if (!CanTraverse(a, b)) return false;
+        int gx1 = Math.Min(a.X2, b.X2), gx2 = Math.Max(a.X1, b.X1);
+        if (gx2 <= gx1)
+        {
+            // Overlapping spans. Climbing needs a launch spot on a that isn't under b, with clear air up past b's
+            // top; dropping needs b to stick out past a (or enough fall to drift under a).
+            if (a.Y > b.Y)
+            {
+                if (LaunchSpot(map, a, b, a.X1, Math.Min(a.X2, b.X1 - 6))) return true;
+                return LaunchSpot(map, a, b, Math.Max(a.X1, b.X2 + 6), a.X2);
+            }
+            return b.Y - a.Y >= 40 || b.X1 < a.X1 - 8 || b.X2 > a.X2 + 8;
+        }
+        int top = Math.Min(a.Y, b.Y) - Headroom, bottom = Math.Max(a.Y, b.Y);
+        var corridor = new RectI(gx1, top, gx2 - gx1, bottom - top);
+        foreach (var o in map.Solids)
+            if (o.Intersects(corridor)) return false;
+        return true;
+    }
+
+    /// <summary>True if [x1, x2] on surface a is wide enough to jump from, with clear air up to above b.</summary>
+    private static bool LaunchSpot(MapLayout map, Surface a, Surface b, int x1, int x2)
+    {
+        if (x2 - x1 < 10) return false;
+        var air = new RectI(x1, b.Y - Headroom, x2 - x1, a.Y - (b.Y - Headroom));
+        foreach (var o in map.Solids)
+            if (o.Intersects(air)) return false;
+        return true;
+    }
+
+    /// <summary>Where on surface a to jump from to climb onto b, which overlaps it from above (NaN if nowhere).</summary>
+    public static float LaunchX(MapLayout map, Surface a, Surface b, float fromX)
+    {
+        float best = float.NaN;
+        foreach (var (x1, x2) in new[] { (a.X1, Math.Min(a.X2, b.X1 - 6)), (Math.Max(a.X1, b.X2 + 6), a.X2) })
+            if (LaunchSpot(map, a, b, x1, x2))
+            {
+                float x = Math.Clamp(fromX, x1 + 4, x2 - 4);
+                if (float.IsNaN(best) || Math.Abs(x - fromX) < Math.Abs(best - fromX)) best = x;
+            }
+        return best;
     }
 
     public static bool[] ReachableFrom(MapLayout map, int start)
@@ -222,13 +503,40 @@ public static class MapGenerator
         {
             int i = stack.Pop();
             for (int j = 0; j < n; j++)
-                if (!seen[j] && CanTraverse(map.Surfaces[i], map.Surfaces[j]))
+                if (!seen[j] && CanTraverse(map, map.Surfaces[i], map.Surfaces[j]))
                 {
                     seen[j] = true;
                     stack.Push(j);
                 }
         }
         return seen;
+    }
+
+    /// <summary>Next surface on a shortest jump path from surface <paramref name="from"/> to <paramref name="to"/>, or -1.</summary>
+    public static int NextHop(MapLayout map, int from, int to)
+    {
+        if (from < 0 || to < 0 || from == to) return to;
+        int n = map.Surfaces.Count;
+        var prev = new int[n];
+        Array.Fill(prev, -2);
+        prev[from] = -1;
+        var q = new Queue<int>();
+        q.Enqueue(from);
+        while (q.Count > 0)
+        {
+            int i = q.Dequeue();
+            if (i == to) break;
+            for (int j = 0; j < n; j++)
+                if (prev[j] == -2 && CanTraverse(map, map.Surfaces[i], map.Surfaces[j]))
+                {
+                    prev[j] = i;
+                    q.Enqueue(j);
+                }
+        }
+        if (prev[to] == -2) return -1;
+        int step = to;
+        while (prev[step] != from) step = prev[step];
+        return step;
     }
 
     public static int SurfaceIndexOf(MapLayout map, SpawnPoint sp)
@@ -261,17 +569,18 @@ public static class MapGenerator
 
     private static MapLayout Fallback(int seed, int playerCount)
     {
-        var map = new MapLayout { Seed = seed };
+        var map = new MapLayout { Seed = seed, Style = MapStyle.Mirror };
         AddBorders(map);
         map.Solids.Add(new RectI(Wall, FloorY, Width - Wall * 2, Height - FloorY));
         var plats = new List<RectI>
         {
-            new(96, 280, 96, 8), new(448, 280, 96, 8),
-            new(272, 240, 96, 8), new(120, 200, 80, 8), new(440, 200, 80, 8),
+            new(120, 394, 112, 8), new(568, 394, 112, 8),
+            new(336, 354, 128, 8), new(152, 314, 96, 8), new(552, 314, 96, 8),
+            new(344, 274, 112, 8),
         };
         map.Solids.AddRange(plats);
         BuildSurfaces(map, new List<(int, int)> { (Wall, Width - Wall) }, plats);
-        int[] xs = { 80, 560, 200, 440 };
+        int[] xs = { 90, 710, 260, 540 };
         for (int i = 0; i < playerCount; i++) map.Spawns.Add(new SpawnPoint(xs[i % xs.Length], FloorY));
         return map;
     }

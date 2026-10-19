@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Brawler.Core;
+using Brawler.Fx;
 using Brawler.Game;
 using Brawler.Logic;
 using Brawler.Net;
@@ -26,37 +27,55 @@ public partial class MatchOverUI : Control
 
     public override void _Ready()
     {
-        (_, _body) = UiKit.CenteredPanel(this, 280);
+        (_, _body) = UiKit.CenteredPanel(this, 460);
         _game.MatchEnded += Build;
     }
 
     private void Build(int winner)
     {
         UiKit.ClearChildren(_body);
-        var title = winner >= 0 ? $"{_game.NameOf(winner)} WINS!" : "MATCH OVER";
-        _body.AddChild(UiKit.Label(title, 20, winner >= 0 ? Palette.Player(_game.ColorOf(winner)) : Palette.Text, HorizontalAlignment.Center));
+        var champCol = winner >= 0 ? Palette.Player(_game.ColorOf(winner)) : Palette.Text;
+        _body.AddChild(new TitleText(winner >= 0 ? $"{_game.NameOf(winner).ToUpperInvariant()} WINS!" : "MATCH OVER", 34, 2.5f,
+            champCol, champCol.Lightened(0.3f), Palette.Accent));
         if (winner >= 0 && _game.Slots[winner] is { } champ)
         {
             var podium = new CenterContainer();
-            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, 3, alive: true));
+            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, 3.2f, alive: true) { Pedestal = true });
             _body.AddChild(podium);
         }
 
+        int place = 0;
         foreach (var p in _game.Slots.Where(p => p != null).OrderByDescending(p => p.RoundWins))
         {
-            var row = UiKit.HBox(6);
-            row.AddChild(new AvatarPreview(p.Info.Look, p.Info.ColorIdx) { CustomMinimumSize = new Vector2(30, 28), ShowGun = false });
-            row.AddChild(UiKit.Label($"{p.Info.Name}  -  {p.RoundWins} round{(p.RoundWins == 1 ? "" : "s")}{(p.Left ? " (left)" : "")}"));
-            _body.AddChild(row);
-            var cards = string.Join(", ", CardRegistry.Resolve(p.Cards).Select(c => c.Name));
-            var l = UiKit.Label(cards.Length > 0 ? cards : "no cards", 8, Palette.TextDim);
+            place++;
+            var row = UiKit.HBox(10);
+            row.AddChild(UiKit.Label($"#{place}", 18, place == 1 ? Palette.Accent : Palette.TextDim, font: Fonts.Heavy));
+            row.AddChild(new AvatarPreview(p.Info.Look, p.Info.ColorIdx, 1.1f) { CustomMinimumSize = new Vector2(36, 34), ShowGun = false });
+            var info = UiKit.VBox(0);
+            info.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            info.AddChild(UiKit.Label($"{p.Info.Name}{(p.Left ? "  (left)" : "")}", UiKit.Body, p.Color.Lightened(0.2f), font: Fonts.Bold));
+            var cards = string.Join("  ·  ", CardRegistry.Resolve(p.Cards).Select(c => c.Name));
+            var l = UiKit.Label(cards.Length > 0 ? cards : "no cards", UiKit.Tiny, Palette.TextDim);
             l.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            _body.AddChild(l);
+            info.AddChild(l);
+            row.AddChild(info);
+            row.AddChild(UiKit.Label($"{p.RoundWins}", 22, Colors.White, font: Fonts.Heavy));
+            _body.AddChild(row);
         }
 
-        var buttons = UiKit.HBox();
-        if (_net.IsHost) buttons.AddChild(UiKit.Button("Back to Lobby", () => BackToLobby?.Invoke()));
-        else buttons.AddChild(UiKit.Label("Waiting for host...", 10, Palette.TextDim));
+        var buttons = UiKit.HBox(8);
+        if (_net.IsHost)
+        {
+            var back = UiKit.Primary("BACK TO LOBBY", () => BackToLobby?.Invoke());
+            back.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            buttons.AddChild(back);
+        }
+        else
+        {
+            var wait = UiKit.Label("Waiting for host...", UiKit.Body, Palette.TextDim);
+            wait.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            buttons.AddChild(wait);
+        }
         buttons.AddChild(UiKit.Button("Leave", () => LeavePressed?.Invoke()));
         _body.AddChild(buttons);
     }

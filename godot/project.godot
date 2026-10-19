@@ -17,23 +17,16 @@ config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=640
-window/size/viewport_height=360
-window/size/window_width_override=1280
-window/size/window_height_override=720
-window/stretch/mode="viewport"
+window/size/viewport_width=800
+window/size/viewport_height=450
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
-window/stretch/scale_mode="integer"
 
 [dotnet]
 
 project/assembly_name="Brawler"
-
-[gui]
-
-theme/default_font_antialiasing=0
-theme/default_font_hinting=0
-theme/default_font_subpixel_positioning=0
 
 [physics]
 
@@ -43,6 +36,6 @@ common/physics_ticks_per_second=60
 [rendering]
 
 rendering_device/driver.windows="d3d12"
-textures/canvas_textures/default_texture_filter=0
-2d/snap/snap_2d_transforms_to_pixel=true
-environment/defaults/default_clear_color=Color(0.07, 0.07, 0.1, 1)
+anti_aliasing/quality/msaa_2d=2
+viewport/hdr_2d=true
+environment/defaults/default_clear_color=Color(0.04, 0.02, 0.08, 1)

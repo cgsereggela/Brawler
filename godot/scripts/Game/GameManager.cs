@@ -69,6 +69,8 @@ public partial class GameManager : Node2D
     private float _trauma;
     private ulong _hitStopUntil;
     private int _lastCountdownTick;
+    private float _clock;        // simulated seconds, for "recently hit" checks
+    private float _zoomPunch;    // brief camera zoom on big kills
 
     public override void _Ready()
     {
@@ -83,6 +85,14 @@ public partial class GameManager : Node2D
         AddChild(Fx);
         AddChild(_cam);
         _cam.MakeCurrent();
+        Fx.ScreenRect = new Rect2(-40, -40, MapLayout.Width + 80, MapLayout.Height + 80);
+        MapNode.Avatars = LiveAvatars;
+        MapNode.PadFired += pos =>
+        {
+            Fx.Emit(pos, PKind.Streak, MapNode.Theme.Edge, 10, 220, 0.35f, 1.1f, 0, Vector2.Up, 0.9f);
+            Fx.RingFx(pos, 4, 26, MapNode.Theme.Edge, 0.3f, 2);
+            Sfx.Play("pad", 0.7f);
+        };
         Visible = false;
         Net.PeerLeft += OnPeerLeft;
     }
@@ -252,6 +262,7 @@ public partial class GameManager : Node2D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        _clock += dt;
         if (IsHost) Stats.Tick(dt, Phase);
         if (IsHost && _hostNext != null)
         {
@@ -312,7 +323,12 @@ public partial class GameManager : Node2D
             if (a == null || !a.Alive) continue;
             var f = p.Input?.Next(a, dt) ?? new InputFrame { Aim = a.GlobalPosition + Vector2.Right };
             a.Step(f, dt, authority: true);
-            if (a.GlobalPosition.Y > MapLayout.KillY) HostKill(a, KillCause.Fall);
+            if (a.GlobalPosition.Y > MapLayout.KillY)
+            {
+                // Knocked into a pit: the last hitter gets the (cosmetic) credit.
+                bool recent = a.LastHitBy >= 0 && a.LastHitBy != p.Slot && _clock - a.LastHitAt < 4f;
+                HostKill(a, KillCause.Fall, recent ? a.LastHitBy : -1);
+            }
         }
     }
 
@@ -404,7 +420,7 @@ public partial class GameManager : Node2D
 
     public void HostBulletDestroyed(Bullet b, bool impact)
     {
-        Fx.Spark(b.Pos, Palette.Player(ColorOf(b.Owner)), impact ? 5 : 2);
+        ImpactFx(b.Pos, b.Owner, impact);
         if (Net.Mode == NetMode.Host) Rpc(MethodName.BulletGone, b.Id, b.Pos, impact);
     }
 
@@ -416,6 +432,11 @@ public partial class GameManager : Node2D
             if (victim.Alive) Stats.HitBlocked(victim.Player.Slot);
             HostBlocked(victim, at);
             return;
+        }
+        if (attackerSlot >= 0 && attackerSlot != victim.Player.Slot)
+        {
+            victim.LastHitBy = attackerSlot;
+            victim.LastHitAt = _clock;
         }
         Stats.Damage(attackerSlot, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
         var attacker = attackerSlot >= 0 ? Slots[attackerSlot]?.Avatar : null;
@@ -430,18 +451,19 @@ public partial class GameManager : Node2D
             }
             foreach (var e in attacker.Player.Effects) e.OnDealDamage(attacker, victim, damage, this);
         }
-        Rpc(MethodName.Damaged, victim.Player.Slot, victim.Hp, knockback, at, damage);
-        if (victim.Hp <= 0) HostKill(victim);
+        Rpc(MethodName.Damaged, victim.Player.Slot, victim.Hp, knockback, at, damage, attackerSlot);
+        if (victim.Hp <= 0) HostKill(victim, KillCause.Shot, attackerSlot);
     }
 
     public enum KillCause { Shot, Fall, Left }
 
-    public void HostKill(Avatar a, KillCause cause = KillCause.Shot)
+    public void HostKill(Avatar a, KillCause cause = KillCause.Shot, int killer = -1)
     {
         if (!a.Alive) return;
         if (cause != KillCause.Left) Stats.Death(a.Player.Slot, fell: cause == KillCause.Fall);
         a.Alive = false;
-        Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition);
+        if (killer == a.Player.Slot) killer = -1;
+        Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
     }
 
     public void HostExplode(Vector2 at, float radius, float damage, int ownerSlot, float knockback)
@@ -474,16 +496,191 @@ public partial class GameManager : Node2D
 
     public void OnJump(Avatar a)
     {
-        Fx.Burst(a.GlobalPosition + new Vector2(0, a.HalfSize.Y), new Color(1, 1, 1, 0.5f), 4, 40, 0.25f, 1, 0);
+        var feet = a.GlobalPosition + new Vector2(0, a.HalfSize.Y);
+        Fx.Emit(feet, PKind.Smoke, new Color(1, 1, 1, 0.5f), 4, 50, 0.35f, 2.2f, 0, Vector2.Up, 2.6f, 5);
         if (a.Player == LocalMatchPlayer) Sfx.Play("jump", 0.6f);
     }
 
     private void OnShotFx(Bullet b)
     {
-        Fx.Spark(b.Pos, Palette.Player(ColorOf(b.Owner)).Lightened(0.4f), 3);
+        var st = StyleOf(b.Owner);
+        var col = Palette.Player(ColorOf(b.Owner));
+        var dir = b.Vel.Normalized();
+        Fx.Emit(b.Pos, PKind.Streak, col.Lightened(0.4f), 3 + st.Tier, 160, 0.16f, 0.8f, 0, dir, 0.9f);
+        if (st.Tier >= 2) Fx.Flash(b.Pos, 8 + st.Tier * 2, col, 0.1f);
+        if (st.Has(Flavor.Fire)) Fx.Emit(b.Pos, PKind.Ember, new Color("#ffa33b"), 2, 60, 0.4f, 1.2f, -40, dir, 1.2f);
         Sfx.Play("shoot", 0.7f);
         if (LocalMatchPlayer != null && b.Owner == LocalMatchPlayer.Slot) Shake(0.12f);
         if (b.Owner >= 0 && b.Owner < Slots.Length) Slots[b.Owner]?.Avatar?.OnFired();
+    }
+
+    // =====================================================================
+    // Effects (every peer, cosmetic). They grow with the attacker's card count and take on card flavors.
+    // =====================================================================
+
+    public FxStyle StyleOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Fx : FxStyle.None;
+
+    private Vector2 PosOf(int slot, Vector2 fallback) =>
+        slot >= 0 && slot < Slots.Length && Slots[slot]?.Avatar is { } a ? a.GlobalPosition : fallback;
+
+    /// <summary>A bullet hit a wall (or expired).</summary>
+    private void ImpactFx(Vector2 at, int owner, bool impact)
+    {
+        var st = StyleOf(owner);
+        var col = Palette.Player(ColorOf(owner));
+        if (!impact)
+        {
+            Fx.Emit(at, PKind.Dot, col, 2, 40, 0.2f, 0.8f);
+            return;
+        }
+        Fx.Spark(at, col.Lightened(0.3f), 4 + st.Tier * 2);
+        Fx.Flash(at, 8 + st.Tier * 3, col, 0.12f);
+        if (st.Tier >= 2) Fx.RingFx(at, 1, 8 + st.Tier * 3, col, 0.2f, 1.2f);
+        if (st.Has(Flavor.Fire)) Fx.Emit(at, PKind.Ember, new Color("#ff8a2a"), 3 + st.Tier, 70, 0.6f, 1.2f, -60);
+        if (st.Has(Flavor.Homing)) Fx.Emit(at, PKind.Star, col.Lightened(0.5f), 2, 50, 0.4f, 2.2f);
+        if (st.Has(Flavor.Glass)) Fx.Emit(at, PKind.Shard, new Color("#c8f4ff"), 3, 90, 0.5f, 2f, 300);
+    }
+
+    private void HitFx(int victim, int attacker, Vector2 at, Vector2 knock, float damage)
+    {
+        var st = StyleOf(attacker);
+        int tier = st.Tier;
+        float I = st.Intensity;
+        var vc = Palette.Player(ColorOf(victim));
+        var ac = attacker >= 0 ? Palette.Player(ColorOf(attacker)) : Colors.White;
+        var dir = knock.LengthSquared() > 1 ? knock.Normalized() : Vector2.Up;
+
+        Fx.Emit(at, PKind.Streak, vc.Lightened(0.3f), Mathf.RoundToInt(7 * I), 200 * Mathf.Sqrt(I), 0.35f, 1.1f, 250, dir, 2.2f);
+        Fx.Emit(at, PKind.Dot, Colors.White, 3 + tier * 2, 110, 0.3f, 0.9f);
+        Fx.Emit(at, PKind.Chunk, vc, 3 + tier, 120, 0.6f, 2f, 500, dir, 2f);
+        Fx.Flash(at, 12 + tier * 5, ac, 0.18f);
+        Fx.RingFx(at, 2, 12 + tier * 5, ac, 0.25f, 1.6f);
+        if (tier >= 2) Fx.RingFx(at, 2, 20 + tier * 6, Colors.White, 0.3f, 1f, 0.05f);
+        if (tier >= 3) Fx.RaysFx(at, ac, 6, 22 + tier * 5, 0.25f);
+        if (tier >= 4) Fx.ScreenFlash(ac with { A = 0.07f }, 0.08f);
+
+        if (st.Has(Flavor.Fire))
+        {
+            Fx.Emit(at, PKind.Ember, new Color("#ff9a2e"), 5 + tier * 2, 120, 0.7f, 1.4f, -80);
+            Fx.Emit(at, PKind.Smoke, new Color(0.15f, 0.1f, 0.1f, 0.8f), 2 + tier, 30, 0.8f, 3.5f, -20);
+        }
+        if (st.Has(Flavor.Homing)) Fx.Emit(at, PKind.Star, ac.Lightened(0.5f), 3 + tier, 90, 0.5f, 2.8f);
+        if (st.Has(Flavor.Bouncy)) Fx.RingFx(at, 1, 10 + tier * 3, ac.Lightened(0.4f), 0.25f, 1f, 0.1f);
+        if (st.Has(Flavor.Pierce)) Fx.Emit(at, PKind.Streak, Colors.White, 4, 520, 0.2f, 1.4f, 0, dir, 0.12f, 1f);
+        if (st.Has(Flavor.Split)) Fx.Emit(at, PKind.Shard, ac, 4 + tier, 160, 0.6f, 2.4f, 350);
+        if (st.Has(Flavor.Glass)) Fx.Emit(at, PKind.Shard, new Color("#d6f6ff"), 5 + tier, 180, 0.6f, 2.4f, 400);
+        if (st.Has(Flavor.Feather)) Fx.Emit(at, PKind.Confetti, new Color(1, 1, 1, 0.9f), 3, 70, 1.2f, 3f, 40, null, Mathf.Tau, 3.5f);
+        if (st.Has(Flavor.Vampire) && attacker >= 0)
+            Fx.EmitHoming(at, PosOf(attacker, at), new Color("#ff2a4a"), 4 + tier * 2, 120, 0.9f, 1.1f);
+
+        float size = 11 + Mathf.Clamp(damage / 5f, 0, 14) + tier;
+        string txt = Mathf.RoundToInt(damage).ToString();
+        if (st.Has(Flavor.Glass) && damage >= 40) txt += "!";
+        Fx.Popup(at + new Vector2(0, -10), txt, Colors.White.Lerp(ac, 0.35f), size, 0.75f);
+    }
+
+    private static readonly string[][] KillWords =
+    {
+        new[] { "KO" },
+        new[] { "KO!", "POP!" },
+        new[] { "SMASHED!", "BONK!", "SPLAT!" },
+        new[] { "WRECKED!", "DEMOLISHED!", "KABOOM!" },
+        new[] { "OBLITERATED!", "ANNIHILATED!", "ERASED!" },
+        new[] { "DELETED!!", "VAPORIZED!!", "SUPERNOVA!!" },
+    };
+
+    private readonly int[] _battleKills = new int[LobbyState.MaxPlayers];
+
+    /// <summary>
+    /// --fxshots: freezes everyone and plays a hit (left) and a kill (right) as if slot 0 held
+    /// <paramref name="power"/> cards with <paramref name="flavors"/>, so effect scaling can be screenshotted.
+    /// </summary>
+    public void DebugShowcase(int power, Flavor flavors)
+    {
+        if (Slots[0] == null || Slots[1] == null) return;
+        foreach (var a in LiveAvatars()) a.Frozen = true;
+        Bullets.Clear();
+        Slots[0].Fx = new FxStyle(power, flavors);
+        var mid = new Vector2(MapLayout.Width, MapLayout.Height) / 2;
+        HitFx(1, 0, mid + new Vector2(-170, 0), new Vector2(140, -40), 25 + power * 4);
+        Array.Clear(_battleKills);
+        if (power >= 9) _battleKills[0] = 1; // show a streak call-out too
+        KillFx(1, 0, mid + new Vector2(150, 10), KillCause.Shot);
+    }
+
+    private void KillFx(int victim, int killer, Vector2 at, KillCause cause)
+    {
+        var st = StyleOf(killer);
+        int tier = st.Tier;
+        float I = st.Intensity;
+        var vc = Palette.Player(ColorOf(victim));
+        var kc = killer >= 0 ? Palette.Player(ColorOf(killer)) : Colors.White;
+        bool fell = cause == KillCause.Fall;
+        if (fell) at = new Vector2(Mathf.Clamp(at.X, 20, MapLayout.Width - 20), MapLayout.Height - 4);
+        Vector2? up = fell ? Vector2.Up : null;
+        float spread = fell ? 1.4f : Mathf.Tau;
+
+        Fx.Emit(at, PKind.Chunk, vc, Mathf.RoundToInt(16 * I), 260 * Mathf.Sqrt(I), 1.1f, 3f, 520, up, spread, 1.2f);
+        Fx.Emit(at, PKind.Streak, vc.Lightened(0.4f), Mathf.RoundToInt(12 * I), 320, 0.45f, 1.4f, 200, up, spread);
+        Fx.Emit(at, PKind.Dot, Colors.White, 8 + tier * 4, 200, 0.5f, 1.3f, 0, up, spread);
+        Fx.Flash(at, 40 + tier * 12, vc, 0.35f);
+        Fx.Flash(at, 18 + tier * 4, Colors.White, 0.15f);
+        Fx.RingFx(at, 4, 50 + tier * 16, vc, 0.45f, 3f);
+        Fx.RingFx(at, 2, 34 + tier * 10, Colors.White, 0.35f, 1.5f, 0.06f);
+        if (tier >= 1) Fx.Emit(at, PKind.Smoke, new Color(0.12f, 0.08f, 0.16f, 0.9f), 3 + tier * 2, 70, 0.9f, 4f, -25);
+        if (tier >= 2)
+        {
+            Fx.RaysFx(at, kc, 8 + tier * 2, 70 + tier * 22, 0.6f);
+            Fx.Emit(at, PKind.Confetti, kc, 10 + tier * 6, 260, 1.6f, 3.4f, 260, up, spread, 2.2f);
+            Fx.Emit(at, PKind.Confetti, vc.Lightened(0.3f), 6 + tier * 4, 240, 1.6f, 3.4f, 260, up, spread, 2.2f);
+        }
+        if (tier >= 3)
+        {
+            Fx.RingFx(at, 6, 90 + tier * 20, kc, 0.6f, 4f, 0.12f);
+            Fx.ScreenFlash(kc with { A = 0.16f }, 0.16f);
+            _zoomPunch = Mathf.Max(_zoomPunch, 0.5f + tier * 0.1f);
+        }
+        if (tier >= 4) Fx.Emit(at, PKind.Star, Colors.White, 6 + tier * 2, 260, 0.8f, 4f, 0, up, spread, 1.6f);
+
+        if (st.Has(Flavor.Fire))
+        {
+            Fx.Emit(at, PKind.Ember, new Color("#ffae3b"), 18 + tier * 6, 260, 1.1f, 1.8f, -90);
+            Fx.Emit(at, PKind.Smoke, new Color(0.18f, 0.1f, 0.08f, 0.9f), 6 + tier * 2, 90, 1.2f, 5f, -30);
+            Fx.Flash(at, 70 + tier * 14, new Color("#ff7a22"), 0.4f);
+        }
+        if (st.Has(Flavor.Homing)) Fx.Emit(at, PKind.Star, kc.Lightened(0.5f), 10 + tier * 3, 200, 0.9f, 3.4f);
+        if (st.Has(Flavor.Bouncy))
+            for (int i = 0; i < 3; i++) Fx.RingFx(at, 4, 30 + i * 18, kc.Lightened(0.3f), 0.35f, 1.6f, 0.08f * (i + 1));
+        if (st.Has(Flavor.Pierce))
+        {
+            var d = Vector2.FromAngle((float)GD.RandRange(0, Mathf.Pi));
+            Fx.Emit(at, PKind.Streak, Colors.White, 6, 700, 0.25f, 2f, 0, d, 0.06f, 1f);
+            Fx.Emit(at, PKind.Streak, Colors.White, 6, 700, 0.25f, 2f, 0, -d, 0.06f, 1f);
+        }
+        if (st.Has(Flavor.Split) || st.Has(Flavor.Glass))
+            Fx.Emit(at, PKind.Shard, st.Has(Flavor.Glass) ? new Color("#d6f6ff") : kc, 14 + tier * 4, 300, 1f, 3.2f, 450, up, spread);
+        if (st.Has(Flavor.Feather)) Fx.Emit(at, PKind.Confetti, Colors.White, 10, 160, 2f, 3.6f, 50, up, spread, 3f);
+        if (st.Has(Flavor.Vampire) && killer >= 0)
+            Fx.EmitHoming(at, PosOf(killer, at), new Color("#ff2a4a"), 14 + tier * 3, 200, 1.2f, 1.4f);
+
+        // Words: how hard it was, plus a streak call-out.
+        string word = fell && killer < 0 ? "OUT!" : KillWords[tier][(int)(GD.Randi() % (uint)KillWords[tier].Length)];
+        Fx.Popup(at + new Vector2(0, fell ? -40 : -18), word, kc.Lightened(0.2f), 16 + tier * 3, 1.1f);
+        if (killer >= 0 && killer < _battleKills.Length)
+        {
+            int k = ++_battleKills[killer];
+            string streak = k switch { 2 => "DOUBLE KILL", 3 => "TRIPLE KILL", >= 4 => "RAMPAGE", _ => null };
+            if (streak != null)
+            {
+                Fx.Popup(PosOf(killer, at) + new Vector2(0, -38), streak, Palette.Accent, 18 + k * 2, 1.4f);
+                Fx.RaysFx(PosOf(killer, at), Palette.Accent, 10, 60, 0.5f);
+            }
+        }
+
+        Sfx.Play("death");
+        if (tier >= 3 || st.Has(Flavor.Fire)) Sfx.Play("explode", 0.6f);
+        Shake(0.7f + tier * 0.08f);
+        HitStop(70 + Mathf.Min(tier, 4) * 20);
     }
 
     // =====================================================================
@@ -564,6 +761,7 @@ public partial class GameManager : Node2D
         Phase = Phase.Countdown;
         CountdownLeft = CountdownTime;
         _lastCountdownTick = -1;
+        System.Array.Clear(_battleKills);
         _endCheckT = -1;
         PickOptions.Clear();
         Log.Info($"battle {BattleNumber} start (seed {seed}, map attempts {layout.Attempts}{(layout.UsedFallback ? ", fallback" : "")})");
@@ -657,12 +855,12 @@ public partial class GameManager : Node2D
     [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void BulletGone(int id, Vector2 pos, bool impact)
     {
-        Bullets.Kill(id);
-        Fx.Spark(pos, Palette.Text, impact ? 5 : 2);
+        var b = Bullets.Kill(id);
+        ImpactFx(pos, b?.Owner ?? -1, impact);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void Damaged(int slot, float newHp, Vector2 knockback, Vector2 at, float damage)
+    private void Damaged(int slot, float newHp, Vector2 knockback, Vector2 at, float damage, int attacker)
     {
         var a = Slots[slot]?.Avatar;
         if (a == null) return;
@@ -672,56 +870,65 @@ public partial class GameManager : Node2D
             if (Slots[slot] == LocalMatchPlayer) a.Velocity += knockback; // predicted avatar feels the hit
         }
         a.OnHurtFx();
-        var col = Palette.Player(ColorOf(slot));
-        Fx.Burst(at, col, 8, 120, 0.4f);
-        Fx.Popup(at + new Vector2(0, -8), Mathf.RoundToInt(damage).ToString(), Colors.White);
+        HitFx(slot, attacker, at, knockback, damage);
         Sfx.Play("hit");
-        Shake(Slots[slot] == LocalMatchPlayer ? 0.45f : 0.2f);
+        float tierShake = StyleOf(attacker).Tier * 0.04f;
+        Shake((Slots[slot] == LocalMatchPlayer ? 0.45f : 0.2f) + tierShake);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void Died(int slot, Vector2 at)
+    private void Died(int slot, Vector2 at, int killer, int cause)
     {
         var a = Slots[slot]?.Avatar;
         if (a == null) return;
         a.Alive = false;
         a.CollisionLayer = 0;
         a.QueueRedraw();
-        var col = Palette.Player(ColorOf(slot));
-        Fx.Burst(at, col, 28, 220, 0.8f, 3);
-        Fx.Burst(at, Colors.White, 10, 160, 0.4f, 2);
-        Fx.RingFx(at, 4, 40, col, 0.4f);
-        Sfx.Play("death");
-        Shake(0.7f);
-        HitStop(70);
-        Log.Info($"{NameOf(slot)} died");
+        KillFx(slot, killer, at, (KillCause)cause);
+        Log.Info($"{NameOf(slot)} died{(killer >= 0 ? $" (by {NameOf(killer)})" : "")}");
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void FxEvent(int kind, Vector2 pos, float value, int slot, Vector2 pos2)
     {
         var col = Palette.Player(ColorOf(slot));
+        var st = StyleOf(slot);
         switch ((FxKind)kind)
         {
             case FxKind.Explosion:
-                Fx.RingFx(pos, 2, value, col.Lightened(0.3f), 0.3f);
-                Fx.Burst(pos, col, 16, value * 5, 0.5f, 2, 100);
-                Fx.Burst(pos, Palette.Accent, 8, value * 3, 0.3f, 2, 0);
+            {
+                var fire = new Color("#ffa33b");
+                Fx.Flash(pos, value * 2.2f, fire, 0.3f);
+                Fx.Flash(pos, value * 0.9f, Colors.White, 0.12f);
+                Fx.RingFx(pos, 2, value * 1.1f, col.Lightened(0.3f), 0.3f, 3f);
+                Fx.RingFx(pos, 2, value * 1.6f, fire, 0.4f, 1.5f, 0.05f);
+                Fx.Emit(pos, PKind.Ember, fire, 14 + st.Tier * 4, value * 6, 0.8f, 1.6f, -60);
+                Fx.Emit(pos, PKind.Streak, col.Lightened(0.4f), 10 + st.Tier * 2, value * 8, 0.35f, 1.4f, 100);
+                Fx.Emit(pos, PKind.Smoke, new Color(0.16f, 0.1f, 0.1f, 0.9f), 6 + st.Tier, value * 2, 1f, 4.5f, -30);
+                if (st.Tier >= 3) Fx.RaysFx(pos, fire, 8, value * 2.4f, 0.35f);
                 Sfx.Play("explode");
-                Shake(0.4f);
+                Shake(0.4f + st.Tier * 0.04f);
                 break;
+            }
             case FxKind.Block:
-                Fx.RingFx(pos, 6, 18, Colors.White, 0.25f);
+                Fx.RingFx(pos, 8, 22, Colors.White, 0.25f, 2f);
+                Fx.Flash(pos, 22, col, 0.2f);
                 Sfx.Play("block", 0.7f);
                 break;
             case FxKind.Blocked:
-                Fx.Burst(pos, Colors.White, 8, 100, 0.3f, 1, 0);
-                Fx.Popup(pos + new Vector2(0, -8), "BLOCK", Colors.White);
+                Fx.Emit(pos, PKind.Streak, Colors.White, 10, 180, 0.3f, 1f);
+                Fx.Emit(pos, PKind.Star, col.Lightened(0.5f), 3, 80, 0.4f, 2.5f);
+                Fx.RingFx(pos, 2, 14, Colors.White, 0.2f, 1.5f);
+                Fx.Popup(pos + new Vector2(0, -10), "BLOCKED", Colors.White, 11, 0.7f);
                 Sfx.Play("blocked");
                 break;
             case FxKind.Blink:
-                Fx.Burst(pos, col, 12, 80, 0.4f, 2, 0);
-                Fx.Burst(pos2, col, 12, 80, 0.4f, 2, 0);
+                foreach (var p in new[] { pos, pos2 })
+                {
+                    Fx.Emit(p, PKind.Dot, col.Lightened(0.3f), 14, 110, 0.45f, 1.2f);
+                    Fx.Emit(p, PKind.Star, Colors.White, 4, 60, 0.4f, 2.4f);
+                    Fx.RingFx(p, 18, 2, col, 0.25f, 2f);
+                }
                 Sfx.Play("blink");
                 break;
         }
@@ -878,6 +1085,8 @@ public partial class GameManager : Node2D
         }
         _trauma = Mathf.Max(0, _trauma - (float)delta * 2.2f);
         float s = _trauma * _trauma * 6f;
-        _cam.Offset = new Vector2((float)GD.RandRange(-s, s), (float)GD.RandRange(-s, s)).Round();
+        _cam.Offset = new Vector2((float)GD.RandRange(-s, s), (float)GD.RandRange(-s, s));
+        _zoomPunch = Mathf.Max(0, _zoomPunch - (float)delta * 3f);
+        _cam.Zoom = Vector2.One * (1f + 0.06f * _zoomPunch * _zoomPunch);
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Brawler.Core;
+using Brawler.Fx;
 using Brawler.Logic;
 using Brawler.Net;
 using Godot;
@@ -14,8 +15,9 @@ public partial class CustomizeUI : Control
 
     private readonly NetworkManager _net;
     private AvatarPreview _preview;
-    private Label _colorValue;
+    private HBoxContainer _bodySwatches;
     private readonly Dictionary<LookPart, Label> _values = new();
+    private readonly Dictionary<LookPart, HBoxContainer> _swatches = new();
     private readonly Rng _rng = new((ulong)DateTime.Now.Ticks);
     private Appearance _look;
 
@@ -24,35 +26,41 @@ public partial class CustomizeUI : Control
 
     public override void _Ready()
     {
-        var (_, body) = UiKit.CenteredPanel(this, 330);
-        body.AddChild(UiKit.Label("CUSTOMIZE", 20, Palette.Accent, HorizontalAlignment.Center));
+        var (_, body) = UiKit.CenteredPanel(this, 600);
+        body.AddChild(new TitleText("CUSTOMIZE", 30, 1.5f, Palette.Hot, Palette.Accent));
 
-        var cols = UiKit.HBox(12);
+        var cols = UiKit.HBox(22);
         body.AddChild(cols);
 
-        // Preview on a little pedestal.
-        var left = UiKit.VBox(2);
-        _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 4, alive: true);
+        var left = UiKit.VBox(4);
+        _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 6.5f, alive: true) { Pedestal = true };
         left.AddChild(_preview);
-        left.AddChild(new ColorRect { Color = Palette.SolidLight, CustomMinimumSize = new Vector2(0, 3) });
-        left.AddChild(UiKit.Label("move the mouse to look around", 8, Palette.TextDim, HorizontalAlignment.Center));
+        left.AddChild(UiKit.Label("move the mouse to look around", UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center));
         cols.AddChild(left);
 
-        var grid = new GridContainer { Columns = 4, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        grid.AddThemeConstantOverride("h_separation", 4);
-        grid.AddThemeConstantOverride("v_separation", 3);
+        var grid = new GridContainer { Columns = 2, SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        grid.AddThemeConstantOverride("h_separation", 12);
+        grid.AddThemeConstantOverride("v_separation", 7);
         cols.AddChild(grid);
 
-        _colorValue = AddRow(grid, "Color", d => SetColor(_net.LocalColor + d));
+        grid.AddChild(RowLabel("Body"));
+        _bodySwatches = UiKit.HBox(5);
+        grid.AddChild(_bodySwatches);
         foreach (LookPart part in Enum.GetValues<LookPart>())
         {
             var p = part;
-            _values[p] = AddRow(grid, Appearance.PartLabel(p), d => Change(p, d));
+            grid.AddChild(RowLabel(Appearance.PartLabel(p)));
+            if (p is LookPart.HairColor or LookPart.HatColor)
+            {
+                _swatches[p] = UiKit.HBox(4);
+                grid.AddChild(_swatches[p]);
+            }
+            else grid.AddChild(Stepper(p));
         }
 
-        var buttons = UiKit.HBox();
+        var buttons = UiKit.HBox(8);
         buttons.AddChild(UiKit.Button("Randomize", Randomize));
-        var done = UiKit.Button("Done", Close);
+        var done = UiKit.Primary("DONE", Close);
         done.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         buttons.AddChild(done);
         body.AddChild(buttons);
@@ -61,15 +69,24 @@ public partial class CustomizeUI : Control
         Open();
     }
 
-    private Label AddRow(GridContainer grid, string name, Action<int> step)
+    private static Label RowLabel(string name)
     {
-        grid.AddChild(UiKit.Label(name, 10, Palette.TextDim));
-        grid.AddChild(UiKit.Button("<", () => step(-1)));
-        var value = UiKit.Label("", 10, Palette.Text, HorizontalAlignment.Center);
-        value.CustomMinimumSize = new Vector2(64, 0);
-        grid.AddChild(value);
-        grid.AddChild(UiKit.Button(">", () => step(1)));
-        return value;
+        var l = UiKit.Label(name.ToUpperInvariant(), UiKit.Tiny, Palette.TextDim, font: Fonts.Bold);
+        l.VerticalAlignment = VerticalAlignment.Center;
+        return l;
+    }
+
+    private Control Stepper(LookPart part)
+    {
+        var row = UiKit.HBox(4);
+        row.AddChild(UiKit.Button("<", () => Change(part, -1), 0, "Small"));
+        var value = UiKit.Label("", UiKit.Body, Colors.White, HorizontalAlignment.Center, Fonts.Bold);
+        value.CustomMinimumSize = new Vector2(110, 0);
+        value.VerticalAlignment = VerticalAlignment.Center;
+        row.AddChild(value);
+        row.AddChild(UiKit.Button(">", () => Change(part, 1), 0, "Small"));
+        _values[part] = value;
+        return row;
     }
 
     /// <summary>Start editing from the current profile.</summary>
@@ -86,6 +103,12 @@ public partial class CustomizeUI : Control
         Apply();
     }
 
+    private void Set(LookPart part, int value)
+    {
+        _look[part] = value;
+        Apply();
+    }
+
     private void SetColor(int idx)
     {
         int n = Palette.Players.Length;
@@ -96,6 +119,7 @@ public partial class CustomizeUI : Control
     private void Randomize()
     {
         _look = Appearance.Random(_rng);
+        _net.SetLocalColor(_rng.Range(0, Palette.Players.Length - 1));
         Apply();
     }
 
@@ -110,9 +134,24 @@ public partial class CustomizeUI : Control
         _preview.Look = _look;
         _preview.ColorIdx = _net.LocalColor;
         _preview.QueueRedraw();
-        _colorValue.Text = Palette.Names[_net.LocalColor];
-        _colorValue.AddThemeColorOverride("font_color", Palette.Player(_net.LocalColor));
         foreach (var (part, label) in _values) label.Text = _look.OptionName(part);
+
+        UiKit.ClearChildren(_bodySwatches);
+        for (int i = 0; i < Palette.Players.Length; i++)
+        {
+            int c = i;
+            _bodySwatches.AddChild(UiKit.Swatch(Palette.Players[i], i == _net.LocalColor, () => SetColor(c), 22));
+        }
+        foreach (var (part, row) in _swatches)
+        {
+            UiKit.ClearChildren(row);
+            for (int i = 0; i < Appearance.Dyes.Length; i++)
+            {
+                int d = i;
+                var p = part;
+                row.AddChild(UiKit.Swatch(Palette.Dye(i), i == _look[part], () => Set(p, d), 17));
+            }
+        }
     }
 
     private void Close()

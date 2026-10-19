@@ -5,7 +5,7 @@ using Godot;
 namespace Brawler.Fx;
 
 /// <summary>
-/// Procedurally synthesized retro sound effects (no audio assets needed) played through a small voice pool.
+/// Procedurally synthesized sound effects (no audio assets needed) played through a small voice pool.
 /// </summary>
 public partial class Sfx : Node
 {
@@ -31,6 +31,7 @@ public partial class Sfx : Node
         _sounds["go"] = Make(0.25f, t => Square(t < 0.1f ? 880 : 1320, t) * Env(t, 0.25f) * 0.35f);
         _sounds["pick"] = Make(0.3f, t => Square(t < 0.1f ? 523 : t < 0.2f ? 659 : 784, t) * Env(t, 0.3f) * 0.3f);
         _sounds["win"] = Make(0.6f, t => Square(t < 0.15f ? 523 : t < 0.3f ? 659 : t < 0.45f ? 784 : 1046, t) * Env(t, 0.6f) * 0.3f);
+        _sounds["pad"] = Make(0.22f, t => (Sine(Sweep(260, 1100, t, 0.22f), t) * 0.7f + Noise() * 0.12f) * Env(t, 0.22f) * 0.5f);
 
         for (int i = 0; i < 12; i++)
         {
@@ -75,10 +76,12 @@ public partial class Sfx : Node
         return new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, MixRate = Rate, Stereo = false, Data = data };
     }
 
+    /// <summary>A rounded "square": mostly sine with a little edge, so tones sound clean instead of chiptune.</summary>
     private float Square(float freq, float t)
     {
         _phase += freq / Rate;
-        return (_phase % 1f) < 0.5f ? 1f : -1f;
+        float ph = _phase % 1f;
+        return Mathf.Sin(ph * Mathf.Tau) * 0.72f + (ph < 0.5f ? 0.28f : -0.28f) * 0.6f + Mathf.Sin(ph * Mathf.Tau * 2) * 0.12f;
     }
 
     private float Sine(float freq, float t)

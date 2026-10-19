@@ -74,10 +74,79 @@ public sealed class BotBrain : IInputSource
 
         bool wantJump = false;
         bool onFloor = self.IsOnFloor();
-        if (onFloor && to.Y < -30 && Mathf.Abs(to.X) < 140) wantJump = true;        // target above
+
+        // --- navigation: out of sight, or far above/below → follow the jump graph one surface at a time ---
+        var map = _game.Map;
+        if (map != _navMap) { _navMap = map; _surface = -1; _hop = -1; }
+        var feet = me + new Vector2(0, self.HalfSize.Y);
+        if (onFloor && SurfaceAt(map, feet, 4) is int here and >= 0 && here != _surface) { _surface = here; _navT = 0; }
+        _navT -= dt;
+        bool navigating = false;
+        if ((!los || Mathf.Abs(to.Y) > 60) && _surface >= 0)
+        {
+            if (_navT <= 0)
+            {
+                _navT = 0.3f;
+                int goal = SurfaceUnder(map, target.GlobalPosition + new Vector2(0, target.HalfSize.Y));
+                _hop = goal >= 0 ? MapGenerator.NextHop(map, _surface, goal) : -1;
+            }
+            navigating = _hop >= 0 && _hop != _surface;
+        }
+        if (navigating)
+        {
+            var hop = map.Surfaces[_hop];
+            var cur = map.Surfaces[_surface];
+            float x = me.X, aimX;
+            if (hop.Y < cur.Y - 4)
+            {
+                // Climbing: get clear of the platform's underside, then jump toward it and steer onto it.
+                bool overlap = cur.X2 > hop.X1 && cur.X1 < hop.X2;
+                float edge = x < hop.X1 ? hop.X1 - x : x > hop.X2 ? x - hop.X2 : 0;
+                if (!onFloor) aimX = Inside(x, hop, 12);
+                else if (overlap)
+                {
+                    // Walk to a spot on this surface that's clear of the platform above, then jump.
+                    float launch = MapGenerator.LaunchX(map, cur, hop, x);
+                    aimX = float.IsNaN(launch) ? x : launch;
+                    if (Mathf.Abs(aimX - x) < 5) wantJump = true;
+                }
+                else
+                {
+                    aimX = Inside(x, hop, 10);
+                    if (edge < 34) wantJump = true;
+                }
+            }
+            else if (onFloor && hop.Y > cur.Y + 4 && cur.X2 > hop.X1 && cur.X1 < hop.X2)
+            {
+                // Dropping onto something under this surface: walk off the edge it sticks out past (or the nearest).
+                bool leftOk = hop.X1 < cur.X1 - 4, rightOk = hop.X2 > cur.X2 + 4;
+                bool goLeft = leftOk && rightOk ? x - cur.X1 < cur.X2 - x : leftOk || (!rightOk && x - cur.X1 < cur.X2 - x);
+                aimX = goLeft ? cur.X1 - 10 : cur.X2 + 10;
+            }
+            else aimX = Inside(x, hop, 10); // same level, or already falling: steer onto it
+            move = Mathf.Abs(aimX - x) < 3 ? 0 : Mathf.Sign(aimX - x);
+        }
+
+        // Unstick: if we haven't really moved for a while and can't see anyone, wander and hop for a bit.
+        _stuckT += dt;
+        if (me.DistanceTo(_stuckFrom) > 24) { _stuckFrom = me; _stuckT = 0; }
+        if (_stuckT > 2.5f && !los && _wanderT <= 0)
+        {
+            _wanderT = _rng.RandfRange(1f, 2f);
+            _wanderDir = _rng.Randf() < 0.5f ? -1 : 1;
+            _stuckT = 0;
+        }
+        if (_wanderT > 0)
+        {
+            _wanderT -= dt;
+            move = _wanderDir;
+            if (onFloor && _rng.Randf() < 0.05f) wantJump = true;
+        }
+
+        if (onFloor && !navigating && to.Y < -30 && Mathf.Abs(to.X) < 140) wantJump = true; // target above
         if (self.IsOnWall() && move * self.GetWallNormal().X < 0) wantJump = true;   // wall ahead / wall jump
         if (onFloor && !GroundAhead(self, move)) wantJump = true;                     // edge or pit ahead
-        if (!onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 140)) move = -move; // falling into a pit: steer back
+        if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 140)) move = -move; // falling into a pit: steer back
         if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
 
         if (wantJump && _jumpHold <= -0.15f)
@@ -107,6 +176,41 @@ public sealed class BotBrain : IInputSource
             if (a == self) continue;
             float d = a.GlobalPosition.DistanceSquaredTo(self.GlobalPosition);
             if (d < bestD) { bestD = d; best = a; }
+        }
+        return best;
+    }
+
+    private MapLayout _navMap;
+    private int _surface = -1, _hop = -1;
+    private float _navT, _stuckT, _wanderT, _wanderDir = 1;
+    private Vector2 _stuckFrom;
+
+    /// <summary><paramref name="x"/> clamped into a surface, at most <paramref name="inset"/> px in from its ends.</summary>
+    private static float Inside(float x, Surface s, float inset)
+    {
+        inset = Mathf.Min(inset, s.Width * 0.5f);
+        return Mathf.Clamp(x, s.X1 + inset, s.X2 - inset);
+    }
+
+    /// <summary>The surface whose top is at <paramref name="feet"/> (within <paramref name="tol"/> px), or -1.</summary>
+    private static int SurfaceAt(MapLayout map, Vector2 feet, float tol)
+    {
+        for (int i = 0; i < map.Surfaces.Count; i++)
+        {
+            var s = map.Surfaces[i];
+            if (Mathf.Abs(feet.Y - s.Y) < tol && feet.X >= s.X1 - 4 && feet.X <= s.X2 + 4) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>The highest surface at or below a point (where someone in the air will land), or -1.</summary>
+    private static int SurfaceUnder(MapLayout map, Vector2 p)
+    {
+        int best = -1;
+        for (int i = 0; i < map.Surfaces.Count; i++)
+        {
+            var s = map.Surfaces[i];
+            if (s.Y >= p.Y - 4 && p.X >= s.X1 - 4 && p.X <= s.X2 + 4 && (best < 0 || s.Y < map.Surfaces[best].Y)) best = i;
         }
         return best;
     }

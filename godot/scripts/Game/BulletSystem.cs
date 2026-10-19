@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Brawler.Core;
+using Brawler.Fx;
 using Brawler.Logic;
 using Godot;
 using NVec = System.Numerics.Vector2;
@@ -16,7 +17,8 @@ public sealed class Bullet
     public float Age;
     public bool Bounced, Dead;
     public readonly HashSet<int> Hit = new();
-    public readonly Vector2[] Trail = new Vector2[4];
+    public readonly Vector2[] Trail = new Vector2[TrailMax];
+    public const int TrailMax = 14;
 
     public byte[] Serialize()
     {
@@ -63,10 +65,15 @@ public partial class BulletSystem : Node2D
         Bullets.Add(b);
     }
 
-    public void Kill(int id)
+    public Bullet Kill(int id)
     {
         foreach (var b in Bullets)
-            if (b.Id == id) b.Dead = true;
+            if (b.Id == id)
+            {
+                b.Dead = true;
+                return b;
+            }
+        return null;
     }
 
     public void Clear() => Bullets.Clear();
@@ -93,12 +100,12 @@ public partial class BulletSystem : Node2D
             var start = b.Pos;
             MoveWithBounces(b, dt, host, solids);
             if (host && !b.Dead) HostCheckPlayers(b, start);
+            if (!b.Dead) Shed(b);
         }
 
         Bullets.AddRange(_spawnQueue);
         _spawnQueue.Clear();
         Bullets.RemoveAll(b => b.Dead);
-        QueueRedraw();
     }
 
     private void Steer(Bullet b, float dt)
@@ -141,7 +148,9 @@ public partial class BulletSystem : Node2D
                 b.Vel = ToG(Sweep.Reflect(ToN(b.Vel), h.Normal)) * 0.92f;
                 var remaining = delta * (1 - h.T);
                 delta = ToG(Sweep.Reflect(ToN(remaining), h.Normal));
-                Game.Fx.Spark(b.Pos, Palette.Player(Game.ColorOf(b.Owner)), 3);
+                var bc = Palette.Player(Game.ColorOf(b.Owner));
+                Game.Fx.Emit(b.Pos, PKind.Streak, bc.Lightened(0.3f), 4, 140, 0.2f, 0.9f, 0, n, 2.2f);
+                Game.Fx.RingFx(b.Pos, 1, 7 + b.Radius * 2, bc, 0.18f, 1.2f);
                 Game.Sfx.Play("bounce", 0.5f);
             }
             else
@@ -150,7 +159,7 @@ public partial class BulletSystem : Node2D
                 else
                 {
                     b.Dead = true;
-                    Game.Fx.Spark(b.Pos, Palette.Player(Game.ColorOf(b.Owner)), 4);
+                    Game.Fx.Spark(b.Pos, Palette.Player(Game.ColorOf(b.Owner)), 2);
                 }
                 return;
             }
@@ -226,22 +235,81 @@ public partial class BulletSystem : Node2D
 
     // ---------- drawing ----------
 
-    public override void _Draw()
+    private DrawLayer _trails, _cores;
+    private float _t;
+
+    public override void _Ready()
+    {
+        _trails = new DrawLayer(DrawTrails, additive: true);
+        _cores = new DrawLayer(DrawCores);
+        AddChild(_trails);
+        AddChild(_cores);
+    }
+
+    public override void _Process(double delta)
+    {
+        _t += (float)delta;
+        _trails.QueueRedraw();
+        _cores.QueueRedraw();
+    }
+
+    /// <summary>Flavored particles shed while a bullet flies (every peer, cosmetic).</summary>
+    private void Shed(Bullet b)
+    {
+        var st = Game.StyleOf(b.Owner);
+        if (st.Power == 0) return;
+        float roll = GD.Randf();
+        if (st.Has(Flavor.Fire) && roll < 0.35f)
+            Game.Fx.Emit(b.Pos, PKind.Ember, new Color("#ff9a2e"), 1, 30, 0.45f, 1f + b.Radius * 0.3f, -40);
+        else if (st.Has(Flavor.Homing) && roll < 0.2f)
+            Game.Fx.Emit(b.Pos, PKind.Star, Palette.Player(Game.ColorOf(b.Owner)).Lightened(0.5f), 1, 20, 0.35f, 1.8f);
+        else if (st.Has(Flavor.Vampire) && roll < 0.15f)
+            Game.Fx.Emit(b.Pos, PKind.Dot, new Color("#ff2a4a"), 1, 15, 0.3f, 0.8f);
+        else if (st.Tier >= 3 && roll < 0.08f * st.Tier)
+            Game.Fx.Emit(b.Pos, PKind.Dot, Palette.Player(Game.ColorOf(b.Owner)).Lightened(0.4f), 1, 25, 0.3f, 0.7f);
+    }
+
+    private static Color TrailColor(FxStyle st, Color owner) =>
+        st.Has(Flavor.Fire) ? new Color("#ff7a22") : st.Has(Flavor.Vampire) ? new Color("#ff2a4a") : st.Has(Flavor.Glass) ? new Color("#bff2ff") : owner;
+
+    private void DrawTrails(DrawLayer l)
     {
         foreach (var b in Bullets)
         {
             if (b.Dead) continue;
-            var c = Palette.Player(Game.ColorOf(b.Owner));
-            for (int i = b.Trail.Length - 1; i >= 0; i--)
+            var st = Game.StyleOf(b.Owner);
+            var owner = Palette.Player(Game.ColorOf(b.Owner));
+            var c = TrailColor(st, owner);
+            int len = Mathf.Min(Bullet.TrailMax, 5 + st.Tier * 2 + (st.Has(Flavor.Pierce) ? 3 : 0));
+            float width = b.Radius * 2f * (1f + st.Tier * 0.08f);
+            var prev = b.Pos;
+            for (int i = 0; i < len; i++)
             {
-                float k = 1f - (i + 1) / (float)(b.Trail.Length + 1);
-                float r = Mathf.Max(1, b.Radius * k);
-                DrawRect(new Rect2((b.Trail[i] - new Vector2(r, r) * 0.5f).Round(), new Vector2(r, r).Ceil()), c with { A = 0.35f * k });
+                var p = b.Trail[i];
+                float k = 1f - i / (float)len;
+                if (prev.DistanceSquaredTo(p) > 0.01f)
+                    l.DrawLine(prev, p, Shapes.Hdr(c, 1.2f + st.Tier * 0.15f) with { A = 0.75f * k }, Mathf.Max(0.6f, width * k), true);
+                prev = p;
             }
-            float s = Mathf.Max(2, Mathf.Round(b.Radius * 2));
-            var p = (b.Pos - new Vector2(s, s) * 0.5f).Round();
-            DrawRect(new Rect2(p, new Vector2(s, s)), Colors.White);
-            if (s >= 4) DrawRect(new Rect2(p + Vector2.One, new Vector2(s - 2, s - 2)), c.Lightened(0.3f));
+            float glow = b.Radius * (4f + st.Tier * 0.9f) * (st.Has(Flavor.Big) ? 1.3f : 1f);
+            float pulse = 1f + 0.12f * Mathf.Sin(_t * 18 + b.Id);
+            GlowTex.Draw(l, b.Pos, glow * pulse, owner with { A = 0.5f + st.Tier * 0.06f });
+            if (st.Tier >= 4)
+                l.DrawArc(b.Pos, b.Radius + 2.5f + Mathf.Sin(_t * 14 + b.Id) * 0.8f, 0, Mathf.Tau, 16, Shapes.Hdr(owner, 1.6f) with { A = 0.6f }, 0.8f, true);
+        }
+    }
+
+    private void DrawCores(DrawLayer l)
+    {
+        foreach (var b in Bullets)
+        {
+            if (b.Dead) continue;
+            var st = Game.StyleOf(b.Owner);
+            var owner = Palette.Player(Game.ColorOf(b.Owner));
+            float r = Mathf.Max(1.4f, b.Radius);
+            l.DrawCircle(b.Pos, r + 0.7f, owner.Darkened(0.55f), true, -1, true);
+            l.DrawCircle(b.Pos, r, TrailColor(st, owner).Lightened(0.35f), true, -1, true);
+            l.DrawCircle(b.Pos - b.Vel.Normalized() * r * 0.15f, r * 0.55f, Shapes.Hdr(Colors.White, 1.6f + st.Tier * 0.2f), true, -1, true);
         }
     }
 

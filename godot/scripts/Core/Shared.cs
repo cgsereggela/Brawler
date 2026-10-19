@@ -23,13 +23,11 @@ public static class Palette
 
     public static Color Player(int idx) => Players[((idx % Players.Length) + Players.Length) % Players.Length];
 
-    public static readonly Color Bg = new("#12121a");
-    public static readonly Color Solid = new("#2c2f45");
-    public static readonly Color SolidLight = new("#454a6b");
-    public static readonly Color SolidDark = new("#1f2133");
-    public static readonly Color Text = new("#e8e8f0");
-    public static readonly Color TextDim = new("#8a8aa3");
-    public static readonly Color Accent = new("#ffd23d");
+    public static readonly Color Text = new("#f3f0ff");
+    public static readonly Color TextDim = new("#aaa3cc");
+    public static readonly Color Accent = new("#ffd23d");  // numbers, ammo, highlights
+    public static readonly Color Hot = new("#ff3d7f");     // primary actions
+    public static readonly Color Cool = new("#36f3ff");    // hover and focus
     public static readonly Color Outline = new("#15151f");
 
     private static readonly Color[] DyeColors = System.Array.ConvertAll(Appearance.Dyes, d => new Color(d.Hex));

@@ -1,7 +1,7 @@
 # Brawler
 
 A ROUNDS-style 2–4 player platform shooter: lose a round, pick a card, come back stronger.
-Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated arenas.
+Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
 ## Run it
 
@@ -30,10 +30,42 @@ Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe 
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - Each battle gets a newly generated arena.
 
+## Arenas
+- The arena is 800×450. Each battle's seed picks a **layout style**:
+  - *Tiers*: scattered platforms with the odd pillar.
+  - *Mirror*: a symmetric layout.
+  - *Islands*: floating islands over deadly pits.
+  - *Towers*: solid towers rising from the floor.
+- **Jump pads** (glowing plates with rising chevrons) launch you about 170 px up. Maps never rely on them to connect spawns.
+- The seed also picks one of seven **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds). Each theme sets the sky, the silhouettes, drifting motes (bokeh, embers, bubbles, snow, fireflies), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles). Themes are cosmetic and identical on every peer.
+
+## Effects that grow with your cards
+Every card you hold makes your shots, hits and kills flashier. Your **power** is your card count, and it maps to tiers 0–5:
+- *More cards:* longer, brighter bullet trails; more sparks and debris; bigger shockwave rings; light rays and confetti on kills; screen flashes and a camera punch at high tiers; louder kill words ("KO!" up to "VAPORIZED!!"); longer hit-stop.
+- *Flavors from specific cards:*
+  - Explosive: embers and smoke.
+  - Homing: sparkles.
+  - Vampire: red motes that fly back to you.
+  - Glass Cannon: glass shards.
+  - Splitter: colored shards.
+  - Bouncy: ring cascades.
+  - Pierce: slash streaks.
+  - Feather: drifting feathers.
+- *Streaks:* kills in the same battle call out DOUBLE KILL, TRIPLE KILL and RAMPAGE.
+- *Pit kills:* knocking someone into a pit credits the last player who hit them (for the effects only, not the stats).
+
+Everything is computed from the card list every peer already has, so nothing extra goes over the network. The mapping lives in `godot/scripts/Game/FxStyle.cs`.
+
 ## Characters
 - **Customize Character** (in the menu or lobby) opens the editor: body color, eyes, nose, mouth, hair, hair color, hat and hat color, plus *Randomize*. The preview follows your mouse.
-- Your name, color and look are saved to `%APPDATA%Godotpp_userdataBrawlerprofile.cfg` and sent to everyone in the lobby. Bots get a random look.
+- Your name, color and look are saved to `%APPDATA%\Godot\app_userdata\Brawler\profile.cfg` and sent to everyone in the lobby. Bots get a random look.
 - Looks are cosmetic only. A hat is drawn above the hitbox and never takes a hit.
+
+## Look and feel
+- **Rendering:** the game renders at the window's resolution (base 800×450, `canvas_items` stretch) with 4× MSAA. All art is smooth vector shapes drawn in code, and there are no image files.
+- **Glow:** HDR 2D plus a `WorldEnvironment` glow make anything drawn brighter than 1.0 bloom: bullets, neon edges, muzzle flashes and effects. Use `Shapes.Hdr(color, boost)` to make something glow.
+- **Text:** a system sans font (Bahnschrift on Windows, with fallbacks) through `Fonts.Regular/Bold/Heavy`.
+- **UI:** a glass-panel theme in `UiKit`, with hover bounce on buttons. `TitleText` draws the big animated headings.
 
 ## Project layout
 ```
@@ -43,8 +75,10 @@ godot/
   scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep, Appearance, StatsModel/StatsReport
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
   scripts/Net/              NetworkManager: ENet host/join, lobby sync
-  scripts/Game/             GameManager (match flow + netcode), Avatar, AvatarArt (character + gun pixel art), BulletSystem, BotBrain, CardEffects, MapNode
-  scripts/Fx/               particles/rings/popups, procedurally synthesized SFX
+  scripts/Game/             GameManager (match flow + netcode, hit/kill effects), Avatar, AvatarArt (character + gun vector art),
+                            BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Backdrop (scenery),
+                            ArenaTheme, FxStyle (card-driven effect power and flavors)
+  scripts/Fx/               FxLayer (particles, rings, rays, flashes, popups), Visuals (shapes, glow texture, fonts), synthesized SFX
   scripts/UI/               menu, lobby, character editor, HUD, card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
 tools/CardStats/            card balance report from the stats log (dotnet run)
@@ -63,14 +97,21 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 2. If the card needs behavior beyond stats, give it an effect id (as `"blink"` does), implement `ICardEffect` in `godot/scripts/Game/CardEffects.cs`, and register it in `CardEffects.Create`.
 3. If it needs a new number, add it to the `Stat` enum and `StatBlock.Base()` in `Stats.cs`, then read it where it applies.
 4. Never reuse or renumber an id: the stats log refers to cards by id.
+5. Optional: give it an effect flavor in `CardFlavors` in `godot/scripts/Game/FxStyle.cs`. Every card adds power on its own, flavored or not.
 
 ## Adding a face part, hairstyle or hat
-Character art is drawn in code from small pixel maps, so there are no image files to manage.
+Character art is vector shapes drawn in code, so there are no image files to manage.
 1. Add the option name to the end of its list in `godot/scripts/Logic/Appearance.cs` (`EyeNames`, `NoseNames`, `MouthNames`, `HairNames`, `HatNames` or `Dyes`). Saved profiles store indices, so append; don't reorder.
-2. Add the art at the same index in `godot/scripts/Game/AvatarArt.cs`. Noses, mouths, hair and hats are `PixelArt` strings: one string per row, one char per pixel, `.` empty. `#`, `l` and `d` are the part's color (hair or hat dye) with light and dark shades; the other keys are listed in `Pal`. With `true` as the third argument, a dark outline is added automatically. Eyes are drawn in `DrawEyes` because their pupils follow the aim.
+2. Add a `case` with the same index to the matching `Draw…` method in `godot/scripts/Game/AvatarArt.cs` (`DrawEyes`, `DrawNose`, `DrawMouth`, `DrawHair`, `DrawHat`).
+   - Shapes come from `Shapes` (`Ellipse`, `RoundRect`, `Capsule`, `Star`, or a point list). Draw them with `Shapes.Fill(ci, points, fill, outline, width)`.
+   - Use `c.Hair` / `c.Hat` for dye colors, and wrap colors in `c.H(...)` so they flash white when hit.
+   - For hair and hats, also add the shape's top y to `HairTop` / `HatTop`, so the HP bar clears it.
 3. Check the result with `--menushots` (see Tests). It saves a gallery page for every part.
 
-Sprite space faces right with the body centered on (0,0): x −7..6, y −9..8 (14×18, feet in the last two rows). The gun is built from `GunLook` parameters (receiver, barrel, magazine, scope, stock). Card-specific guns can be added later by giving each avatar a different `GunLook`.
+Sprite space faces right with the body centered on (0,0): x −7..7, y −9..9 (14×18, feet at the bottom). The gun is built from `GunLook` parameters (receiver, barrel, magazine, scope, stock). Card-specific guns can be added later by giving each avatar a different `GunLook`.
+
+## Adding an arena theme
+Add an `ArenaTheme` to `ArenaTheme.All` in `godot/scripts/Game/ArenaTheme.cs`. It sets three sky colors, the platform and edge colors, a skyline (`City`, `Mountains`, `Hills`, `Spires`), motes and a decoration. A new `Deco` or `Motes` kind needs a case in `MapNode.DrawDeco` or `Backdrop.DrawMotes`. Adding a theme changes which theme existing seeds get, which is fine because themes are cosmetic.
 
 ## Card balance stats
 The host records every match to a log so card balance can be tuned from data instead of feel. Full details, including the log schema, metric formulas and how to extend it, are in [docs/card-stats.md](docs/card-stats.md).
@@ -102,7 +143,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry, map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -112,4 +153,5 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
+"$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)
 ```

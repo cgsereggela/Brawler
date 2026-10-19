@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Brawler.Core;
+using Brawler.Fx;
 using Brawler.Logic;
 using Godot;
 
@@ -18,6 +19,8 @@ public sealed class MatchPlayer
     public bool Left; // disconnected mid-match
     public Avatar Avatar;
     public IInputSource Input;
+    /// <summary>How flashy this player's effects are, from their cards (cosmetic).</summary>
+    public FxStyle Fx = FxStyle.None;
 
     public void RecomputeStats()
     {
@@ -25,6 +28,7 @@ public sealed class MatchPlayer
         Effects.Clear();
         foreach (var c in CardRegistry.Resolve(Cards))
             if (CardEffects.Create(c.EffectId) is { } e) Effects.Add(e);
+        Fx = FxStyle.From(Cards);
     }
 }
 
@@ -51,6 +55,8 @@ public partial class Avatar : CharacterBody2D
     public float BlockCd;        // seconds until block is ready
     public Vector2 AimDir = Vector2.Right;
     public bool Frozen = true;
+    public int LastHitBy = -1;   // host: who hit us last, and when (credits knock-off kills)
+    public float LastHitAt = -99;
 
     public Vector2 HalfSize => new Vector2(BaseW, BaseH) * S[Stat.Size] * 0.5f;
     public Rect2 Bounds => new(GlobalPosition - HalfSize, HalfSize * 2);
@@ -61,7 +67,7 @@ public partial class Avatar : CharacterBody2D
     private int _lastJump = -1, _lastBlock = -1;
     private float _fireCd, _reloadT, _idleT, _burstT;
     private int _burstLeft;
-    private float _hurtFlash;
+    private float _hurtFlash, _hpGhost = -1, _ghostHold;
     private Vector2 _netTarget;
     private bool _hasNetTarget;
 
@@ -163,6 +169,13 @@ public partial class Avatar : CharacterBody2D
             }
         }
 
+        // Jump pads launch anyone standing on them (runs on the host and in client prediction alike).
+        if (onFloor && v.Y >= 0 && Game.Map != null && MapGenerator.OnPad(Game.Map, GlobalPosition.X, GlobalPosition.Y + HalfSize.Y))
+        {
+            v.Y = -MapGenerator.PadVelocity;
+            _coyote = 0;
+        }
+
         Velocity = v;
         MoveAndSlide();
     }
@@ -256,7 +269,11 @@ public partial class Avatar : CharacterBody2D
 
     public void Heal(float amount) => Hp = Mathf.Min(S[Stat.MaxHp], Hp + amount);
 
-    public void OnHurtFx() => _hurtFlash = 0.12f;
+    public void OnHurtFx()
+    {
+        _hurtFlash = 0.12f;
+        _ghostHold = 0;
+    }
 
     // ---------- replication ----------
 
@@ -305,6 +322,13 @@ public partial class Avatar : CharacterBody2D
     private void Animate(float dt)
     {
         _hurtFlash = Mathf.Max(0, _hurtFlash - dt);
+        // The ghost bar holds briefly after a hit, then drains down to the real HP.
+        if (_hpGhost < Hp) { _hpGhost = Hp; _ghostHold = 0; }
+        else if (_hpGhost > Hp)
+        {
+            _ghostHold += dt;
+            if (_ghostHold > 0.35f) _hpGhost = Mathf.MoveToward(_hpGhost, Hp, S[Stat.MaxHp] * 1.5f * dt);
+        }
         _kick = Mathf.Max(0, _kick - dt * 9);
         _flash = Mathf.Max(0, _flash - dt * 14);
         _animT += dt;
@@ -341,47 +365,71 @@ public partial class Avatar : CharacterBody2D
             Kick = _kick,
             Flash = _flash,
         };
+        // A soft aura in the player color keeps characters readable on any backdrop.
+        GlowTex.Draw(this, Vector2.Zero, 22 * size, Player.Color with { A = 0.22f });
         AvatarArt.Draw(this, Vector2.Zero, pose);
 
-        var hs = HalfSize.Round();
+        var hs = HalfSize;
+        float top = AvatarArt.TopY(Player.Info.Look) * size;
+        bool mine = Player == Game.LocalMatchPlayer;
 
-        // HP bar above the head (and hat).
-        float frac = Mathf.Clamp(Hp / S[Stat.MaxHp], 0, 1);
-        var barPos = new Vector2(-10, Mathf.Round(AvatarArt.TopY(Player.Info.Look) * size) - 7);
-        DrawRect(new Rect2(barPos - Vector2.One, new Vector2(22, 5)), new Color(0, 0, 0, 0.6f));
-        DrawRect(new Rect2(barPos, new Vector2(Mathf.Round(20 * frac), 3)), frac > 0.35f ? new Color("#5be37d") : new Color("#ff5050"));
+        // HP bar above the head (and hat), with a white "ghost" that drains after a hit.
+        float max = S[Stat.MaxHp];
+        float frac = Mathf.Clamp(Hp / max, 0, 1), ghost = Mathf.Clamp(_hpGhost / max, 0, 1);
+        const float barW = 24, barH = 3.4f;
+        var barPos = new Vector2(-barW / 2, top - 9);
+        DrawColoredPolygon(Shapes.RoundRect(new Rect2(barPos - new Vector2(1, 1), new Vector2(barW + 2, barH + 2)), 2.2f), new Color(0.05f, 0.04f, 0.1f, 0.75f));
+        if (ghost > frac)
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(barPos, new Vector2(barW * ghost, barH)), 1.6f), new Color(1, 1, 1, 0.85f));
+        if (frac > 0)
+        {
+            var hpCol = frac > 0.35f ? new Color("#52f08a") : new Color("#ff4d6a");
+            var bar = Shapes.RoundRect(new Rect2(barPos, new Vector2(Mathf.Max(barH, barW * frac), barH)), 1.6f);
+            Shapes.Gradient(this, bar, hpCol.Lightened(0.3f), hpCol.Darkened(0.15f));
+        }
 
-        // Ammo pips or reload bar.
-        var pipPos = barPos + new Vector2(0, 4);
+        // Ammo dots or a reload sweep.
+        var pipPos = barPos + new Vector2(0, barH + 2.6f);
         if (Reloading)
         {
-            DrawRect(new Rect2(pipPos, new Vector2(20, 1)), new Color(1, 1, 1, 0.2f));
-            DrawRect(new Rect2(pipPos, new Vector2(Mathf.Round(20 * ReloadFrac), 1)), Palette.Accent);
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(barW, 1.4f)), 0.7f), new Color(1, 1, 1, 0.18f));
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(Mathf.Max(1.4f, barW * ReloadFrac), 1.4f)), 0.7f), Palette.Accent);
         }
         else
         {
-            int max = S.Int(Stat.Ammo);
-            int pip = max > 10 ? 1 : 2;
-            for (int i = 0; i < max; i++)
-            {
-                var c = i < Ammo ? Palette.Accent : new Color(1, 1, 1, 0.2f);
-                DrawRect(new Rect2(pipPos + new Vector2(i * (pip + 1), 0), new Vector2(pip, 1)), c);
-            }
+            int ammo = S.Int(Stat.Ammo);
+            float gap = Mathf.Min(3.2f, barW / Mathf.Max(1, ammo));
+            float r = Mathf.Clamp(gap * 0.36f, 0.5f, 1.1f);
+            for (int i = 0; i < ammo; i++)
+                DrawCircle(pipPos + new Vector2(gap * (i + 0.5f), 0.7f), r, i < Ammo ? Palette.Accent : new Color(1, 1, 1, 0.2f), true, -1, true);
+        }
+
+        // "You" marker over the local player.
+        if (mine)
+        {
+            float bobY = Mathf.Sin(_animT * 4) * 0.8f;
+            var tip = new Vector2(0, barPos.Y - 3 + bobY);
+            DrawColoredPolygon(new[] { tip + new Vector2(-2.6f, -3.4f), tip + new Vector2(2.6f, -3.4f), tip }, Player.Color.Lightened(0.25f));
         }
 
         if (BlockActive > 0)
         {
-            float r = Mathf.Max(hs.X, hs.Y) + 5;
-            DrawArc(Vector2.Zero, r, 0, Mathf.Tau, 32, new Color(1, 1, 1, 0.9f), 1.5f);
-            DrawArc(Vector2.Zero, r + 2, 0, Mathf.Tau, 32, Player.Color with { A = 0.5f }, 1f);
+            float r = Mathf.Max(hs.X, hs.Y) + 6;
+            float k = Mathf.Clamp(BlockActive / Mathf.Max(0.05f, S[Stat.BlockDuration]), 0, 1);
+            GlowTex.Draw(this, Vector2.Zero, r * 1.6f, Player.Color with { A = 0.35f });
+            DrawCircle(Vector2.Zero, r, Player.Color.Lightened(0.4f) with { A = 0.18f }, true, -1, true);
+            DrawArc(Vector2.Zero, r, 0, Mathf.Tau, 40, Shapes.Hdr(Colors.White, 1.4f) with { A = 0.6f + 0.4f * k }, 1.4f, true);
+            DrawArc(Vector2.Zero, r + 2.2f, _animT * 6, _animT * 6 + Mathf.Pi * 1.2f, 20, Shapes.Hdr(Player.Color, 1.5f), 1f, true);
         }
-        else if (Player == Game.LocalMatchPlayer)
+        else if (mine)
         {
-            // Block cooldown indicator under the local player.
+            // Block cooldown ring segment under the local player.
             float ready = 1f - Mathf.Clamp(BlockCd / S[Stat.BlockCooldown], 0, 1);
-            var p = new Vector2(-7, hs.Y + 3);
-            DrawRect(new Rect2(p, new Vector2(14, 1)), new Color(1, 1, 1, 0.15f));
-            DrawRect(new Rect2(p, new Vector2(Mathf.Round(14 * ready), 1)), ready >= 1 ? Colors.White : new Color(1, 1, 1, 0.5f));
+            var p = new Vector2(-8, hs.Y + 3.5f);
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(p, new Vector2(16, 1.4f)), 0.7f), new Color(1, 1, 1, 0.15f));
+            if (ready > 0)
+                DrawColoredPolygon(Shapes.RoundRect(new Rect2(p, new Vector2(Mathf.Max(1.4f, 16 * ready), 1.4f)), 0.7f),
+                    ready >= 1 ? Shapes.Hdr(Colors.White, 1.2f) : new Color(1, 1, 1, 0.5f));
         }
     }
 }

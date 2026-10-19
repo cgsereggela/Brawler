@@ -154,6 +154,7 @@ public static class StatsJson
         var b = StatBlock.Base();
         foreach (Stat s in Enum.GetValues<Stat>()) Mix($"{s}={b[s].ToString("R", CultureInfo.InvariantCulture)};");
         Mix($"body={Body.W}x{Body.H}");
+        Mix($"arena={MapLayout.Width}x{MapLayout.Height};pad={MapGenerator.PadVelocity.ToString("R", CultureInfo.InvariantCulture)}");
         return h.ToString("x16")[..8];
     }
 

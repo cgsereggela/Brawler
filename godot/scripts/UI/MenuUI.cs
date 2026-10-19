@@ -1,5 +1,6 @@
 using System;
 using Brawler.Core;
+using Brawler.Fx;
 using Brawler.Net;
 using Godot;
 
@@ -19,46 +20,64 @@ public partial class MenuUI : Control
 
     public override void _Ready()
     {
-        var (_, body) = UiKit.CenteredPanel(this, 240);
-        body.AddChild(UiKit.Label("BRAWLER", 32, Palette.Accent, HorizontalAlignment.Center));
-        body.AddChild(UiKit.Label("lose a battle, pick a card, come back stronger", 10, Palette.TextDim, HorizontalAlignment.Center));
-        body.AddChild(new Control { CustomMinimumSize = new Vector2(0, 4) });
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        var center = new CenterContainer();
+        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        AddChild(center);
+        var row = UiKit.HBox(36);
+        center.AddChild(row);
 
-        var nameRow = UiKit.HBox();
-        nameRow.AddChild(UiKit.Label("Name", 10, Palette.TextDim));
-        NameEdit = new LineEdit { Text = _net.LocalName, MaxLength = 12, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        NameEdit.TextChanged += t => _net.LocalName = string.IsNullOrWhiteSpace(t) ? "Player" : t.Trim();
-        nameRow.AddChild(NameEdit);
-        body.AddChild(nameRow);
-
-        var lookRow = UiKit.HBox(6);
-        _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 2, alive: true);
-        lookRow.AddChild(_preview);
+        // Left: the title and your character.
+        var left = UiKit.VBox(2);
+        left.Alignment = BoxContainer.AlignmentMode.Center;
+        left.AddChild(new TitleText("BRAWLER", 64, 3f, Palette.Players[0], Palette.Players[3], Palette.Players[2], Palette.Players[6],
+            Palette.Players[1], Palette.Players[4], Palette.Players[7]));
+        left.AddChild(UiKit.Label("lose a battle, pick a card, come back stronger", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center));
+        _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 5.5f, alive: true) { Pedestal = true };
+        var previewBox = new CenterContainer();
+        previewBox.AddChild(_preview);
+        left.AddChild(previewBox);
         var customize = UiKit.Button("Customize Character", () => Customize?.Invoke());
-        customize.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        customize.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-        lookRow.AddChild(customize);
-        body.AddChild(lookRow);
+        customize.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+        left.AddChild(customize);
+        row.AddChild(left);
 
-        VisibilityChanged += RefreshPreview;
+        // Right: the play panel.
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(290, 0), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        row.AddChild(panel);
+        var body = UiKit.VBox(9);
+        panel.AddChild(body);
 
-        body.AddChild(UiKit.Button("Play vs Bots", () => PlayBots?.Invoke()));
+        body.AddChild(UiKit.Label("YOUR NAME", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
+        NameEdit = new LineEdit { Text = _net.LocalName, MaxLength = 12 };
+        NameEdit.TextChanged += t => _net.LocalName = string.IsNullOrWhiteSpace(t) ? "Player" : t.Trim();
+        body.AddChild(NameEdit);
+        body.AddChild(UiKit.Spacer(2));
+        body.AddChild(UiKit.Primary("PLAY VS BOTS", () => PlayBots?.Invoke()));
         body.AddChild(UiKit.Button("Host LAN Game", () => HostLan?.Invoke()));
 
+        body.AddChild(UiKit.Label("JOIN A FRIEND", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var joinRow = UiKit.HBox();
         AddressEdit = new LineEdit { Text = "127.0.0.1", PlaceholderText = "host IP", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        PortEdit = new LineEdit { Text = NetworkManager.DefaultPort.ToString(), CustomMinimumSize = new Vector2(54, 0) };
+        PortEdit = new LineEdit { Text = NetworkManager.DefaultPort.ToString(), CustomMinimumSize = new Vector2(66, 0) };
         joinRow.AddChild(AddressEdit);
         joinRow.AddChild(PortEdit);
         joinRow.AddChild(UiKit.Button("Join", () => JoinLan?.Invoke()));
         body.AddChild(joinRow);
 
-        _status = UiKit.Label("", 10, Palette.TextDim, HorizontalAlignment.Center);
+        _status = UiKit.Label("", UiKit.Small, Palette.Accent, HorizontalAlignment.Center);
         _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         body.AddChild(_status);
         body.AddChild(UiKit.Button("Quit", () => GetTree().Quit()));
 
-        body.AddChild(UiKit.Label("A/D move  W/Space jump  LMB shoot  RMB/Shift block", 8, Palette.TextDim, HorizontalAlignment.Center));
+        var hint = UiKit.Label("A/D move   W/Space jump   LMB shoot   RMB/Shift block", UiKit.Tiny, Palette.TextDim with { A = 0.8f }, HorizontalAlignment.Center);
+        hint.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom);
+        hint.OffsetTop = -26;
+        hint.OffsetBottom = -8;
+        hint.GrowHorizontal = GrowDirection.Both;
+        AddChild(hint);
+
+        VisibilityChanged += RefreshPreview;
     }
 
     public int Port => int.TryParse(PortEdit.Text, out int p) && p > 0 && p < 65536 ? p : NetworkManager.DefaultPort;
