@@ -8,7 +8,7 @@ namespace Brawler.UI;
 
 public partial class LobbyUI : Control
 {
-    public event Action StartPressed, LeavePressed, CustomizePressed;
+    public event Action StartPressed, LeavePressed, CustomizePressed, OptionsPressed;
 
     private readonly NetworkManager _net;
     private Label _info;
@@ -50,6 +50,7 @@ public partial class LobbyUI : Control
         _color = UiKit.Button("Customize", () => CustomizePressed?.Invoke());
         bottom.AddChild(_addBot);
         bottom.AddChild(_color);
+        bottom.AddChild(UiKit.Button("Options", () => OptionsPressed?.Invoke()));
         bottom.AddChild(UiKit.Button("Leave", () => LeavePressed?.Invoke()));
         body.AddChild(bottom);
 

@@ -8,7 +8,7 @@ namespace Brawler.UI;
 
 public partial class MenuUI : Control
 {
-    public event Action PlayBots, HostLan, JoinLan, Customize;
+    public event Action PlayBots, HostLan, JoinLan, Customize, Options;
 
     public LineEdit NameEdit, AddressEdit, PortEdit;
     private Label _status;
@@ -68,7 +68,13 @@ public partial class MenuUI : Control
         _status = UiKit.Label("", UiKit.Small, Palette.Accent, HorizontalAlignment.Center);
         _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         body.AddChild(_status);
-        body.AddChild(UiKit.Button("Quit", () => GetTree().Quit()));
+        var bottomRow = UiKit.HBox(6);
+        var options = UiKit.Button("Options", () => Options?.Invoke());
+        var quit = UiKit.Button("Quit", () => GetTree().Quit());
+        options.SizeFlagsHorizontal = quit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        bottomRow.AddChild(options);
+        bottomRow.AddChild(quit);
+        body.AddChild(bottomRow);
 
         var hint = UiKit.Label("A/D move   W/Space jump   LMB shoot   RMB/Shift block", UiKit.Tiny, Palette.TextDim with { A = 0.8f }, HorizontalAlignment.Center);
         hint.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom);

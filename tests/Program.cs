@@ -247,5 +247,46 @@ void Check(bool cond, string name, string detail = "")
     Check(Appearance.Count(LookPart.HairColor) == Appearance.Dyes.Length, "Dye names match the dye palette");
 }
 
+// ---------- Audio synthesis ----------
+// Pass --wav=DIR to also write every sound and song as .wav files for listening.
+{
+    string wavDir = args.FirstOrDefault(a => a.StartsWith("--wav="))?["--wav=".Length..];
+    if (wavDir != null) System.IO.Directory.CreateDirectory(wavDir);
+    static (float peak, float rms, bool finite) Measure(float[] b)
+    {
+        float p = 0; double sq = 0; bool ok = true;
+        foreach (var v in b) { if (!float.IsFinite(v)) ok = false; p = Math.Max(p, Math.Abs(v)); sq += v * v; }
+        return (p, (float)Math.Sqrt(sq / Math.Max(1, b.Length)), ok);
+    }
+
+    bool sfxOk = true;
+    var detail = new List<string>();
+    foreach (var name in Brawler.Logic.Synth.SfxBank.Names)
+    {
+        var takes = Brawler.Logic.Synth.SfxBank.Render(name);
+        for (int k = 0; k < takes.Count; k++)
+        {
+            var (p, rms, finite) = Measure(takes[k]);
+            if (!finite || p > 1f || rms < 0.005f) { sfxOk = false; detail.Add($"{name}#{k} peak {p:0.00} rms {rms:0.000}"); }
+            if (wavDir != null) System.IO.File.WriteAllBytes(System.IO.Path.Combine(wavDir, $"sfx_{name}_{k}.wav"), Brawler.Logic.Synth.Dsp.ToWav(takes[k], 1));
+        }
+    }
+    Check(sfxOk, "Every sound effect renders finite, unclipped and audible", string.Join("; ", detail));
+
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    foreach (var song in new[] { Brawler.Logic.Synth.MusicGen.Lobby(), Brawler.Logic.Synth.MusicGen.Battle() })
+    {
+        var buf = Brawler.Logic.Synth.MusicGen.Render(song);
+        var (p, rms, finite) = Measure(buf);
+        int expected = (int)MathF.Round(song.Bars * 16 * song.StepSeconds * Brawler.Logic.Synth.Dsp.Rate) * 2;
+        // The seam: the jump from the last frame back to the first should be no bigger than a typical step.
+        float seam = Math.Abs(buf[0] - buf[^2]) + Math.Abs(buf[1] - buf[^1]);
+        Check(finite && p <= 0.9f && rms > 0.05f && buf.Length == expected && seam < 0.2f,
+            $"Song '{song.Name}' renders a clean {song.Bars}-bar loop", $"{buf.Length / 2 / 44100f:0.0}s, peak {p:0.00}, rms {rms:0.000}, seam {seam:0.000}");
+        if (wavDir != null) System.IO.File.WriteAllBytes(System.IO.Path.Combine(wavDir, $"music_{song.Name}.wav"), Brawler.Logic.Synth.Dsp.ToWav(buf, 2));
+    }
+    Console.WriteLine($"      (audio rendered in {sw.ElapsedMilliseconds} ms)");
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

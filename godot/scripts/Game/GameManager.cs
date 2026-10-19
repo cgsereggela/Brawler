@@ -590,7 +590,8 @@ public partial class GameManager : Node2D
         Fx.Emit(b.Pos, PKind.Streak, col.Lightened(0.4f), 3 + st.Tier, 160, 0.16f, 0.8f, 0, dir, 0.9f);
         if (st.Tier >= 2) Fx.Flash(b.Pos, 8 + st.Tier * 2, col, 0.1f);
         if (st.Has(Flavor.Fire)) Fx.Emit(b.Pos, PKind.Ember, new Color("#ffa33b"), 2, 60, 0.4f, 1.2f, -40, dir, 1.2f);
-        Sfx.Play("shoot", 0.7f);
+        var gun = AvatarOf(b.Owner);
+        Sfx.Play(gun != null ? Sfx.ShotFor(gun.S) : "shoot", 0.7f);
         if (LocalMatchPlayer != null && b.Owner == LocalMatchPlayer.Slot) Shake(0.12f);
         if (b.Child) return;
         var shooter = AvatarOf(b.Owner);

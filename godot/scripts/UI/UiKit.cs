@@ -72,8 +72,28 @@ public static class UiKit
         panel.ShadowOffset = new Vector2(0, 8);
         t.SetStylebox("panel", "PanelContainer", panel);
 
+        // Sliders: a thin glass track that fills with the cool accent, and a round knob.
+        t.SetStylebox("slider", "HSlider", Box(new Color(1, 1, 1, 0.1f), new Color(1, 1, 1, 0.14f), 4, 0, 3));
+        t.SetStylebox("grabber_area", "HSlider", Box(Palette.Cool with { A = 0.7f }, Palette.Cool, 4, 0, 3));
+        t.SetStylebox("grabber_area_highlight", "HSlider", Box(Palette.Cool, Palette.Cool.Lightened(0.3f), 4, 0, 3));
+        t.SetIcon("grabber", "HSlider", Knob(14, Palette.Text));
+        t.SetIcon("grabber_highlight", "HSlider", Knob(16, Colors.White));
+
         t.SetColor("font_color", "Label", Palette.Text);
         return t;
+    }
+
+    private static ImageTexture Knob(int size, Color color)
+    {
+        var img = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+        float r = size / 2f;
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float d = new Vector2(x + 0.5f - r, y + 0.5f - r).Length();
+            img.SetPixel(x, y, color with { A = Mathf.Clamp(r - d, 0, 1) });
+        }
+        return ImageTexture.CreateFromImage(img);
     }
 
     public static Label Label(string text, int size = Body, Color? color = null, HorizontalAlignment align = HorizontalAlignment.Left, Font font = null)

@@ -29,6 +29,9 @@ public partial class Main : Node
     private NetworkManager _net;
     private GameManager _game;
     private Sfx _sfx;
+    private Music _music;
+    private OptionsUI _options;
+    private Control _optionsReturn;
     private MenuUI _menu;
     private LobbyUI _lobby;
     private HudUI _hud;
@@ -45,6 +48,7 @@ public partial class Main : Node
     public override void _Ready()
     {
         LocalInput.RegisterActions();
+        AudioSettings.Init();
 
         // Bloom: anything drawn brighter than 1.0 (HDR 2D) glows.
         var env = new Godot.Environment
@@ -72,6 +76,8 @@ public partial class Main : Node
         (_net.LocalName, _net.LocalColor, _net.LocalLook) = Profile.Load();
         _sfx = new Sfx { Name = "Sfx" };
         AddChild(_sfx);
+        _music = new Music { Name = "Music" };
+        AddChild(_music);
         _game = new GameManager { Name = "Game", Net = _net, Sfx = _sfx };
         AddChild(_game);
 
@@ -88,6 +94,7 @@ public partial class Main : Node
         _pick = new CardPickUI(_game) { Name = "CardPick" };
         _over = new MatchOverUI(_game, _net) { Name = "MatchOver" };
         _custom = new CustomizeUI(_net) { Name = "Customize" };
+        _options = new OptionsUI(_sfx) { Name = "Options" };
         foreach (var c in Screens) root.AddChild(c);
 
         Wire();
@@ -117,6 +124,9 @@ public partial class Main : Node
         _menu.Customize += () => OpenCustomize(_menu);
         _lobby.CustomizePressed += () => OpenCustomize(_lobby);
         _custom.Closed += () => Show(_customReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
+        _menu.Options += () => OpenOptions(_menu);
+        _lobby.OptionsPressed += () => OpenOptions(_lobby);
+        _options.Closed += () => Show(_optionsReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
 
         _net.Status += _menu.SetStatus;
         _net.LobbyChanged += () =>
@@ -146,12 +156,18 @@ public partial class Main : Node
         _game.ReturnedToLobby += () => Show(_lobby);
     }
 
-    private Control[] Screens => new Control[] { _menu, _lobby, _hud, _pick, _over, _custom };
+    private Control[] Screens => new Control[] { _menu, _lobby, _hud, _pick, _over, _custom, _options };
 
     private void OpenCustomize(Control from)
     {
         _customReturn = from;
         Show(_custom);
+    }
+
+    private void OpenOptions(Control from)
+    {
+        _optionsReturn = from;
+        Show(_options);
     }
 
     private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
@@ -165,6 +181,7 @@ public partial class Main : Node
         if (!inArena && !_menuBackdrop.Visible)
             _menuBackdrop.Set(ArenaTheme.All[(int)(GD.Randi() % (uint)ArenaTheme.All.Length)], (int)GD.Randi());
         _menuBackdrop.Visible = !inArena;
+        _music.Play(inArena ? "battle" : "lobby");
     }
 
     private Backdrop _menuBackdrop;
@@ -354,6 +371,7 @@ public partial class Main : Node
                 var steps = new System.Collections.Generic.List<System.Action>
                 {
                     () => OpenCustomize(_menu),
+                    () => OpenOptions(_menu),
                     () =>
                     {
                         _net.StartOffline();
