@@ -87,8 +87,8 @@ public sealed class StatBlock
         var b = new StatBlock();
         b[Stat.MaxHp] = 100;
         b[Stat.MoveSpeed] = 115;
-        b[Stat.JumpVelocity] = 330;
-        b[Stat.Gravity] = 900;
+        b[Stat.JumpVelocity] = 292;
+        b[Stat.Gravity] = 650;
         b[Stat.Size] = 1;
         b[Stat.BlockCooldown] = 4f;
         b[Stat.BlockDuration] = 0.3f;

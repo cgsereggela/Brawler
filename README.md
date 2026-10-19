@@ -44,6 +44,15 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
   - *Islands*: floating islands over deadly pits.
   - *Towers*: solid towers rising from the floor.
 - **Jump pads** (glowing plates with rising chevrons) launch you about 170 px up. Maps never rely on them to connect spawns.
+- **Arena features**, also seeded (`godot/scripts/Logic/ArenaFeatures.cs`). Like pads, maps never rely on them to connect spawns, and they always stay clear of spawns:
+  - *Crates* (60 HP): walk into one to push it; you can stand on them and knock them into pits. Some are stacked two high.
+  - *Explosive barrels* (30 HP): pushable, and they blow up when destroyed. The blast sets off other barrels nearby.
+  - *Glass*: bridges across pits and floating panes. A bullet that breaks a tile flies on through, so you can shoot the floor out from under someone.
+  - *Moving platforms* glide back and forth over pits or through open air and carry whoever is standing on them.
+  - *Magma pools* burn (45 damage/s) while you stand in them. *Poison pools* hurt less (16/s) but keep working for 2 s after you step out.
+  - *Sawblades* slide along platform tops. Each hit deals 22 damage and throws you clear. They also chew up crates and barrels.
+  - Blocking stops hazard damage too. A hazard or pit kill is credited to whoever hit the victim in the last 4 seconds.
+- **Movement:** gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
 - The seed also picks one of seven **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds). Each theme sets the sky, the silhouettes, drifting motes (bokeh, embers, bubbles, snow, fireflies), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles). Themes are cosmetic and identical on every peer.
 
 ## Effects that grow with your cards
@@ -81,11 +90,13 @@ Everything is computed from the card list every peer already has, so nothing ext
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
   scripts/Main.cs           wiring, screens, automated test modes
-  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, Sweep, Appearance, StatsModel/StatsReport
+  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, ArenaFeatures, Sweep, Appearance,
+                            StatsModel/StatsReport, Synth (sound and music)
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
   scripts/Net/              NetworkManager: ENet host/join, lobby sync
   scripts/Game/             GameManager (match flow + netcode, hit/kill effects), Avatar, AvatarArt (character + gun vector art),
-                            BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Backdrop (scenery),
+                            BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Arena (crates, glass,
+                            movers, pools, saws), Backdrop (scenery),
                             ArenaTheme, FxStyle (card-driven effect power and flavors)
   scripts/Fx/               FxLayer (particles, rings, rays, flashes, popups), Visuals (shapes, glow texture, fonts), synthesized SFX
   scripts/UI/               menu, lobby, character editor, HUD, card pick, match over
@@ -152,7 +163,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash

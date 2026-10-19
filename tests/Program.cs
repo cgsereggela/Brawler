@@ -120,6 +120,69 @@ void Check(bool cond, string name, string detail = "")
     Check(pads > 100 && badPads == 0, "Jump pads sit on surfaces, away from spawns", $"{pads} pads, {badPads} bad");
     Check(MapLayout.Width == 800 && MapLayout.Height == 450, "Arena is 800x450");
 
+    // A pad launch still clears the planned climb under the softer gravity.
+    float padApex = MapGenerator.PadVelocity * MapGenerator.PadVelocity / (2 * MapGenerator.BaseGravity);
+    Check(padApex >= MapGenerator.PadRise + 5 && MapGenerator.BaseGravity == StatBlock.Base()[Stat.Gravity],
+        "Pad launch apex covers PadRise at base gravity", $"apex {padApex:0}, rise {MapGenerator.PadRise}");
+    float jumpApex = StatBlock.Base()[Stat.JumpVelocity] * StatBlock.Base()[Stat.JumpVelocity] / (2 * StatBlock.Base()[Stat.Gravity]);
+    Check(jumpApex >= MapGenerator.MaxRise + 12, "Base jump clears MaxRise with margin", $"apex {jumpApex:0}");
+}
+
+// ---------- Arena features ----------
+{
+    var a1 = MapGenerator.Generate(4242, 4);
+    var a2 = MapGenerator.Generate(4242, 4);
+    Check(a1.Props.SequenceEqual(a2.Props) && a1.Hazards.SequenceEqual(a2.Hazards) && a1.Saws.SequenceEqual(a2.Saws) && a1.Movers.SequenceEqual(a2.Movers),
+        "Same seed produces identical arena features");
+
+    int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, bad = 0;
+    var why = new List<string>();
+    void Bad(int seed, string what) { bad++; if (why.Count < 5) why.Add($"seed {seed}: {what}"); }
+    for (int s = 0; s < maps; s++)
+    {
+        int seed = s * 104729 + 11;
+        var m = MapGenerator.Generate(seed, 2 + s % 3);
+        foreach (var p in m.Props)
+        {
+            if (p.Kind == PropKind.Crate) crates++; else if (p.Kind == PropKind.Barrel) barrels++; else glass++;
+            if (m.Solids.Any(r => r.Intersects(p.Rect))) Bad(seed, $"{p.Kind} inside a solid");
+            if (m.Props.Any(o => o != p && o.Rect.Intersects(p.Rect))) Bad(seed, $"{p.Kind} overlaps another prop");
+            if (m.Spawns.Any(sp => Math.Abs(sp.X - (p.X + p.W / 2)) < 26 + p.W / 2 && sp.Y - 40 < p.Y + p.H && p.Y < sp.Y + 6))
+                Bad(seed, $"{p.Kind} on a spawn");
+            if (m.Movers.Any(mv => mv.Lane.Grow(0, 20).Intersects(p.Rect))) Bad(seed, $"{p.Kind} in a mover's lane");
+        }
+        foreach (var h in m.Hazards)
+        {
+            pools++;
+            if (!m.Surfaces.Any(sf => sf.Y == h.Y && h.X1 >= sf.X1 && h.X2 <= sf.X2)) Bad(seed, "pool not on a surface");
+            if (m.Spawns.Any(sp => sp.Y == h.Y && sp.X > h.X1 - 26 && sp.X < h.X2 + 26)) Bad(seed, "pool at a spawn");
+            if (m.Pads.Any(pd => pd.Y == h.Y && pd.X2 > h.X1 - 10 && pd.X1 < h.X2 + 10)) Bad(seed, "pool on a jump pad");
+        }
+        foreach (var sw in m.Saws)
+        {
+            saws++;
+            if (!m.Surfaces.Any(sf => Math.Abs(sf.Y - 2 - sw.Y1) < 0.01f && sw.X1 >= sf.X1 && sw.X2 <= sf.X2)) Bad(seed, "saw off its surface");
+            if (m.Spawns.Any(sp => sp.X > sw.X1 - 40 && sp.X < sw.X2 + 40 && Math.Abs(sp.Y - sw.Y1) < 30)) Bad(seed, "saw near a spawn");
+        }
+        foreach (var mv in m.Movers)
+        {
+            movers++;
+            var room = new RectI(mv.Lane.X, mv.Y - 30, mv.Lane.W, mv.H + 30 + 20);
+            if (m.Solids.Any(r => r.Intersects(room))) Bad(seed, "mover lane blocked");
+            if (mv.Period <= 0 || mv.X2 <= mv.X1) Bad(seed, "mover goes nowhere");
+        }
+    }
+    Check(bad == 0, "Arena features stay clear of solids, spawns, pads and each other", $"{bad} bad. {string.Join("; ", why)}");
+    Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5,
+        "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers");
+
+    var track = new SawTrack(100, 50, 200, 50, 9, 4, 0);
+    Check(Vector2.Distance(track.At(0), new Vector2(100, 50)) < 0.01f && Vector2.Distance(track.At(2), new Vector2(200, 50)) < 0.01f
+        && Vector2.Distance(track.At(4), new Vector2(100, 50)) < 0.01f, "Saws shuttle end to end and back each period");
+    var mover = new Mover(40, 120, 300, 40, 8, 3, 0.25f);
+    Check(Math.Abs(mover.XAt(0) - 80) < 0.01f && Enumerable.Range(0, 100).All(i => mover.XAt(i * 0.07f) is >= 40 and <= 120),
+        "Movers stay inside their lane", $"{mover.XAt(0)}");
+
     // Reachability primitive.
     var floor = new Surface(8, 632, 344);
     Check(MapGenerator.CanTraverse(floor, new Surface(100, 160, 304)), "Can jump up 40px onto a nearby platform");
@@ -177,6 +240,8 @@ void Check(bool cond, string name, string detail = "")
     var refl = Sweep.Reflect(new Vector2(3, 4), new Vector2(-1, 0));
     Check(refl == new Vector2(-3, 4), "Reflect flips the normal component");
     Check(Sweep.SegmentTouchesRect(new Vector2(0, 5), new Vector2(20, 5), 1, 10, 0, 4, 10), "Segment crosses player box");
+    var two = new List<RectI> { new(300, 0, 10, 100), new(100, 0, 20, 100) };
+    Check(Sweep.Cast(new Vector2(50, 50), new Vector2(400, 0), 2, two) is { Index: 1 }, "Sweep reports which rect it hit first");
 }
 
 // ---------- Card stats ----------

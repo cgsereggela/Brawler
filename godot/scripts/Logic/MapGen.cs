@@ -39,6 +39,11 @@ public sealed class MapLayout
     public List<Surface> Surfaces { get; } = new();
     public List<SpawnPoint> Spawns { get; } = new();
     public List<JumpPad> Pads { get; } = new();
+    // Dynamic extras (see ArenaFeatures). None of them is in Solids, and reachability never relies on them.
+    public List<PropSpawn> Props { get; } = new();
+    public List<Hazard> Hazards { get; } = new();
+    public List<SawTrack> Saws { get; } = new();
+    public List<Mover> Movers { get; } = new();
     public MapStyle Style { get; init; }
     public int Seed { get; init; }
     public int Attempts { get; set; }
@@ -63,7 +68,7 @@ public static class MapGenerator
     private const int Height = MapLayout.Height;
     private const int Width = MapLayout.Width;
 
-    // Reachability limits, derived from base movement (jump apex = v^2 / 2g ≈ 60px) with margin.
+    // Reachability limits, derived from base movement (jump apex = v^2 / 2g ≈ 66px) with margin.
     public const int MaxRise = 48;
     public const int MaxGapRising = 56;
     public const int MaxGapFalling = 110;
@@ -71,7 +76,9 @@ public static class MapGenerator
     public const int MinSpawnDistance = 175;
     public const int TierSpacing = 40;
     public const int PadWidth = 24;
-    public const float PadVelocity = 560f;
+    public const float PadVelocity = 475f;
+    /// <summary>Base player gravity (StatBlock.Base), for planning pad launches.</summary>
+    public const float BaseGravity = 650f;
 
     public static MapLayout Generate(int seed, int playerCount)
     {
@@ -83,12 +90,14 @@ public static class MapGenerator
             if (layout != null)
             {
                 layout.Attempts = attempt;
+                ArenaFeatures.Add(layout);
                 return layout;
             }
         }
         var fb = Fallback(seed, playerCount);
         fb.Attempts = 300;
         fb.UsedFallback = true;
+        ArenaFeatures.Add(fb);
         return fb;
     }
 
@@ -473,8 +482,8 @@ public static class MapGenerator
         return true;
     }
 
-    /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~174 px apex minus a margin.</summary>
-    public const int PadRise = (int)(PadVelocity * PadVelocity / (2 * 900f)) - 10;
+    /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~173 px apex minus a margin.</summary>
+    public const int PadRise = (int)(PadVelocity * PadVelocity / (2 * BaseGravity)) - 10;
 
     /// <summary>
     /// A jump pad on surface a that launches a body up and onto b (higher, beside the launch column, at most

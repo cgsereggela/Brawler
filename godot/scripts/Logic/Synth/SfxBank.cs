@@ -14,7 +14,7 @@ public static class SfxBank
     public static readonly string[] Names =
     {
         "shoot", "shoot_light", "shoot_heavy", "shoot_shotgun", "hit", "death", "explode", "block", "blocked",
-        "bounce", "jump", "blink", "pad", "tick", "go", "pick", "win",
+        "bounce", "jump", "blink", "pad", "tick", "go", "pick", "win", "crate", "glass", "saw", "sizzle",
     };
 
     /// <summary>Renders every take of one sound.</summary>
@@ -51,6 +51,10 @@ public static class SfxBank
         "tick" => 0.5f,
         "go" or "win" => 0.6f,
         "pick" => 0.45f,
+        "crate" => 0.75f,
+        "glass" => 0.6f,
+        "saw" => 0.8f,
+        "sizzle" => 0.4f,
         _ => 0.8f,
     };
 
@@ -73,6 +77,10 @@ public static class SfxBank
         "pick" => Pluck(new[] { 76f, 83f }, 0.07f, 0.5f),
         "go" => Stab(new[] { 40f, 47f, 52f, 59f }, 0, 0.9f),
         "win" => Stab(new[] { 52f, 56f, 59f, 64f, 68f }, 0.075f, 1.5f),
+        "crate" => Crate(seed),
+        "glass" => Glass(seed),
+        "saw" => Saw(seed),
+        "sizzle" => Sizzle(seed),
         _ => new float[1],
     };
 
@@ -233,6 +241,99 @@ public static class SfxBank
             float wf = bottom + (top - bottom) * Decay(t, seconds * 0.4f);
             s += wh.Sine(wf * (1 + 0.01f * MathF.Sin(t * 70))) * Perc(t, 0.01f, seconds * 0.28f) * 0.45f * whine;
             o[i] = MathF.Tanh(1.3f * s);
+        }
+        return o;
+    }
+
+    // ---------- arena ----------
+
+    /// <summary>A crate splintering: a hollow wooden knock, then a few sharp cracks of breaking boards.</summary>
+    private static float[] Crate(uint seed)
+    {
+        var n = new Noise(seed);
+        var o = Buf(0.5f);
+        var knock = new Svf(260 + n.Unit() * 60, 3f);
+        var crack = new Svf(1800, 1.4f);
+        var thud = new Osc();
+        float[] at = { 0, 0.018f + n.Unit() * 0.01f, 0.05f + n.Unit() * 0.02f, 0.1f + n.Unit() * 0.04f };
+        for (int i = 0; i < o.Length; i++)
+        {
+            float t = i / (float)Rate, w = n.Next();
+            float s = knock.BandPass(w) * Perc(t, 0.001f, 0.06f) * 2.2f;
+            s += thud.Sine(120 * (1 + 0.6f * Decay(t, 0.01f))) * Perc(t, 0.001f, 0.04f) * 0.7f;
+            for (int k = 0; k < at.Length; k++)
+                if (t > at[k]) s += crack.BandPass(w) * Decay(t - at[k], 0.012f) * (1.2f - k * 0.2f);
+            o[i] = MathF.Tanh(1.6f * s);
+        }
+        Echo(o, 0.07f, 0.15f, 1400);
+        return o;
+    }
+
+    /// <summary>Glass shattering: a bright crash and a scatter of high inharmonic tinkles.</summary>
+    private static float[] Glass(uint seed)
+    {
+        var n = new Noise(seed);
+        var o = Buf(0.7f);
+        var crash = new Svf(6000, 0.7f);
+        for (int i = 0; i < o.Length; i++)
+        {
+            float t = i / (float)Rate;
+            o[i] = crash.HighPass(n.Next()) * Perc(t, 0.0005f, 0.05f) * 1.2f;
+        }
+        // Falling shards: short pings at random pitches, thinning out.
+        for (int k = 0; k < 14; k++)
+        {
+            float start = n.Unit() * n.Unit() * 0.45f, f = 2600 + n.Unit() * 4200, amp = 0.35f * (1 - start * 1.5f);
+            var a = new Osc();
+            var b = new Osc();
+            for (int i = (int)(start * Rate); i < o.Length; i++)
+            {
+                float t = i / (float)Rate - start;
+                if (t > 0.12f) break;
+                o[i] += (a.Sine(f) + b.Sine(f * 2.76f) * 0.4f) * Perc(t, 0.0005f, 0.03f) * amp;
+            }
+        }
+        for (int i = 0; i < o.Length; i++) o[i] = MathF.Tanh(1.3f * o[i]);
+        Echo(o, 0.09f, 0.2f, 5000);
+        return o;
+    }
+
+    /// <summary>A sawblade biting: a grinding buzz at the blade's tooth rate with metal screech on top.</summary>
+    private static float[] Saw(uint seed)
+    {
+        var n = new Noise(seed);
+        var o = Buf(0.42f);
+        var grind = new Svf(1400, 2f);
+        var screech = new Svf(3800 + n.Unit() * 600, 8f);
+        Osc tooth = new(), sub = new();
+        float rate = 165 + n.Unit() * 20;
+        for (int i = 0; i < o.Length; i++)
+        {
+            float t = i / (float)Rate, w = n.Next();
+            float buzz = tooth.Saw(rate * (1 - 0.15f * t)) * (0.6f + 0.4f * MathF.Sin(t * 260));
+            float s = grind.BandPass(buzz + w * 0.6f) * Perc(t, 0.004f, 0.16f) * 1.8f;
+            s += screech.BandPass(w) * Perc(t, 0.01f, 0.12f) * 1.1f;
+            s += sub.Sine(70) * Perc(t, 0.001f, 0.03f) * 0.6f;
+            o[i] = MathF.Tanh(1.8f * s);
+        }
+        Echo(o, 0.06f, 0.15f, 2000);
+        return o;
+    }
+
+    /// <summary>A short hiss with a few crackles: feet in magma or a poison tick.</summary>
+    private static float[] Sizzle(uint seed)
+    {
+        var n = new Noise(seed);
+        var o = Buf(0.32f);
+        var hiss = new Svf(5200, 0.8f);
+        var pop = new Svf(1500, 2f);
+        for (int i = 0; i < o.Length; i++)
+        {
+            float t = i / (float)Rate;
+            float s = hiss.BandPass(n.Next()) * Perc(t, 0.012f, 0.1f);
+            float spark = n.Unit() < 0.004f ? n.Next() * 5 : 0;
+            s += pop.BandPass(spark) * Decay(t, 0.12f);
+            o[i] = MathF.Tanh(1.5f * s);
         }
         return o;
     }

@@ -205,6 +205,12 @@ public partial class BulletSystem : Node2D
             var h = hit.Value;
             var n = new Vector2(h.Normal.X, h.Normal.Y);
             b.Pos += delta * h.T + n * 0.01f;
+            // Crates, barrels and glass take the hit; glass the bullet can break, it flies straight through.
+            if (Game.Arena.PropOfSolid(h.Index) is { } prop && Game.Arena.BulletHitsProp(b, prop, h.Index, host))
+            {
+                delta *= 1 - h.T;
+                continue;
+            }
             if (b.Bounces > 0)
             {
                 b.Bounces--;

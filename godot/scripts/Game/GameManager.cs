@@ -30,6 +30,7 @@ public partial class GameManager : Node2D
     public FxLayer Fx { get; private set; }
     public BulletSystem Bullets { get; private set; }
     public MapNode MapNode { get; private set; }
+    public Arena Arena { get; private set; }
     public MapLayout Map => MapNode.Layout;
     public Rng HostRng { get; private set; } = new((ulong)DateTime.Now.Ticks);
 
@@ -80,6 +81,8 @@ public partial class GameManager : Node2D
         Fx = new FxLayer { Name = "Fx" };
         _cam = new Camera2D { Name = "Camera", Position = new Vector2(MapLayout.Width, MapLayout.Height) / 2 };
         AddChild(MapNode);
+        Arena = new Arena { Name = "Arena", Game = this };
+        AddChild(Arena);
         AddChild(_avatars);
         AddChild(Bullets);
         AddChild(Fx);
@@ -158,6 +161,7 @@ public partial class GameManager : Node2D
             }
         }
         Stats.BattleEnd(winner, roundWon, Active());
+        Log.Info($"arena: {Arena.Summary}");
         Rpc(MethodName.BattleOver, winner, ScoresBytes(), roundWon, matchWon);
         if (matchWon)
         {
@@ -308,9 +312,13 @@ public partial class GameManager : Node2D
             }
         }
 
+        Arena.Advance(dt); // movers first, so riders are carried this tick
         if (IsHost) HostSimulate(dt);
         else ClientSimulate(dt);
-        Bullets.Step(dt, IsHost, Map.Solids);
+        if (IsHost) Arena.HostStep(dt, Phase == Phase.Fighting);
+        else Arena.ClientSmooth();
+        Arena.RebuildSolids();
+        Bullets.Step(dt, IsHost, Arena.Solids);
 
         if (IsHost)
         {
@@ -532,7 +540,40 @@ public partial class GameManager : Node2D
         }
     }
 
-    public enum KillCause { Shot, Fall, Left }
+    public enum KillCause { Shot, Fall, Left, Hazard }
+
+    public enum HazardHit { Magma, Poison, Saw }
+
+    /// <summary>Last hazard that hurt each slot (every peer), so a hazard kill gets the right call-out.</summary>
+    private readonly HazardHit[] _lastHazard = new HazardHit[LobbyState.MaxPlayers];
+
+    /// <summary>
+    /// Host: damage from the arena itself (pools, saws). Armor and block still count. A kill is credited to whoever
+    /// hit the victim in the last few seconds, as with falls.
+    /// </summary>
+    public void HostHazardDamage(Avatar victim, float damage, Vector2 knockback, Vector2 at, HazardHit kind)
+    {
+        if (!victim.Alive) return;
+        float hpBefore = victim.Hp;
+        damage *= 1f - victim.S[Stat.Armor];
+        knockback *= victim.S[Stat.KnockbackTaken];
+        if (!victim.TakeHit(damage, knockback))
+        {
+            if (kind == HazardHit.Saw) HostBlocked(victim, at);
+            return;
+        }
+        if (victim.Hp <= 0 && victim.TryRevive())
+        Stats.Damage(-1, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
+        Arena.HazardDamage += damage;
+        Stats.Damage(-1, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
+        Rpc(MethodName.HazardHurt, victim.Player.Slot, victim.Hp, knockback, at, damage, (int)kind);
+        if (victim.Hp > 0) return;
+        int slot = victim.Player.Slot;
+        bool recent = victim.LastHitBy >= 0 && victim.LastHitBy != slot && _clock - victim.LastHitAt < 4f;
+        HostKill(victim, KillCause.Hazard, recent ? victim.LastHitBy : -1);
+    }
+
+    public void HostPropBroken(int index, Vector2 at, bool fell) => Rpc(MethodName.PropBroken, index, at, fell);
 
     public void HostKill(Avatar a, KillCause cause = KillCause.Shot, int killer = -1)
     {
@@ -543,12 +584,13 @@ public partial class GameManager : Node2D
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
         // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
         float boom = a.S[Stat.Kamikaze];
-        if (boom > 0 && cause == KillCause.Shot) HostExplode(a.GlobalPosition, boom, 70, a.Player.Slot, 480);
+        if (boom > 0 && cause is KillCause.Shot or KillCause.Hazard) HostExplode(a.GlobalPosition, boom, 70, a.Player.Slot, 480);
     }
 
     public void HostExplode(Vector2 at, float radius, float damage, int ownerSlot, float knockback)
     {
         HostFx(FxKind.Explosion, at, radius, ownerSlot, at);
+        Arena.HostExplosion(at, radius, damage, ownerSlot, knockback);
         foreach (var a in LiveAvatars().ToList())
         {
             var r = a.Bounds;
@@ -685,6 +727,14 @@ public partial class GameManager : Node2D
     /// <summary>Test hook (offline only): replaces every player's cards at the start of each battle.</summary>
     public Func<int, List<int>> DebugCards;
 
+    /// <summary>Test hook (host): starts a battle on a chosen map seed right away.</summary>
+    public void DebugStartBattle(int seed)
+    {
+        if (!IsHost) return;
+        _hostNext = null;
+        Rpc(MethodName.StartBattle, seed, ScoresBytes());
+    }
+
     public void DebugShowcase(int power, Flavor flavors)
     {
         if (Slots[0] == null || Slots[1] == null) return;
@@ -755,6 +805,8 @@ public partial class GameManager : Node2D
 
         // Words: how hard it was, plus a streak call-out.
         string word = fell && killer < 0 ? "OUT!" : KillWords[tier][(int)(GD.Randi() % (uint)KillWords[tier].Length)];
+        if (cause == KillCause.Hazard && victim >= 0)
+            word = _lastHazard[victim] switch { HazardHit.Saw => "SHREDDED!", HazardHit.Magma => "MELTED!", _ => "POISONED!" };
         Fx.Popup(at + new Vector2(0, fell ? -40 : -18), word, kc.Lightened(0.2f), 16 + tier * 3, 1.1f);
         if (killer >= 0 && killer < _battleKills.Length)
         {
@@ -829,6 +881,7 @@ public partial class GameManager : Node2D
         var active = Active().OrderBy(p => p.Slot).ToList();
         var layout = MapGenerator.Generate(seed, active.Count);
         MapNode.Build(layout);
+        Arena.Build(layout);
 
         // Seeded shuffle so spawn positions rotate fairly but identically on all peers.
         var order = Enumerable.Range(0, layout.Spawns.Count).ToList();
@@ -974,6 +1027,54 @@ public partial class GameManager : Node2D
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void HazardHurt(int slot, float newHp, Vector2 knockback, Vector2 at, float damage, int kind)
+    {
+        var a = Slots[slot]?.Avatar;
+        if (a == null) return;
+        if (!IsHost)
+        {
+            a.Hp = newHp;
+            if (Slots[slot] == LocalMatchPlayer) a.Velocity += knockback;
+        }
+        var k = (HazardHit)kind;
+        _lastHazard[slot] = k;
+        a.OnHurtFx();
+        bool mine = Slots[slot] == LocalMatchPlayer;
+        switch (k)
+        {
+            case HazardHit.Saw:
+                var dir = knockback.LengthSquared() > 1 ? knockback.Normalized() : Vector2.Up;
+                Fx.Emit(at, PKind.Streak, new Color("#fff1c2"), 12, 260, 0.25f, 1f, 300, dir, 2.4f);
+                Fx.Emit(at, PKind.Chunk, Palette.Player(ColorOf(slot)), 4, 140, 0.6f, 2f, 500, dir, 2f);
+                Fx.Flash(at, 16, Colors.White, 0.12f);
+                Fx.Popup(at + new Vector2(0, -10), Mathf.RoundToInt(damage).ToString(), new Color("#ffe1e1"), 13, 0.7f);
+                Sfx.Play("saw");
+                Shake(mine ? 0.45f : 0.2f);
+                break;
+            case HazardHit.Magma:
+                Fx.Emit(at, PKind.Ember, new Color("#ffb13b"), 5, 90, 0.6f, 1.3f, -70, Vector2.Up, 1.6f);
+                Fx.Emit(at, PKind.Smoke, new Color(0.25f, 0.15f, 0.12f, 0.6f), 1, 20, 0.6f, 3f, -30);
+                Fx.Popup(at + new Vector2(0, -26), Mathf.RoundToInt(damage).ToString(), new Color("#ffb13b"), 9, 0.5f);
+                Sfx.Play("sizzle", 0.55f);
+                if (mine) Shake(0.08f);
+                break;
+            case HazardHit.Poison:
+                Fx.Emit(at, PKind.Dot, new Color("#9dff4a"), 4, 40, 0.6f, 1.2f, -40);
+                Fx.Popup(at + new Vector2(0, -20), Mathf.RoundToInt(damage).ToString(), new Color("#9dff4a"), 9, 0.5f);
+                Sfx.Play("sizzle", 0.3f);
+                break;
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void PropBroken(int index, Vector2 at, bool fell)
+    {
+        if (Map == null) return;
+        Arena.Break(index, at, fell);
+        if (!fell) Shake(0.1f);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void Died(int slot, Vector2 at, int killer, int cause)
     {
         var a = Slots[slot]?.Avatar;
@@ -1084,6 +1185,7 @@ public partial class GameManager : Node2D
             a.SetNetTarget(pos, vel, predicted: mine);
             a.QueueRedraw();
         }
+        if (r.More) Arena.Read(r);
     }
 
     // =====================================================================
@@ -1152,6 +1254,7 @@ public partial class GameManager : Node2D
              .U8((int)(a.ReloadFrac * 255)).U8(Mathf.Clamp((int)(a.BlockCd * 20), 0, 255))
              .U8(Mathf.Clamp((int)(a.BlockActive * 100), 0, 255)).I16((int)(a.AimDir.Angle() * 1000));
         }
+        Arena.Write(w);
         return w.Done();
     }
 
@@ -1169,6 +1272,7 @@ public partial class GameManager : Node2D
         Bullets.Clear();
         Fx.Clear();
         MapNode.Build(null);
+        Arena.Build(null);
         Array.Clear(Slots);
         LocalMatchPlayer = null;
         PickOptions.Clear();

@@ -177,6 +177,12 @@ public sealed class BotBrain : IInputSource
         // bounces us back up next to it (bots wall-jumped against the same 8 px ledge end for minutes).
         if (self.IsOnWall() && move * self.GetWallNormal().X < 0 && !descending) wantJump = true;
         if (onFloor && !dropping && !GroundAhead(self, move)) wantJump = true;        // edge or pit ahead
+        if (onFloor && _game.Arena.DangerAhead(self, move))
+        {
+            // A pool or sawblade in the way (or underfoot): hop it, and keep going rather than stopping in it.
+            wantJump = true;
+            if (Mathf.Abs(move) < 0.1f) move = _strafeDir;
+        }
         if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 140)) move = -move; // falling into a pit: steer back
         if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
 

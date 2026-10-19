@@ -4,7 +4,8 @@ using System.Numerics;
 
 namespace Brawler.Logic;
 
-public readonly record struct SweepHit(float T, Vector2 Normal);
+/// <summary>A sweep hit: how far along the move (0..1), the surface normal, and which rect in the list.</summary>
+public readonly record struct SweepHit(float T, Vector2 Normal, int Index = -1);
 
 /// <summary>Swept circle vs axis-aligned rectangles (via Minkowski-expanded slab test).</summary>
 public static class Sweep
@@ -16,13 +17,14 @@ public static class Sweep
     public static SweepHit? Cast(Vector2 from, Vector2 delta, float radius, IReadOnlyList<RectI> rects)
     {
         SweepHit? best = null;
-        foreach (var r in rects)
+        for (int i = 0; i < rects.Count; i++)
         {
+            var r = rects[i];
             float minX = r.X - radius, maxX = r.Right + radius;
             float minY = r.Y - radius, maxY = r.Bottom + radius;
             if (from.X > minX && from.X < maxX && from.Y > minY && from.Y < maxY) continue;
             var hit = SegmentVsBox(from, delta, minX, minY, maxX, maxY);
-            if (hit is { } h && (best == null || h.T < best.Value.T)) best = h;
+            if (hit is { } h && (best == null || h.T < best.Value.T)) best = h with { Index = i };
         }
         return best;
     }

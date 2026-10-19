@@ -21,6 +21,7 @@ namespace Brawler;
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
+///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
 /// </summary>
@@ -362,6 +363,33 @@ public partial class Main : Node
                     };
                 }
                 tree.CreateTimer(2.6).Timeout += Step;
+            }
+            else if (a == "--arenashots" && _shotDir != null)
+            {
+                // Screenshot battles on seeds rich in arena features (pools, saws, movers, glass, barrels), then quit.
+                _autoMode = "arena";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var seeds = Enumerable.Range(1, 400)
+                    .Select(s => (Seed: s, M: MapGenerator.Generate(s, 4)))
+                    .OrderByDescending(x => x.M.Hazards.Count * 2 + x.M.Saws.Count * 2 + x.M.Movers.Count * 2
+                        + (x.M.Props.Any(p => p.Kind == PropKind.Glass) ? 2 : 0) + x.M.Props.Count(p => p.Kind == PropKind.Barrel))
+                    .Take(5).Select(x => x.Seed).ToList();
+                var tree = GetTree();
+                int k = 0;
+                void Next()
+                {
+                    if (k >= seeds.Count) { tree.Quit(0); return; }
+                    _game.DebugStartBattle(seeds[k++]);
+                    tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
+                }
+                tree.CreateTimer(1.0, true, false, true).Timeout += Next;
             }
             else if (a == "--menushots" && _shotDir != null)
             {

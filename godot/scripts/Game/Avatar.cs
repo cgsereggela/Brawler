@@ -39,7 +39,10 @@ public sealed class MatchPlayer
 public partial class Avatar : CharacterBody2D
 {
     public const float BaseW = Body.W, BaseH = Body.H;
-    private const float CoyoteTime = 0.1f, JumpBuffer = 0.12f, WallSlideSpeed = 45f, MaxFall = 520f;
+    // Gravity is gentle (see StatBlock.Base) and walking off a ledge leaves a generous moment to still jump, so a
+    // missed step can be saved mid-air. Falls are capped low enough to read and react to.
+    private const float CoyoteTime = 0.2f, WallCoyoteTime = 0.1f, JumpBuffer = 0.12f, WallSlideSpeed = 40f, MaxFall = 430f;
+    private const float PushSpeed = 0.55f; // crates move at this fraction of your run speed
 
     public MatchPlayer Player;
     public GameManager Game;
@@ -107,6 +110,7 @@ public partial class Avatar : CharacterBody2D
         var toAim = f.Aim - GlobalPosition;
         if (toAim.LengthSquared() > 1) AimDir = toAim.Normalized();
 
+        _authority = authority;
         Move(f, jumpPressed, dt);
         if (authority)
         {
@@ -118,6 +122,7 @@ public partial class Avatar : CharacterBody2D
         Animate(dt);
     }
 
+    private bool _authority;
     private float _wedgedT;
     private Vector2 _wedgedAt;
 
@@ -240,7 +245,7 @@ public partial class Avatar : CharacterBody2D
         if (onFloor) _coyote = CoyoteTime; else _coyote -= dt;
         if (onWall)
         {
-            _wallCoyote = CoyoteTime;
+            _wallCoyote = WallCoyoteTime;
             _wallNormalX = Mathf.Sign(GetWallNormal().X);
         }
         else _wallCoyote -= dt;
@@ -309,6 +314,16 @@ public partial class Avatar : CharacterBody2D
 
         Velocity = v;
         MoveAndSlide();
+
+        // Walking into a crate or barrel shoves it along (the host moves it; clients see it in snapshots).
+        if (_authority)
+            for (int i = 0; i < GetSlideCollisionCount(); i++)
+            {
+                var c = GetSlideCollision(i);
+                if (c.GetCollider() is not Prop { Pushable: true, Broken: false } prop) continue;
+                var n = c.GetNormal();
+                if (Mathf.Abs(n.X) > 0.7f && f.MoveX * n.X < -0.1f) prop.Push(-n.X * speed * PushSpeed);
+            }
 
         // Pinball: bounce off whatever we hit hard enough, keeping most of the speed.
         if (S[Stat.Pinball] > 0)
@@ -474,7 +489,7 @@ public partial class Avatar : CharacterBody2D
         var from = GlobalPosition;
         var delta = AvatarArt.Muzzle(AimDir, _facing, S[Stat.Size], Gun);
         var hit = Sweep.Cast(new System.Numerics.Vector2(from.X, from.Y), new System.Numerics.Vector2(delta.X, delta.Y),
-            Mathf.Max(1, S[Stat.BulletRadius]), Game.Map.Solids);
+            Mathf.Max(1, S[Stat.BulletRadius]), Game.Arena.Solids);
         float t = hit is { } h ? Mathf.Max(0, h.T - 0.05f) : 1;
         return from + delta * t;
     }
