@@ -5,7 +5,7 @@ Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generate
 
 ## Download and play
 
-**Just want to play?** Grab the zip for your system from the **[Releases](../../releases/latest)** page, extract it and run it.
+**Just want to play?** Grab the zip for your system from the **[Releases](https://github.com/cgsereggela/Brawler/releases/latest)** page, extract it and run it.
 You don't need anything else installed. Step-by-step guides:
 
 - **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.

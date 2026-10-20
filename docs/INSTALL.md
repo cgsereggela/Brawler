@@ -6,7 +6,7 @@ Play against bots on your own, with friends on the same Wi-Fi, or with friends a
 
 ## 1. Download
 
-1. Open the project's GitHub page and click **Releases** on the right (or go straight to `/releases/latest`).
+1. Go to <https://github.com/cgsereggela/Brawler/releases/latest>.
 2. Under **Assets**, download the zip for your computer:
 
    | Your computer | Download |
@@ -48,7 +48,7 @@ unzip Brawler-*-linux.zip -d Brawler && cd Brawler
 chmod +x Brawler.x86_64
 ./Brawler.x86_64
 ```
-Keep the `data_Brawler_linux_x86_64` folder next to the binary. A GPU with Vulkan drivers is best. The game
+Keep the `data_Brawler_linuxbsd_x86_64` folder next to the binary. A GPU with Vulkan drivers is best. The game
 switches to OpenGL by itself if Vulkan isn't available.
 
 ## 3. Play

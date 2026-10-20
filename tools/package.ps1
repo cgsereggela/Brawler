@@ -23,6 +23,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# "-Platforms linux,macos" arrives as one string when the script is run with -File
+$Platforms = @($Platforms | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $root 'godot'
 $build = Join-Path $root 'build'
@@ -30,6 +32,13 @@ $dist = Join-Path $root 'dist'
 $projectFile = Join-Path $project 'project.godot'
 
 function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
+
+# Runs Godot and returns its output as plain text lines. Godot logs to stderr, which Windows PowerShell 5.1 would
+# otherwise turn into terminating errors; colour codes and progress lines are dropped.
+function Invoke-Godot {
+    $ErrorActionPreference = 'Continue'
+    & $Godot @args 2>&1 | ForEach-Object { "$_" -replace '\x1b\[[0-9;]*m', '' } | Where-Object { $_ -notmatch '^\s*\[\s*\d+% \]' }
+}
 
 if (-not $Godot) { Fail 'Pass -Godot <path to the Godot .NET editor> or set the GODOT environment variable.' }
 if (-not (Test-Path $Godot)) { Fail "Godot not found at $Godot" }
@@ -48,7 +57,7 @@ Write-Host "Packaging Brawler $Version"
 
 # ---------- export templates ----------
 # "4.7.2.stable.mono.official.abc123" -> "4.7.2.stable.mono" (the templates folder name)
-$godotVersion = (& $Godot --headless --version | Select-Object -Last 1).Trim()
+$godotVersion = (Invoke-Godot --headless --version | Select-Object -Last 1).Trim()
 $parts = $godotVersion.Split('.')
 $tplName = ($parts | Where-Object { $_ -ne 'official' -and $_ -notmatch '^[0-9a-f]{7,}$' }) -join '.'
 if ($tplName -notmatch 'mono') { Fail "$Godot is not the .NET build of Godot (version $godotVersion). Use the 'mono' download." }
@@ -85,9 +94,24 @@ $text = (Get-Content (Join-Path $root 'docs/INSTALL.md') -Raw) + "`n`n" + (Get-C
 [System.IO.File]::WriteAllText($guide, $text.Replace('{VERSION}', $Version))
 
 Write-Host 'Importing assets...'
-& $Godot --headless --path $project --import 2>&1 | Out-Null
+Invoke-Godot --headless --path $project --import | Out-Null
 
 $haveZip = [bool](Get-Command zip -ErrorAction SilentlyContinue) # Info-ZIP keeps the Linux executable bit
+
+# Fallback zipper for Windows. Compress-Archive in PowerShell 5.1 writes backslash paths, which unzip on Linux and
+# macOS treats as part of the file name, so entries are added one by one with forward slashes.
+function Add-ToZip($zipPath, $baseDir, $files) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $base = (Resolve-Path $baseDir).Path.TrimEnd('\', '/')
+    $archive = [System.IO.Compression.ZipFile]::Open($zipPath, 'Update')
+    try {
+        foreach ($f in $files) {
+            $name = $f.Substring($base.Length + 1).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $f, $name, 'Optimal') | Out-Null
+        }
+    }
+    finally { $archive.Dispose() }
+}
 $made = @()
 foreach ($p in $Platforms) {
     $p = $p.ToLower()
@@ -98,8 +122,8 @@ foreach ($p in $Platforms) {
     $out = Join-Path $dir $outputs[$p]
 
     Write-Host "Exporting $($presets[$p])..."
-    & $Godot --headless --path $project --export-release $presets[$p] $out 2>&1 | ForEach-Object { "  $_" } | Write-Host
-    if (-not (Test-Path $out)) { Fail "Export for $p produced no $($outputs[$p]). See the log above." }
+    Invoke-Godot --headless --path $project --export-release $presets[$p] $out | ForEach-Object { Write-Host "  $_" }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { Fail "Export for $p failed (exit $LASTEXITCODE). See the log above." }
 
     $zipPath = Join-Path $dist "Brawler-$Version-$p.zip"
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
@@ -107,17 +131,12 @@ foreach ($p in $Platforms) {
         # Godot already zips the .app bundle; add the guide next to it.
         Copy-Item $out $zipPath
         if ($haveZip) { & zip -qj $zipPath $guide }
-        else {
-            Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
-            $archive = [System.IO.Compression.ZipFile]::Open($zipPath, 'Update')
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $guide, 'README.txt') | Out-Null
-            $archive.Dispose()
-        }
+        else { Add-ToZip $zipPath $build @($guide) }
     }
     else {
         Copy-Item $guide $dir
         if ($haveZip) { Push-Location $dir; & zip -qr $zipPath .; Pop-Location }
-        else { Compress-Archive -Path (Join-Path $dir '*') -DestinationPath $zipPath }
+        else { Add-ToZip $zipPath $dir @(Get-ChildItem $dir -Recurse -File | ForEach-Object { $_.FullName }) }
     }
     $made += $zipPath
 }

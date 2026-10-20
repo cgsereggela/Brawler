@@ -37,6 +37,7 @@ common/physics_ticks_per_second=60
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_2d=2
 viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.04, 0.02, 0.08, 1)
