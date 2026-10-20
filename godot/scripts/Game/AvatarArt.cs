@@ -128,7 +128,7 @@ public static class AvatarArt
         // Everything above the hips (arms, body, face, hair, hat, gun) is drawn around the animated torso origin.
         var bodyOrigin = origin + BodyOffset(p);
         ci.DrawSetTransform(bodyOrigin, 0, scale);
-        if (p.Gun) DrawArms(c, facing); // behind the body, in body (sprite) space, so they ride along with it
+        if (p.Gun) DrawArm(c, facing); // behind the body, in body (sprite) space, so it rides along with it
         DrawHairBack(c, look.Hair);
         DrawBody(c, rig.Breathe);
         DrawEyes(c, look.Eyes, facing);
@@ -145,7 +145,7 @@ public static class AvatarArt
 
     // The round body rides on two short legs. In sprite space the body spans y -9.5..BodyBottom and the soles rest
     // on y = 9, the bottom of the hitbox. Everything above the hips (body, face, hair, hat, gun) moves together by
-    // BodyOffset, so add-ons that hang off the body (arms) should follow BodyOffset too.
+    // BodyOffset, so add-ons that hang off the body (the arm) should follow BodyOffset too.
     public const float BodyTop = -9.5f, BodyBottom = 3.4f;
     private const float HipX = 2.2f, HipY = 1.4f, SoleY = 9f, ShoeRx = 2.45f, ShoeRy = 1.4f, LegLen = 5.8f, LegR = 1.1f;
     private const float FootX = 2.5f, StrideX = 2.5f, StepLift = 2.2f;
@@ -754,23 +754,20 @@ public static class AvatarArt
         }
     }
 
-    // ---------- arms ----------
-    // Two stubby arms in the body color, from the shoulders (GunRig.FrontShoulder / BackShoulder, sprite space) to the
-    // hands on the grip and the foregrip. Drawn before the body, so the body hides their roots and they can never
-    // cover the face; only the part reaching out past the body shows.
+    // ---------- arm ----------
+    // One stubby arm in the body color, from the shoulder (GunRig.Shoulder, sprite space) to the hand on the grip.
+    // Drawn before the body, so the body hides its root and it can never cover the face; only the part reaching out
+    // past the body shows (over the head when aiming up).
 
     private const float ArmRadius = 1.05f, ArmOutline = 0.55f;
 
-    private static void DrawArms(Ctx c, int facing)
+    private static void DrawArm(Ctx c, int facing)
     {
         var p = c.P;
-        var g = p.GunLook == default ? GunLook.Default : p.GunLook;
         var (hand, angle) = GunRig.Pose(SpriteGunAim(p, facing), p.Kick);
         var grip = G(GunRig.ToSprite(new System.Numerics.Vector2(0.6f, 0.2f), hand, angle));
-        var fore = G(GunRig.ToSprite(g.ForegripLocal, hand, angle));
         var line = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
-        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.BackShoulder), fore, ArmRadius), c.H(p.Body.Darkened(0.22f)), line, ArmOutline);
-        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.FrontShoulder), grip, ArmRadius), c.H(p.Body.Darkened(0.08f)), line, ArmOutline);
+        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.Shoulder), grip, ArmRadius), c.H(p.Body.Darkened(0.08f)), line, ArmOutline);
     }
 
     // ---------- gun ----------
@@ -804,10 +801,8 @@ public static class AvatarArt
             ci.DrawCircle(new Vector2(g.Receiver - 0.8f, -4.55f), 0.55f, c.H(Shapes.Hdr(Visor, 1.3f)), true, -1, true);
         }
 
-        // The hands on the grip and the foregrip, in the body color (the arms behind the body reach these).
+        // The hand on the grip, in the body color (the arm behind the body reaches it).
         var handLine = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
-        var fore = G(g.ForegripLocal);
-        Shapes.Fill(ci, Shapes.Ellipse(fore, 1.3f, 1.2f, 14), c.H(p.Body.Darkened(0.12f)), handLine, 0.5f);
         Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.Body, handLine, 0.5f);
         ci.DrawCircle(new Vector2(0.2f, -0.5f), 0.5f, new Color(1, 1, 1, 0.4f), true, -1, true);
 

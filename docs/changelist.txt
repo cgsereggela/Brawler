@@ -1,8 +1,7 @@
 issues to fix:
-- the selected cards sit over the playable area making it hard to fight near the bottom of the screen, we should make the ground thicker so there's room to display this info
-- we should cut the lockout time for movement after a walljump in half
 
 features to add:
-- I'd like to redraw the mouse pointer to be a crosshair, with some indicator of ammo count and reload time, rather than having this information around the player
-- I'd like to move the position of the gun off of the face / body of the player so it doesn't cover the face, we can give the player arms to make this look better
-- I'd like to add a walking animation to the player by moving the body up off of the feet so there's more room between the player and the ground
+- I'd like to be able to hover over a player's panel at the top of the screen and see what cards they've picked, perhaps what they're stats are
+
+art style:
+- changed the art style to a procedural raster art style similar to hollow knight

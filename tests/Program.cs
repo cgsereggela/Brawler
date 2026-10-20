@@ -888,7 +888,7 @@ void Check(bool cond, string name, string detail = "")
     Check(FootingProbe.WallSide(46, 100, 7, 9, walls.Take(1).ToList()) == 0, "Footing: no wall 4 px away");
 }
 
-// ---------- Gun rig: arms hold the gun clear of the face; muzzle is shared by art and bullets ----------
+// ---------- Gun rig: the arm holds the gun clear of the face; muzzle is shared by art and bullets ----------
 {
     // Add any new gun look here: the hand path in GunRig must keep every look clear of the face.
     var looks = new[]
@@ -937,7 +937,17 @@ void Check(bool cond, string name, string detail = "")
     Check(Vector2.Distance(big, right * 2) < 1e-4f, "Muzzle scales with size", $"{big} vs {right * 2}");
     Check(right.X > Body.W / 2 + 8, "Level muzzle is held out at arm's length past the body", $"{right}");
     var up = GunRig.Muzzle(new Vector2(0, -1), 1, 1, g);
-    Check(up.Y < -Body.H / 2 && up.X > Body.W / 2, "Upward muzzle is raised above the head, out in front of the face", $"{up}");
+    Check(up.Y < -Body.H / 2 - 10 && MathF.Abs(up.X) < 3, "Upward muzzle is held straight up over the head", $"{up}");
+    // Aiming straight up, the hand and the whole gun are raised over the top of the head (sprite y -9.5), recoil included.
+    float lowest = float.MinValue;
+    foreach (float kick in new[] { 0f, 0.5f, 1f })
+    {
+        var (hand, angle) = GunRig.Pose(new Vector2(0, -1), kick);
+        foreach (var (x, y, w, h) in GunRig.Footprint(g))
+            foreach (var corner in new[] { new Vector2(x, y), new Vector2(x + w, y), new Vector2(x, y + h), new Vector2(x + w, y + h) })
+                lowest = Math.Max(lowest, GunRig.ToSprite(corner, hand, angle).Y);
+    }
+    Check(lowest < -9.5f, "Aiming straight up, the hand and gun sit above the head", $"lowest point y {lowest:0.0}");
 
     // The muzzle (bullet origin) follows the aim smoothly: no jumps as the aim sweeps, so bullets leave the barrel.
     float maxStep = 0;

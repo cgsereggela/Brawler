@@ -12,8 +12,6 @@ public readonly record struct GunLook(int Receiver = 5, int Barrel = 6, int Barr
     public int MuzzleX => Receiver + Barrel - 1;
     /// <summary>Where bullets leave the gun, in gun space (x along the barrel, y down toward the grip).</summary>
     public Vector2 MuzzleLocal => new(MuzzleX + 1, -BarrelThick * 0.5f);
-    /// <summary>Where the second hand holds the gun, under the barrel just ahead of the receiver.</summary>
-    public Vector2 ForegripLocal => new(Receiver + 1.4f, 0.6f);
 }
 
 /// <summary>
@@ -29,27 +27,31 @@ public readonly record struct GunLook(int Receiver = 5, int Barrel = 6, int Barr
 /// The hand follows <see cref="HandPath"/>, a curve around the front of the body chosen so the gun (pointing along
 /// the aim from the hand) never crosses the eyes, nose or mouth of any face option (<see cref="Face"/>) at any aim
 /// the facing rules allow (sprite-space aim x &gt;= -0.15), recoil included. The unit tests sweep every angle.
-/// The arms are drawn behind the body, so only the gun and hands can ever overlap the face.
+/// One arm holds the gun. It is drawn behind the body, so only the gun and hand can ever overlap the face.
 /// </summary>
 public static class GunRig
 {
-    /// <summary>Shoulders in sprite space. The arms run from here to the hands, drawn behind the body.</summary>
-    public static readonly Vector2 FrontShoulder = new(2.6f, 1.6f), BackShoulder = new(-2.4f, 1.6f);
+    /// <summary>The shoulder in sprite space. The arm runs from here to the hand, drawn behind the body.</summary>
+    public static readonly Vector2 Shoulder = new(1.0f, -1.0f);
 
     /// <summary>
     /// Where the shooting hand sits (sprite space) for each sprite-space aim angle in degrees (-90 up, 0 ahead,
-    /// 90 down), interpolated in between. Aiming up, the arm swings out to the front so the gun rises beside the
-    /// face instead of across it; level, the gun is held at chest height under the nose; aiming down it hangs in
-    /// front of the legs (the body sits on legs below y 3.4, see Game/AvatarArt.BodyBottom) rather than into them.
+    /// 90 down), interpolated in between. The hand moves rather than the gun pivoting on the chest: aiming straight up
+    /// it is raised over the top of the head (y -9.5) with the gun held above it; in between it swings round in front
+    /// of the face; level, the gun is held at chest height past the nose; aiming down it hangs in front of the legs
+    /// (the body sits on legs below y 3.4, see Game/AvatarArt.BodyBottom) rather than into them.
     /// </summary>
     public static readonly (float Deg, Vector2 Hand)[] HandPath =
     {
-        (-100, new(15.5f, 0.5f)),
-        (-90, new(15.0f, 1.0f)),
-        (-60, new(14.8f, 1.8f)),
-        (-30, new(14.0f, 3.2f)),
-        (0, new(11.5f, 4.2f)),
-        (30, new(10.0f, 6.5f)),
+        (-100, new(-0.3f, -13.6f)),
+        (-90, new(0.6f, -13.6f)),
+        (-75, new(4.6f, -13.0f)),
+        (-60, new(8.4f, -11.4f)),
+        (-45, new(11.6f, -8.8f)),
+        (-30, new(14.0f, -5.0f)),
+        (-15, new(15.2f, -0.4f)),
+        (0, new(14.0f, 4.0f)),
+        (30, new(11.2f, 6.4f)),
         (60, new(9.5f, 7.5f)),
         (90, new(5.5f, 8.0f)),
         (100, new(4.0f, 8.0f)),
@@ -112,7 +114,7 @@ public static class GunRig
         return ToBody(ToSprite(g.MuzzleLocal, hand, angle), facing, scale);
     }
 
-    /// <summary>Gun-space rectangles (x, y, w, h) covering everything drawn with the gun, hands included, plus outline.</summary>
+    /// <summary>Gun-space rectangles (x, y, w, h) covering everything drawn with the gun, hand included, plus outline.</summary>
     public static List<(float X, float Y, float W, float H)> Footprint(GunLook g)
     {
         const float o = 0.3f; // half the outline width, rounded up
@@ -123,8 +125,7 @@ public static class GunRig
             (g.Receiver - 0.8f, -bt, muzzle - g.Receiver + 0.8f, bt),       // barrel
             (muzzle - 1.3f, -bt - 0.35f, 1.4f, bt + 0.7f),                  // muzzle cap
             (-0.8f, -0.2f, 2.8f, 3.5f),                                     // grip
-            (0.6f - 1.45f, 0.2f - 1.35f, 2.9f, 2.7f),                       // shooting hand
-            (g.ForegripLocal.X - 1.3f, g.ForegripLocal.Y - 1.2f, 2.6f, 2.4f), // second hand
+            (0.6f - 1.45f, 0.2f - 1.35f, 2.9f, 2.7f),                       // hand
         };
         if (g.Stock > 0) r.Add((-1.2f - g.Stock, -2.5f, g.Stock + 0.8f, 2.4f));
         if (g.Mag > 0) r.Add((3f, -0.4f, 1.9f, g.Mag + 0.6f));
