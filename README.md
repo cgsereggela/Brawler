@@ -25,6 +25,7 @@ Defaults; rebind them in Options → Controls.
 |---|---|
 | Move | A / D (or arrows) |
 | Jump / wall jump | W / Space / Up (walk off a ledge and you keep your jump for the whole fall) |
+| Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload |
 | Shoot | Left mouse (hold) |
 | Block | Right mouse / Shift |
 | Options in a match | Esc (an overlay; the game keeps running) |
@@ -142,7 +143,7 @@ godot/
                             movers, pools, saws), Backdrop (scenery),
                             ArenaTheme, FxStyle (card-driven effect power and flavors)
   scripts/Fx/               FxLayer (particles, rings, rays, flashes, popups), Visuals (shapes, glow texture, fonts), synthesized SFX
-  scripts/UI/               menu, lobby, character editor, HUD, card pick, match over
+  scripts/UI/               menu, lobby, character editor, HUD, crosshair (ammo + reload), card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
 tools/CardStats/            card balance report from the stats log (dotnet run)
 tools/package.ps1           export + zip release builds (see Making a release)
@@ -211,7 +212,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip) and custom cards (every parse error, id range, clamping, host sync format).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -225,10 +226,11 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --cards=random:5  # every battle deals 5 random cards to each player
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --cards=57,62,69    # everyone holds these card ids (offline only)
 "$GODOT" --path godot -- --themebench                                  # frame time per arena theme (vsync off)
-"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first
+"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first, crosshair gives way to the pointer
 "$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
 "$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect
 "$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked
+"$GODOT" --path godot -- --crosshairshots=C:/tmp/shots                 # the crosshair at several ammo/reload states over every arena theme
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
 "$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder

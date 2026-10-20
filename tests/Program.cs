@@ -856,5 +856,37 @@ void Check(bool cond, string name, string detail = "")
     Check(fallbacks <= seeds * 3 / 200, "Fallback rate stays under 0.5% with the clearance", $"{fallbacks}/{seeds * 3}");
 }
 
+// ---------- Crosshair ammo ring ----------
+{
+    const float r = 12f;
+    var bad = new List<string>();
+    for (int mag = 1; mag <= 40; mag++)
+    {
+        if (AmmoRing.Continuous(mag) != (mag > AmmoRing.MaxPips)) bad.Add($"mag {mag}: wrong mode");
+        if (AmmoRing.Continuous(mag)) continue;
+        float total = 0, prevEnd = float.NegativeInfinity;
+        for (int i = 0; i < mag; i++)
+        {
+            var (from, to) = AmmoRing.Pip(i, mag, r);
+            float len = (to - from) * r;
+            if (to <= from || len < 1.5f) bad.Add($"mag {mag} pip {i}: {len:0.00} long");
+            if (from < prevEnd - 1e-4f) bad.Add($"mag {mag} pip {i} overlaps the one before");
+            total += to - from;
+            prevEnd = to;
+        }
+        if (prevEnd > AmmoRing.Pip(0, mag, r).From + 2 * MathF.PI + 1e-4f) bad.Add($"mag {mag}: last pip wraps onto the first");
+        if (total > 2 * MathF.PI + 1e-4f || (mag == 1 && Math.Abs(total - 2 * MathF.PI) > 1e-4f)) bad.Add($"mag {mag}: pips cover {total:0.00} rad");
+        if (mag > 1 && AmmoRing.Gap(mag, r) * r < 0.5f) bad.Add($"mag {mag}: gap too small to see");
+    }
+    Check(bad.Count == 0, "Ammo pips: one per bullet up to MaxPips, visible, no overlap, gaps", string.Join("; ", bad.Take(5)));
+    var (g0, g1) = AmmoRing.Gauge(23, 40);
+    var (e0, e1) = AmmoRing.Gauge(0, 40);
+    var (f0, f1) = AmmoRing.Gauge(99, 40);
+    Check(Math.Abs((g1 - g0) - 2 * MathF.PI * 23 / 40) < 1e-4f && e1 == e0 && Math.Abs((f1 - f0) - 2 * MathF.PI) < 1e-4f && g0 == AmmoRing.Top,
+        "Ammo gauge (big magazines) starts at the top and is proportional, clamped to the mag");
+    var maxMag = StatBlock.Compute(Enumerable.Repeat(CardRegistry.Get(31), 6).ToList())[Stat.Ammo];
+    Check(maxMag <= 40 && AmmoRing.Continuous((int)maxMag), "Stacked Minigun magazines fall back to the gauge", $"{maxMag}");
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;
