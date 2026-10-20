@@ -31,8 +31,9 @@ public enum MapStyle { Tiers, Mirror, Islands, Towers }
 
 public sealed class MapLayout
 {
-    public const int Width = 800;
-    public const int Height = 450;
+    // 25% bigger than the original 800x450; 562 is 16:9 rounded down, and the base viewport matches it exactly.
+    public const int Width = 1000;
+    public const int Height = 562;
     public const int KillY = Height + 24;
 
     public List<RectI> Solids { get; } = new();
@@ -88,21 +89,26 @@ public static class MapGenerator
     private const int Height = MapLayout.Height;
     private const int Width = MapLayout.Width;
 
-    // Reachability limits, derived from base movement (jump apex = v^2 / 2g ≈ 66px) with margin.
-    public const int MaxRise = 48;
-    public const int MaxGapRising = 56;
-    public const int MaxGapFalling = 110;
+    // Reachability limits, derived from base movement (jump apex = v^2 / 2g ≈ 82 px at 144 px/s) with margin: a full
+    // jump carries ~144 px across on the level and ~108 px onto a ledge MaxRise up. Bots jump a few px before an edge
+    // and land with a body width to spare, so a level gap is planned at well under a full jump.
+    public const int MaxRise = 60;
+    public const int MaxGapRising = 72;
+    public const int MaxGapFalling = 130;
     public const int Headroom = 26;
-    public const int MinSpawnDistance = 175;
-    public const int TierSpacing = 40;
+    public const int MinSpawnDistance = 220;
+    public const int TierSpacing = 50;
     /// <summary>
     /// Least clear air between the bottom of anything solid (platforms, movers, glass, the ceiling) and the top of
-    /// anything under it. A body is 18 px tall (a Giant 32.4), so a normal body gets 22 px of hop before it bonks and a
+    /// anything under it. A body is 18 px tall (a Giant 32.4), so a normal body gets 32 px of hop before it bonks and a
     /// Giant still walks under. It equals <see cref="TierSpacing"/>, so neighbouring tiers never stack: they stagger.
     /// </summary>
-    public const int MinClearance = 40;
+    public const int MinClearance = 50;
     public const int PadWidth = 24;
-    public const float PadVelocity = 475f;
+    /// <summary>Pad launch speed: a ~217 px apex at base gravity (25% higher than the old 173 px launch).</summary>
+    public const float PadVelocity = 531f;
+    /// <summary>Open air a jump pad needs above it.</summary>
+    public const int PadAir = 112;
     /// <summary>Base player gravity (StatBlock.Base), for planning pad launches.</summary>
     public const float BaseGravity = 650f;
 
@@ -149,13 +155,13 @@ public static class MapGenerator
                 break;
             case MapStyle.Towers:
                 Towers(rng, placed, floor);
-                TierPlatforms(rng, placed, rng.Range(5, 7), 2);
-                break;
-            case MapStyle.Islands:
                 TierPlatforms(rng, placed, rng.Range(5, 8), 3);
                 break;
+            case MapStyle.Islands:
+                TierPlatforms(rng, placed, rng.Range(5, 8), 4);
+                break;
             default:
-                TierPlatforms(rng, placed, rng.Range(6, 9), 3);
+                TierPlatforms(rng, placed, rng.Range(6, 9), 4);
                 Pillars(rng, placed);
                 break;
         }
@@ -176,12 +182,12 @@ public static class MapGenerator
         var pitXs = new List<(int x1, int x2)>();
         for (int i = 0; i < pits; i++)
         {
-            int w = rng.Range(6, 9) * Tile;
-            int x = rng.Range(10, (Width - w) / Tile - 10) * Tile;
+            int w = rng.Range(8, 11) * Tile;
+            int x = rng.Range(12, (Width - w) / Tile - 12) * Tile;
             var p = (x, x + w);
             bool clash = false;
             foreach (var q in pitXs)
-                if (p.Item1 < q.x2 + 80 && q.x1 < p.Item2 + 80) clash = true;
+                if (p.Item1 < q.x2 + 100 && q.x1 < p.Item2 + 100) clash = true;
             if (!clash) pitXs.Add(p);
         }
         return FloorBetween(pitXs);
@@ -195,8 +201,8 @@ public static class MapGenerator
         int span = (Width - Wall * 2) / islands;
         for (int i = 1; i < islands; i++)
         {
-            int w = rng.Range(6, 11) * Tile;
-            int x = (Wall + span * i + rng.Range(-3, 3) * Tile - w / 2) / Tile * Tile;
+            int w = rng.Range(8, 14) * Tile;
+            int x = (Wall + span * i + rng.Range(-4, 4) * Tile - w / 2) / Tile * Tile;
             pits.Add((x, x + w));
         }
         return FloorBetween(pits);
@@ -209,13 +215,13 @@ public static class MapGenerator
         int kind = rng.Range(0, 2);
         if (kind == 1)
         {
-            int w = rng.Range(4, 6) * Tile * 2;
+            int w = rng.Range(5, 7) * Tile * 2;
             pits.Add((Width / 2 - w / 2, Width / 2 + w / 2));
         }
         else if (kind == 2)
         {
-            int w = rng.Range(6, 9) * Tile;
-            int x = rng.Range(12, 30) * Tile;
+            int w = rng.Range(8, 11) * Tile;
+            int x = rng.Range(15, 38) * Tile;
             pits.Add((x, x + w));
             pits.Add((Width - x - w, Width - x));
         }
@@ -240,7 +246,7 @@ public static class MapGenerator
 
     /// <summary>
     /// Top of platform tier <paramref name="tier"/> (1 = lowest). The lowest tier leaves a thin platform exactly
-    /// <see cref="MinClearance"/> above the floor (a 48 px climb, MaxRise); each next tier is TierSpacing higher.
+    /// <see cref="MinClearance"/> above the floor (a 58 px climb, within MaxRise); each next tier is TierSpacing higher.
     /// </summary>
     public static int TierY(int tier) => FloorY - MinClearance - Tile - (tier - 1) * TierSpacing;
 
@@ -265,11 +271,11 @@ public static class MapGenerator
 
     private static void Pillars(Rng rng, List<RectI> placed)
     {
-        int pillars = rng.Range(0, 2);
+        int pillars = rng.Range(0, 3);
         for (int i = 0; i < pillars * 4 && pillars > 0; i++)
         {
             int w = rng.Range(2, 3) * Tile;
-            int h = rng.Range(5, 9) * Tile;
+            int h = rng.Range(6, 11) * Tile;
             int x = rng.Range(6, (Width - w) / Tile - 6) * Tile;
             int y = rng.Range(6, (FloorY - h - MinClearance) / Tile) * Tile;
             if (TryPlace(placed, new RectI(x, y, w, h))) pillars--;
@@ -279,19 +285,19 @@ public static class MapGenerator
     /// <summary>Platforms on the left half mirrored to the right, with the odd centerpiece straddling the middle.</summary>
     private static void MirrorPlatforms(Rng rng, List<RectI> placed)
     {
-        int tiers = rng.Range(6, 8);
+        int tiers = rng.Range(6, 9);
         for (int tier = 1; tier <= tiers; tier++)
         {
             int tierY = TierY(tier);
-            if (rng.Chance(0.35f))
+            if (rng.Chance(0.4f))
             {
-                int w = rng.Range(3, 8) * Tile * 2;
+                int w = rng.Range(3, 9) * Tile * 2;
                 TryPlace(placed, new RectI(Width / 2 - w / 2, tierY, w, rng.Chance(0.7f) ? Tile : Tile * 2));
             }
             int count = rng.Range(1, 2);
             for (int i = 0; i < count * 4 && count > 0; i++)
             {
-                int w = rng.Range(3, 12) * Tile;
+                int w = rng.Range(3, 14) * Tile;
                 int h = rng.Chance(0.65f) ? Tile : Tile * 2;
                 int x = rng.Range(2, (Width / 2 - w) / Tile - 2) * Tile;
                 int y = tierY - (tier > 1 && rng.Chance(0.3f) ? Tile : 0);
@@ -320,7 +326,7 @@ public static class MapGenerator
             var tower = new RectI(x, FloorY - h, w, h);
             bool clash = false;
             foreach (var o in placed)
-                if (tower.Grow(48, MinClearance).Intersects(o)) clash = true;
+                if (tower.Grow(60, MinClearance).Intersects(o)) clash = true;
             if (clash) continue;
             placed.Add(tower);
             towers--;
@@ -374,9 +380,9 @@ public static class MapGenerator
             foreach (var sp in map.Spawns)
                 if (sp.Y == s.Y && sp.X > x - 24 && sp.X < pad.X2 + 24) ok = false;
             foreach (var p in map.Pads)
-                if (Math.Abs(p.CenterX - pad.CenterX) < 100) ok = false;
+                if (Math.Abs(p.CenterX - pad.CenterX) < 125) ok = false;
             // It needs open air above, or it just bonks you into a ceiling.
-            if (ok && !map.Blocked(new RectI(x - 4, s.Y - 90, PadWidth + 8, 90))) map.Pads.Add(pad);
+            if (ok && !map.Blocked(new RectI(x - 4, s.Y - PadAir, PadWidth + 8, PadAir))) map.Pads.Add(pad);
         }
     }
 
@@ -559,7 +565,7 @@ public static class MapGenerator
         return -1;
     }
 
-    /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~173 px apex minus a margin.</summary>
+    /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~217 px apex minus a margin.</summary>
     public const int PadRise = (int)(PadVelocity * PadVelocity / (2 * BaseGravity)) - 10;
 
     /// <summary>
@@ -574,7 +580,7 @@ public static class MapGenerator
         {
             if (p.Y != a.Y || p.X1 < a.X1 - 2 || p.X2 > a.X2 + 2) continue;
             int gap = Math.Max(0, Math.Max(p.X1, b.X1) - Math.Min(p.X2, b.X2));
-            if (gap > 40 || (b.X1 < p.X2 && b.X2 > p.X1)) continue; // too far to drift over, or right overhead
+            if (gap > 50 || (b.X1 < p.X2 && b.X2 > p.X1)) continue; // too far to drift over, or right overhead
             if (!map.Blocked(new RectI(p.X1, b.Y - map.Headroom, p.X2 - p.X1, a.Y - (b.Y - map.Headroom)))) return p;
         }
         return null;
@@ -722,15 +728,16 @@ public static class MapGenerator
         var map = new MapLayout { Seed = seed, Style = MapStyle.Mirror };
         AddBorders(map);
         map.Solids.Add(new RectI(Wall, FloorY, Width - Wall * 2, Height - FloorY));
+        // Mirrored about the middle, one tier apart.
         var plats = new List<RectI>
         {
-            new(120, 386, 112, 8), new(568, 386, 112, 8),
-            new(336, 346, 128, 8), new(152, 306, 96, 8), new(552, 306, 96, 8),
-            new(344, 266, 112, 8),
+            new(150, TierY(1), 140, 8), new(710, TierY(1), 140, 8),
+            new(420, TierY(2), 160, 8), new(190, TierY(3), 120, 8), new(690, TierY(3), 120, 8),
+            new(430, TierY(4), 140, 8),
         };
         map.Solids.AddRange(plats);
         BuildSurfaces(map, new List<(int, int)> { (Wall, Width - Wall) }, plats);
-        int[] xs = { 90, 710, 260, 540 };
+        int[] xs = { 110, 890, 330, 670 };
         for (int i = 0; i < playerCount; i++) map.Spawns.Add(new SpawnPoint(xs[i % xs.Length], FloorY));
         return map;
     }

@@ -93,14 +93,14 @@ The **Base** column is what every player starts with. Speeds are in pixels per s
 | Stat | Base | Meaning |
 |------|------|---------|
 | `MaxHp` | 100 | Health. Never goes below 10. |
-| `MoveSpeed` | 115 | Running speed (40 to 320). |
-| `JumpVelocity` | 292 | Jump strength (150 to 720). |
+| `MoveSpeed` | 144 | Running speed (50 to 400). |
+| `JumpVelocity` | 326.5 | Jump strength (168 to 805). |
 | `Gravity` | 650 | How fast you fall (at least 150). Lower means floatier jumps. |
 | `Size` | 1 | Body size (0.5 to 2.5). Bigger is easier to hit. |
 | `BlockCooldown` | 4 | Seconds between blocks (at least 0.6). 999 means you can't block. |
 | `BlockDuration` | 0.3 | How long a block lasts. |
 | `Lifesteal` | 0 | Fraction of the damage you deal that heals you. 0.35 = 35%. |
-| `TeleportOnBlock` | 0 | Teleport distance for the `blink` effect: 90 pixels per point. |
+| `TeleportOnBlock` | 0 | Teleport distance for the `blink` effect: 112 pixels per point. |
 
 ### Weapon
 
@@ -176,8 +176,8 @@ nothing:
 
 | Effect | What it does | Needs |
 |--------|--------------|-------|
-| `blink` | Blocking teleports you toward your cursor, stopping at walls. | `TeleportOnBlock` (add 1 = 90 pixels) |
-| `dash` | Blocking dashes you toward your cursor. | `Dash` (the built-in Dash card adds 520) |
+| `blink` | Blocking teleports you toward your cursor, stopping at walls. | `TeleportOnBlock` (add 1 = 112 pixels) |
+| `dash` | Blocking dashes you toward your cursor. | `Dash` (the built-in Dash card adds 650) |
 
 ## 4. Rules and limits
 

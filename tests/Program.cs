@@ -146,7 +146,7 @@ void Check(bool cond, string name, string detail = "")
     }
     Check(styles.Count == Enum.GetValues<MapStyle>().Length, "Every map style shows up", string.Join(",", styles));
     Check(pads > 100 && badPads == 0, "Jump pads sit on surfaces, away from spawns", $"{pads} pads, {badPads} bad");
-    Check(MapLayout.Width == 800 && MapLayout.Height == 450, "Arena is 800x450");
+    Check(MapLayout.Width == 1000 && MapLayout.Height == 562, "Arena is 1000x562");
 
     // A pad launch still clears the planned climb under the softer gravity.
     float padApex = MapGenerator.PadVelocity * MapGenerator.PadVelocity / (2 * MapGenerator.BaseGravity);
@@ -496,7 +496,7 @@ void Check(bool cond, string name, string detail = "")
             if (m.Solids.Any(r => sl.Intersects(r))) Bad(seed, $"slope {sl} cuts into a solid");
             foreach (var p in m.Props) if (sl.Intersects(p.Rect)) Bad(seed, $"{p.Kind} on a slope");
             foreach (var h in m.Hazards) if (sl.Intersects(h.Rect)) Bad(seed, "pool on a slope");
-            foreach (var pd in m.Pads) if (sl.Intersects(new RectI(pd.X1, pd.Y - 90, pd.X2 - pd.X1, 90))) Bad(seed, "pad on or under a slope");
+            foreach (var pd in m.Pads) if (sl.Intersects(new RectI(pd.X1, pd.Y - MapGenerator.PadAir, pd.X2 - pd.X1, MapGenerator.PadAir))) Bad(seed, "pad on or under a slope");
             foreach (var mv in m.Movers) if (sl.Intersects(mv.Lane.Grow(0, 20))) Bad(seed, "mover lane through a slope");
             foreach (var sw in m.Saws) if (sl.Overlaps(sw.X1 - sw.Radius, sw.Y1 - sw.Radius, sw.X2 + sw.Radius, sw.Y1 + sw.Radius - 3)) Bad(seed, "saw in a slope");
         }
@@ -1014,6 +1014,39 @@ void Check(bool cond, string name, string detail = "")
         foreach (var mv in m.Movers) if (mv.Lane.Bottom > floorY) Bad(seed, $"mover {mv}");
     }
     Check(bad == 0, "No surface, spawn, pad, prop, pool, saw or mover sits inside the floor band (3,000 maps)", string.Join("; ", why));
+}
+
+// ---------- Arena and movement scale (25% bigger arena, faster run, higher jump) ----------
+{
+    var bs = StatBlock.Base();
+    float speed = bs[Stat.MoveSpeed], jv = bs[Stat.JumpVelocity], g = bs[Stat.Gravity];
+    float apex = jv * jv / (2 * g);
+    Check(Math.Abs(MapLayout.Width / 800f - 1.25f) < 0.01f && Math.Abs(MapLayout.Height / 450f - 1.25f) < 0.01f,
+        "Arena is 25% bigger than 800x450 each way", $"{MapLayout.Width}x{MapLayout.Height}");
+    Check(Math.Abs(speed / 115f - 1.25f) < 0.01f && Math.Abs(apex / (292f * 292f / (2 * 650f)) - 1.25f) < 0.01f && g == 650,
+        "Run speed and jump height are 25% over the original 115 px/s and 292 px/s jump (same gravity)", $"speed {speed}, apex {apex:0.0}");
+    // Step a held, full-speed jump at 60 Hz the way the avatar does (gravity, then move) and measure how far it
+    // carries across before coming back down to MaxRise up, and to the launch height. A body 14 px wide can leave one
+    // edge and touch the other with its own width to spare, so a gap needs 14 px less than its width in flight.
+    float x = 0, y = 0, vy = -jv, dt = 1 / 60f, acrossAtRise = -1, acrossLevel = -1;
+    bool rose = false;
+    for (int i = 0; i < 600 && acrossLevel < 0; i++)
+    {
+        vy += g * dt;
+        x += speed * dt;
+        y += vy * dt;
+        if (-y > MapGenerator.MaxRise) rose = true;
+        if (rose && vy > 0 && acrossAtRise < 0 && -y <= MapGenerator.MaxRise) acrossAtRise = x;
+        if (vy > 0 && y >= 0) acrossLevel = x;
+    }
+    Check(acrossAtRise >= MapGenerator.MaxGapRising - Body.W + 20, "A full jump clears MaxGapRising onto a ledge MaxRise up",
+        $"{acrossAtRise:0} px across at {MapGenerator.MaxRise} px up, gap {MapGenerator.MaxGapRising}");
+    Check(acrossLevel >= MapGenerator.MaxGapFalling - Body.W, "A full jump clears MaxGapFalling on the level",
+        $"{acrossLevel:0} px across, gap {MapGenerator.MaxGapFalling}");
+    Check(TerrainGen.MaxAngle > 34 && TerrainGen.MaxAngle <= 42 && TerrainGen.MaxHeight > 40,
+        "Terrain is steeper and taller than before, and well under the 45 degree floor limit", $"{TerrainGen.MaxAngle} deg, {TerrainGen.MaxHeight} px");
+    Check(MapGenerator.PadRise >= MapGenerator.MaxRise * 3 && MapGenerator.PadAir < MapGenerator.PadRise,
+        "Jump pads still launch well past a jump", $"pad rise {MapGenerator.PadRise}, jump rise {MapGenerator.MaxRise}");
 }
 
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");

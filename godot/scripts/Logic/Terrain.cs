@@ -58,9 +58,13 @@ public readonly record struct GroundPoint(int X, int Y);
 /// </summary>
 public static class TerrainGen
 {
-    public const int MaxHeight = 40;
-    /// <summary>Steepest ramp: rise over run of 1/1.5 (33.7 degrees). Ramps are rounded to whole tiles, so most are gentler.</summary>
-    public const float MaxAngle = 34f;
+    /// <summary>Tallest hill or shelf (MinHeight..MaxHeight, whole tiles).</summary>
+    public const int MinHeight = 24, MaxHeight = 64;
+    /// <summary>
+    /// Steepest ramp: rise over run of 1/1.2 (39.8 degrees), kept under the avatar's 45 degree floor limit so every
+    /// ramp stays walkable. Ramps are rounded up to whole tiles, so most are a little gentler.
+    /// </summary>
+    public const float MaxAngle = 40f;
     /// <summary>Clear air kept between terrain and any platform above it (the same as between platforms).</summary>
     public const int Clearance = MapGenerator.MinClearance;
     /// <summary>Flat floor kept at each hill's feet, between hills, and at pit edges.</summary>
@@ -84,12 +88,12 @@ public static class TerrainGen
         // Each feature is a list of (x, height above the floor) corners, from one foot to the other.
         var features = new List<List<(int x, int h)>>();
         bool mirror = map.Style == MapStyle.Mirror;
-        int want = rng.Range(1, 3);
+        int want = rng.Range(1, 4);
 
         if (mirror && rng.Chance(0.35f))
         {
             // A centerpiece hill straddling the middle, symmetric by construction.
-            int h = rng.Range(2, MaxHeight / Tile) * Tile, run = Run(rng, h), top = rng.Range(2, 5) * Tile;
+            int h = rng.Range(MinHeight / Tile, MaxHeight / Tile) * Tile, run = Run(rng, h), top = rng.Range(2, 6) * Tile;
             int x = Width / 2 - top - run;
             var hill = new List<(int x, int h)> { (x, 0), (x + run, h), (Width / 2 + top, h), (Width / 2 + top + run, 0) };
             if (Fits(floor, placed, features, hill)) features.Add(hill);
@@ -97,7 +101,7 @@ public static class TerrainGen
 
         for (int tries = 0; tries < want * 12 && features.Count < want * (mirror ? 2 : 1); tries++)
         {
-            var f = rng.Chance(0.25f) ? Shelf(rng, rng.Chance(0.5f) || mirror) : Bump(rng, rng.Range(Wall + Tile, Width - Wall - 160) / Tile * Tile);
+            var f = rng.Chance(0.25f) ? Shelf(rng, rng.Chance(0.5f) || mirror) : Bump(rng, rng.Range(Wall + Tile, Width - Wall - 200) / Tile * Tile);
             if (f == null || !Fits(floor, placed, features, f)) continue;
             if (mirror)
             {
@@ -154,13 +158,13 @@ public static class TerrainGen
         }
     }
 
-    /// <summary>A ramp's run for a rise: 1.5 to 3 times it, rounded up to whole tiles.</summary>
-    private static int Run(Rng rng, int rise) => (rise * rng.Range(3, 6) / 2 + Tile - 1) / Tile * Tile;
+    /// <summary>A ramp's run for a rise: 1.2 to 2.4 times it, rounded up to whole tiles.</summary>
+    private static int Run(Rng rng, int rise) => (rise * rng.Range(6, 12) / 5 + Tile - 1) / Tile * Tile;
 
     /// <summary>A hill, stepped hill or mesa whose left foot is at <paramref name="x"/>.</summary>
     private static List<(int x, int h)> Bump(Rng rng, int x)
     {
-        int h = rng.Range(2, MaxHeight / Tile) * Tile;
+        int h = rng.Range(MinHeight / Tile, MaxHeight / Tile) * Tile;
         int kind = rng.Range(0, 9);
         var pts = new List<(int x, int h)> { (x, 0) };
         int cx = x;
@@ -180,9 +184,9 @@ public static class TerrainGen
             cx += Run(rng, h);
             pts.Add((cx, h));
         }
-        cx += rng.Range(4, 10) * Tile;
+        cx += rng.Range(4, 12) * Tile;
         pts.Add((cx, h));
-        if (kind == 8 && h <= 24) pts.Add((cx, 0)); // mesa: a short cliff to hop up on this side
+        if (kind == 8 && h <= 40) pts.Add((cx, 0)); // mesa: a short cliff to hop up on this side
         else pts.Add((cx + Run(rng, h), 0));
         // Either way round.
         if (rng.Chance(0.5f))
@@ -198,7 +202,7 @@ public static class TerrainGen
     /// <summary>A raised shelf against the left or right wall, ramping down to the floor.</summary>
     private static List<(int x, int h)> Shelf(Rng rng, bool left)
     {
-        int h = rng.Range(2, MaxHeight / Tile) * Tile, top = rng.Range(5, 12) * Tile, run = Run(rng, h);
+        int h = rng.Range(MinHeight / Tile, MaxHeight / Tile) * Tile, top = rng.Range(6, 15) * Tile, run = Run(rng, h);
         if (left) return new List<(int x, int h)> { (Wall, h), (Wall + top, h), (Wall + top + run, 0) };
         int x2 = Width - Wall;
         return new List<(int x, int h)> { (x2 - top - run, 0), (x2 - top, h), (x2, h) };

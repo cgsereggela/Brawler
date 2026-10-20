@@ -83,7 +83,7 @@ public static class CardRegistry
         Add(27, "Parkour", "+1 mid-air jump\n+15% move speed\n+20% fire cooldown", CardCategory.Movement,
             A(Stat.AirJumps, 1), M(Stat.MoveSpeed, 1.15f), M(Stat.FireCooldown, 1.2f));
         Add(28, "Dash", "Blocking dashes you\ntoward your cursor\n-15% block duration", CardCategory.Movement,
-            "dash", A(Stat.Dash, 520), M(Stat.BlockDuration, 0.85f));
+            "dash", A(Stat.Dash, 650), M(Stat.BlockDuration, 0.85f));
         Add(29, "Jetpack", "Jump in mid-air and hold\nto fly briefly\n-15 HP", CardCategory.Movement,
             A(Stat.Jetpack, 0.8f), A(Stat.MaxHp, -15));
 
