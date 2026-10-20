@@ -510,13 +510,22 @@ public partial class Avatar : CharacterBody2D
         _flash = 1;
     }
 
-    /// <summary>Bullet spawn point: the gun's muzzle, pulled back if a wall is in between.</summary>
+    /// <summary>Bullet spawn point: the gun's muzzle, pulled back if a wall is in between. If an enemy stands within
+    /// arm's reach (between body and muzzle), the bullet starts from the body so point-blank shots still connect.</summary>
     private Vector2 MuzzlePoint()
     {
         var from = GlobalPosition;
         var delta = AvatarArt.Muzzle(AimDir, _facing, S[Stat.Size], Gun);
-        var hit = Sweep.Cast(new System.Numerics.Vector2(from.X, from.Y), new System.Numerics.Vector2(delta.X, delta.Y),
-            Mathf.Max(1, S[Stat.BulletRadius]), Game.Arena.Solids, Game.Map?.Slopes);
+        float radius = Mathf.Max(1, S[Stat.BulletRadius]);
+        var nFrom = new System.Numerics.Vector2(from.X, from.Y);
+        var nTo = new System.Numerics.Vector2(from.X + delta.X, from.Y + delta.Y);
+        foreach (var a in Game.LiveAvatars())
+        {
+            if (a == this) continue;
+            var r = a.Bounds;
+            if (Sweep.SegmentTouchesRect(nFrom, nTo, radius, r.Position.X, r.Position.Y, r.Size.X, r.Size.Y)) return from;
+        }
+        var hit = Sweep.Cast(nFrom, new System.Numerics.Vector2(delta.X, delta.Y), radius, Game.Arena.Solids, Game.Map?.Slopes);
         float t = hit is { } h ? Mathf.Max(0, h.T - 0.05f) : 1;
         return from + delta * t;
     }
