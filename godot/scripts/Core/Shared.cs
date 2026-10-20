@@ -50,6 +50,7 @@ public sealed class MatchSettings
     public int RoundsToWin = 5;      // round wins needed to take the match
     public int LoserChoices = 5;     // cards offered to round losers
     public int WinnerChoices = 3;    // cards offered to the round winner (0 = winner doesn't pick)
+    public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
 }
 
 public sealed class LobbyState
@@ -79,6 +80,7 @@ public sealed class LobbyState
     {
         var w = new Wire();
         w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices);
+        w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(Players.Count);
         foreach (var p in Players)
             {
@@ -96,6 +98,7 @@ public sealed class LobbyState
         s.Settings.RoundsToWin = r.U8();
         s.Settings.LoserChoices = r.U8();
         s.Settings.WinnerChoices = r.U8();
+        s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)
             s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Look = Appearance.FromBytes(r.Bytes()) });
@@ -153,6 +156,8 @@ public sealed class Wire
     public Wire Bool(bool v) { _w.Write(v); return this; }
     public Wire Str(string v) { _w.Write(v ?? ""); return this; }
     public Wire Bytes(byte[] v) { _w.Write((byte)v.Length); _w.Write(v, 0, System.Math.Min(v.Length, 255)); return this; }
+    /// <summary>Like <see cref="Bytes"/> with a 16-bit length, for payloads that can pass 255 bytes.</summary>
+    public Wire Blob(byte[] v) { int n = System.Math.Min(v.Length, ushort.MaxValue); _w.Write((ushort)n); _w.Write(v, 0, n); return this; }
     public byte[] Done() { _w.Flush(); return _ms.ToArray(); }
 }
 
@@ -171,6 +176,7 @@ public sealed class WireReader
     public bool Bool() => _r.ReadBoolean();
     public string Str() => _r.ReadString();
     public byte[] Bytes() => _r.ReadBytes(_r.ReadByte());
+    public byte[] Blob() => _r.ReadBytes(_r.ReadUInt16());
 }
 
 public static class Log
