@@ -22,6 +22,7 @@ namespace Brawler;
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
+///   --aimshots=DIR        screenshot avatars aiming every way (barrel vs aim line, Muzzle dot) into DIR, then quit
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
@@ -394,6 +395,36 @@ public partial class Main : Node
                     tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
                 }
                 tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+            }
+            else if (a.StartsWith("--aimshots="))
+            {
+                // Avatars aiming in 8 directions, then 4 near-vertical aims with the body still facing the other way
+                // (the facing hysteresis). Red dot on the aim line, cyan dot at Muzzle(). Screenshot, then quit.
+                _shotDir = a["--aimshots=".Length..];
+                Show();
+                var canvas = new Control();
+                canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+                _menu.GetParent().AddChild(canvas);
+                var gun = new GunLook(Receiver: 5, Barrel: 6, BarrelThick: 2, Mag: 2, Scope: true, Stock: 2);
+                canvas.Draw += () =>
+                {
+                    const float s = 2.4f;
+                    for (int k = 0; k < 12; k++)
+                    {
+                        var aim = k < 8 ? Vector2.Right.Rotated(k * Mathf.Pi / 4) : Vector2.Up.Rotated(Mathf.DegToRad(new[] { -8, 8, 172, 188 }[k - 8]));
+                        int facing = k < 8 ? (aim.X < -0.01f ? -1 : 1) : (aim.X < 0 ? 1 : -1);
+                        var at = canvas.Size * new Vector2((k % 4 + 0.5f) / 4, 0.2f + 0.3f * (k / 4));
+                        canvas.DrawLine(at, at + aim * 70, new Color(1, 1, 1, 0.3f), 1);
+                        canvas.DrawCircle(at + aim * 70, 4, Colors.Red);
+                        AvatarArt.Draw(canvas, at, new AvatarPose
+                        {
+                            Body = Palette.Player(k % 4), Look = Appearance.Default(), Facing = facing, Aim = aim,
+                            Scale = s, Grounded = true, Gun = true, GunLook = gun, Flash = k % 2 == 0 ? 1 : 0,
+                        });
+                        canvas.DrawCircle(at + AvatarArt.Muzzle(aim, facing, s, gun), 2.5f, Colors.Cyan);
+                    }
+                };
+                GetTree().CreateTimer(0.5).Timeout += () => { SaveShot(); GetTree().Quit(0); };
             }
             else if (a == "--upnpcheck")
             {
