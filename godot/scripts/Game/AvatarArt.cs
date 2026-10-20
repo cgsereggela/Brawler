@@ -64,11 +64,11 @@ public static class AvatarArt
 
     /// <summary>Muzzle position relative to the body center, matching what Draw renders with no recoil.</summary>
     public static Vector2 Muzzle(Vector2 aim, int facing, float scale, GunLook g)
-    {
-        facing = facing < 0 ? -1 : 1;
-        var local = new Vector2(g.MuzzleX + 1, -(g.BarrelThick * 0.5f) * facing) * scale;
-        return GunPivot(aim, scale) + local.Rotated(aim.Angle());
-    }
+        => GunXform(GunPivot(aim, scale), aim.Angle(), scale, facing) * new Vector2(g.MuzzleX + 1, -g.BarrelThick * 0.5f);
+
+    /// <summary>Gun space to body space: mirror the gun's y when facing left, then rotate to the aim, then move to the hand.</summary>
+    private static Transform2D GunXform(Vector2 pivot, float angle, float scale, int facing)
+        => new(angle, new Vector2(scale, facing < 0 ? -scale : scale), 0, pivot);
 
     // =====================================================================
     // Drawing
@@ -592,8 +592,9 @@ public static class AvatarArt
             : p.Aim.LengthSquared() > 0.01f ? p.Aim.Normalized() : new Vector2(facing, 0);
         float angle = aim.Angle() - p.Kick * 0.35f * facing;
         var pivot = origin + GunPivot(aim, s) - aim * (p.Kick * 2.5f * s);
-        // Flip the gun's y when aiming left so the grip always hangs down.
-        ci.DrawSetTransform(pivot, angle, new Vector2(s, s * facing));
+        // Flip the gun's own y (before rotating) when facing left so the grip always hangs down. Built as an explicit
+        // matrix: scaling after the rotation would mirror the aim angle instead and point the barrel up/down-swapped.
+        ci.DrawSetTransformMatrix(GunXform(pivot, angle, s, facing));
 
         var g = p.GunLook == default ? GunLook.Default : p.GunLook;
         const float ow = 0.45f;
