@@ -1,6 +1,7 @@
 using System;
 using Brawler.Core;
 using Brawler.Fx;
+using Brawler.Logic;
 using Brawler.Net;
 using Godot;
 
@@ -15,7 +16,8 @@ public partial class LobbyUI : Control
     private Button _copy;
     private HBoxContainer _inviteRow;
     private HBoxContainer _players;
-    private Button _addBot, _start, _color;
+    private Button _addBot, _start, _color, _cards;
+    private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
 
     public LobbyUI(NetworkManager net) => _net = net;
@@ -52,9 +54,19 @@ public partial class LobbyUI : Control
         grid.AddThemeConstantOverride("v_separation", 6);
         _battles = AddSpin(grid, "Battle wins per round", 1, 5);
         _rounds = AddSpin(grid, "Round wins to win", 1, 10);
-        _loserCards = AddSpin(grid, "Card choices (losers)", 1, 7);
-        _winnerCards = AddSpin(grid, "Card choices (winner)", 0, 7);
+        _loserCards = AddSpin(grid, "Card choices (losers)", 1, CardPool.MaxChoices);
+        _winnerCards = AddSpin(grid, "Card choices (winner)", 0, CardPool.MaxChoices);
         body.AddChild(grid);
+
+        // The card pool: the host picks which cards can be offered; everyone else can look.
+        var poolRow = UiKit.HBox(8);
+        var poolLabel = UiKit.Label("Cards that can come up in picks", UiKit.Small, Palette.Text);
+        poolLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        poolLabel.VerticalAlignment = VerticalAlignment.Center;
+        poolRow.AddChild(poolLabel);
+        _cards = UiKit.Button("Cards", () => _pool.Open(), 120, "Small");
+        poolRow.AddChild(_cards);
+        body.AddChild(poolRow);
 
         var bottom = UiKit.HBox(8);
         _start = UiKit.Primary("START MATCH", () => StartPressed?.Invoke());
@@ -68,6 +80,11 @@ public partial class LobbyUI : Control
         bottom.AddChild(UiKit.Button("Leave", () => LeavePressed?.Invoke()));
         body.AddChild(bottom);
 
+        _pool = new CardPoolUI(_net) { Name = "CardPool", Visible = false };
+        AddChild(_pool);
+        _pool.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        VisibilityChanged += () => { if (!Visible) _pool.Visible = false; };
+
         _net.LobbyChanged += Refresh;
         _net.PortsChanged += Refresh;
         Refresh();
@@ -77,6 +94,13 @@ public partial class LobbyUI : Control
     {
         _net.LobbyChanged -= Refresh;
         _net.PortsChanged -= Refresh;
+    }
+
+    /// <summary>Opens or closes the card pool panel (the Cards button opens it too).</summary>
+    public void ShowCardPool(bool open)
+    {
+        if (open) _pool.Open();
+        else _pool.Visible = false;
     }
 
     private const string Guide = "see Playing online in README.txt";
@@ -143,6 +167,7 @@ public partial class LobbyUI : Control
             RoundsToWin = (int)_rounds.Value,
             LoserChoices = (int)_loserCards.Value,
             WinnerChoices = (int)_winnerCards.Value,
+            DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
     }
 
@@ -211,6 +236,7 @@ public partial class LobbyUI : Control
         _loserCards.SetValueNoSignal(st.LoserChoices);
         _winnerCards.SetValueNoSignal(st.WinnerChoices);
         foreach (var s in new[] { _battles, _rounds, _loserCards, _winnerCards }) s.Editable = host;
+        _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
 
         _addBot.Visible = host;
         _addBot.Disabled = lobby.FreeSlot() < 0;

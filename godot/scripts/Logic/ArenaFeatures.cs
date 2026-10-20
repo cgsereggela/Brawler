@@ -46,7 +46,8 @@ public readonly record struct Mover(int X1, int X2, int Y, int W, int H, float P
 /// <summary>
 /// Seeded extras added to a validated arena: crates and explosive barrels to push around and shoot apart, glass
 /// bridges over pits, moving platforms, magma and poison pools, and sawblades. None of them is part of the jump graph
-/// (the arena is fully playable without them), and each stays clear of spawns, jump pads and the others.
+/// (the arena is fully playable without them), and each stays clear of spawns, jump pads and the others. Which
+/// hazards appear, and how often, follows the seed's theme (<see cref="ThemeRules"/>): no magma on Toxic Grove, etc.
 /// Positions of moving parts are pure functions of the battle clock, so every peer agrees without syncing them.
 /// </summary>
 public static class ArenaFeatures
@@ -61,8 +62,12 @@ public static class ArenaFeatures
         return 0.5f - 0.5f * MathF.Cos((t / period + phase) * MathF.Tau);
     }
 
-    public static void Add(MapLayout map)
+    /// <summary>Adds extras that suit the theme the seed picks (see <see cref="ThemeRules"/>).</summary>
+    public static void Add(MapLayout map) => Add(map, ThemeRules.ForSeed(map.Seed));
+
+    public static void Add(MapLayout map, ThemeId theme)
     {
+        var rules = ThemeRules.Rules(theme);
         var rng = new Rng(((ulong)(uint)map.Seed << 1) ^ 0x51F15EEDUL);
         // Spots extras stay out of: around spawns, the air above jump pads, and each other.
         var keep = new List<RectI>();
@@ -71,9 +76,9 @@ public static class ArenaFeatures
 
         Pits(map, rng, keep);
         OpenAir(map, rng, keep);
-        Pools(map, rng, keep);
-        Saws(map, rng, keep);
-        Crates(map, rng, keep);
+        Pools(map, rng, keep, rules);
+        Saws(map, rng, keep, rules);
+        Crates(map, rng, keep, rules);
     }
 
     private static bool Clear(MapLayout map, List<RectI> keep, RectI r)
@@ -118,11 +123,12 @@ public static class ArenaFeatures
         }
     }
 
-    /// <summary>A mover on [lx1, lx2] at height y, if its whole lane (plus room to ride it and pass under) is free.</summary>
+    /// <summary>A mover on [lx1, lx2] at height y, if its whole lane (plus MinClearance to ride it and pass under) is free.</summary>
     private static bool TryMover(MapLayout map, Rng rng, List<RectI> keep, int lx1, int lx2, int y)
     {
         if (lx2 - lx1 < 48) return false;
-        var lane = new RectI(lx1 - 2, y - 34, lx2 - lx1 + MoverW + 4, MoverH + 34 + 22);
+        int c = MapGenerator.MinClearance;
+        var lane = new RectI(lx1 - 2, y - c, lx2 - lx1 + MoverW + 4, MoverH + c * 2);
         if (!Clear(map, keep, lane)) return false;
         float period = MathF.Max(3f, (lx2 - lx1) * 2 / 45f);
         map.Movers.Add(new Mover(lx1, lx2, y, MoverW, MoverH, period, rng.Range(0f, 1f)));
@@ -136,7 +142,8 @@ public static class ArenaFeatures
         if (map.Movers.Count == 0 && rng.Chance(0.45f))
             for (int i = 0; i < 30; i++)
             {
-                int y = MapGenerator.FloorY - MapGenerator.TierSpacing * rng.Range(1, 6) - 20;
+                // Halfway between two tiers, so it only needs those two clear over its lane.
+                int y = MapGenerator.TierY(rng.Range(1, 6)) - MapGenerator.TierSpacing / 2;
                 int travel = rng.Range(10, 20) * 8;
                 int x = rng.Range(3, (MapLayout.Width - travel - MoverW) / 8 - 3) * 8;
                 if (TryMover(map, rng, keep, x, x + travel, y)) break;
@@ -147,9 +154,10 @@ public static class ArenaFeatures
             for (int i = 0; i < 30; i++)
             {
                 int tiles = rng.Range(4, 7), w = tiles * GlassTile;
-                int y = MapGenerator.FloorY - MapGenerator.TierSpacing * rng.Range(1, 5) - 16;
+                int y = MapGenerator.TierY(rng.Range(1, 5)) - MapGenerator.TierSpacing / 2;
                 int x = rng.Range(3, (MapLayout.Width - w) / 8 - 3) * 8;
-                var room = new RectI(x - 16, y - 30, w + 32, GlassTile + 30 + 24);
+                int c = MapGenerator.MinClearance;
+                var room = new RectI(x - 16, y - c, w + 32, GlassTile + c * 2);
                 if (!Clear(map, keep, room)) continue;
                 for (int k = 0; k < tiles; k++) map.Props.Add(new PropSpawn(PropKind.Glass, x + k * GlassTile, y, GlassTile, GlassTile));
                 keep.Add(room);
@@ -159,9 +167,9 @@ public static class ArenaFeatures
 
     // ---------- pools ----------
 
-    private static void Pools(MapLayout map, Rng rng, List<RectI> keep)
+    private static void Pools(MapLayout map, Rng rng, List<RectI> keep, FeatureRules rules)
     {
-        int want = rng.Chance(0.65f) ? (rng.Chance(0.4f) ? 2 : 1) : 0;
+        int want = rng.Chance(rules.PoolChance) ? (rng.Chance(0.4f) ? 2 : 1) : 0;
         var used = new HashSet<int>();
         for (int i = 0; i < 40 && map.Hazards.Count < want; i++)
         {
@@ -172,7 +180,8 @@ public static class ArenaFeatures
             int x = rng.Range((s.X1 + 8) / 4, (s.X2 - 8 - w) / 4) * 4;
             var zone = new RectI(x, s.Y - 30, w, 34);
             if (!ClearOfKeep(keep, zone)) continue;
-            map.Hazards.Add(new Hazard(rng.Chance(0.5f) ? HazardKind.Magma : HazardKind.Poison, x, x + w, s.Y));
+            var kind = rng.Range(0f, rules.MagmaWeight + rules.PoisonWeight) < rules.MagmaWeight ? HazardKind.Magma : HazardKind.Poison;
+            map.Hazards.Add(new Hazard(kind, x, x + w, s.Y));
             keep.Add(zone.Grow(10, 0));
             used.Add(si);
         }
@@ -187,9 +196,9 @@ public static class ArenaFeatures
 
     // ---------- sawblades ----------
 
-    private static void Saws(MapLayout map, Rng rng, List<RectI> keep)
+    private static void Saws(MapLayout map, Rng rng, List<RectI> keep, FeatureRules rules)
     {
-        int want = rng.Chance(0.5f) ? (rng.Chance(0.35f) ? 2 : 1) : 0;
+        int want = rng.Chance(rules.SawChance) ? (rng.Chance(0.35f) ? 2 : 1) : 0;
         float r = SawRadius;
         for (int i = 0; i < 40 && map.Saws.Count < want; i++)
         {
@@ -203,7 +212,8 @@ public static class ArenaFeatures
                 x2 = x1 + len;
             }
             float y = s.Y - 2; // mostly above the surface, its bottom teeth sunk into a slot
-            var zone = new RectI((int)(x1 - r - 6), (int)(y - r - 30), (int)(x2 - x1 + 2 * r + 12), (int)(r + 34));
+            int zx1 = (int)MathF.Floor(x1 - r - 6), zx2 = (int)MathF.Ceiling(x2 + r + 6); // round outward, never shrink
+            var zone = new RectI(zx1, (int)(y - r - 30), zx2 - zx1, (int)(r + 34));
             if (!ClearOfKeep(keep, zone)) continue;
             float period = MathF.Max(2.2f, (x2 - x1) * 2 / 55f);
             map.Saws.Add(new SawTrack(x1, y, x2, y, r, period, rng.Range(0f, 1f)));
@@ -213,9 +223,9 @@ public static class ArenaFeatures
 
     // ---------- crates and barrels ----------
 
-    private static void Crates(MapLayout map, Rng rng, List<RectI> keep)
+    private static void Crates(MapLayout map, Rng rng, List<RectI> keep, FeatureRules rules)
     {
-        int crates = rng.Range(1, 4), barrels = rng.Chance(0.6f) ? rng.Range(1, 2) : 0;
+        int crates = rng.Range(1, 4), barrels = rng.Chance(rules.BarrelChance) ? rng.Range(1, 2) : 0;
         var todo = new List<PropKind>();
         for (int i = 0; i < crates; i++) todo.Add(PropKind.Crate);
         for (int i = 0; i < barrels; i++) todo.Add(PropKind.Barrel);

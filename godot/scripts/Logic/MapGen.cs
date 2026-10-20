@@ -72,8 +72,8 @@ public sealed class MapLayout
 /// <summary>
 /// Seeded random arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
 /// Each seed picks a <see cref="MapStyle"/> (scattered tiers, a mirrored layout, floating islands over pits,
-/// or towers), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn spacing, mutual reachability between spawns) and rerolled on
-/// failure. Jump pads are added afterwards as extras: reachability never relies on them.
+/// or towers), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
+/// spacing, mutual reachability between spawns) and rerolled on failure. Jump pads are added afterwards as extras: reachability never relies on them.
 /// </summary>
 public static class MapGenerator
 {
@@ -90,6 +90,12 @@ public static class MapGenerator
     public const int Headroom = 26;
     public const int MinSpawnDistance = 175;
     public const int TierSpacing = 40;
+    /// <summary>
+    /// Least clear air between the bottom of anything solid (platforms, movers, glass, the ceiling) and the top of
+    /// anything under it. A body is 18 px tall (a Giant 32.4), so a normal body gets 22 px of hop before it bonks and a
+    /// Giant still walks under. It equals <see cref="TierSpacing"/>, so neighbouring tiers never stack: they stagger.
+    /// </summary>
+    public const int MinClearance = 40;
     public const int PadWidth = 24;
     public const float PadVelocity = 475f;
     /// <summary>Base player gravity (StatBlock.Base), for planning pad launches.</summary>
@@ -227,19 +233,26 @@ public static class MapGenerator
 
     // ---------- platforms ----------
 
+    /// <summary>
+    /// Top of platform tier <paramref name="tier"/> (1 = lowest). The lowest tier leaves a thin platform exactly
+    /// <see cref="MinClearance"/> above the floor (a 48 px climb, MaxRise); each next tier is TierSpacing higher.
+    /// </summary>
+    public static int TierY(int tier) => FloorY - MinClearance - Tile - (tier - 1) * TierSpacing;
+
     /// <summary>Floating platforms in loose height tiers, each tier one comfortable jump above the last.</summary>
     private static void TierPlatforms(Rng rng, List<RectI> placed, int tierCount, int maxPerTier)
     {
         for (int tier = 1; tier <= tierCount; tier++)
         {
-            int tierY = FloorY - tier * TierSpacing;
+            int tierY = TierY(tier);
             int count = rng.Range(1, maxPerTier);
             for (int i = 0; i < count * 4 && count > 0; i++)
             {
                 int w = rng.Range(3, 14) * Tile;
                 int h = rng.Chance(0.65f) ? Tile : Tile * 2;
                 int x = rng.Range(2, (Width - w) / Tile - 2) * Tile;
-                int y = tierY - (rng.Chance(0.3f) ? Tile : 0);
+                // The lowest tier is already a full MaxRise above the floor, so only higher tiers get raised.
+                int y = tierY - (tier > 1 && rng.Chance(0.3f) ? Tile : 0);
                 if (TryPlace(placed, new RectI(x, y, w, h))) count--;
             }
         }
@@ -253,7 +266,7 @@ public static class MapGenerator
             int w = rng.Range(2, 3) * Tile;
             int h = rng.Range(5, 9) * Tile;
             int x = rng.Range(6, (Width - w) / Tile - 6) * Tile;
-            int y = rng.Range(6, (FloorY - h - 32) / Tile) * Tile;
+            int y = rng.Range(6, (FloorY - h - MinClearance) / Tile) * Tile;
             if (TryPlace(placed, new RectI(x, y, w, h))) pillars--;
         }
     }
@@ -264,7 +277,7 @@ public static class MapGenerator
         int tiers = rng.Range(6, 8);
         for (int tier = 1; tier <= tiers; tier++)
         {
-            int tierY = FloorY - tier * TierSpacing;
+            int tierY = TierY(tier);
             if (rng.Chance(0.35f))
             {
                 int w = rng.Range(3, 8) * Tile * 2;
@@ -276,10 +289,10 @@ public static class MapGenerator
                 int w = rng.Range(3, 12) * Tile;
                 int h = rng.Chance(0.65f) ? Tile : Tile * 2;
                 int x = rng.Range(2, (Width / 2 - w) / Tile - 2) * Tile;
-                int y = tierY - (rng.Chance(0.3f) ? Tile : 0);
+                int y = tierY - (tier > 1 && rng.Chance(0.3f) ? Tile : 0);
                 var r = new RectI(x, y, w, h);
                 var m = new RectI(Width - x - w, y, w, h);
-                if (r.Grow(16, 22).Intersects(m) || !Fits(placed, r) || !Fits(placed, m)) continue;
+                if (r.Grow(16, MinClearance).Intersects(m) || !Fits(placed, r) || !Fits(placed, m)) continue;
                 placed.Add(r);
                 placed.Add(m);
                 count--;
@@ -302,26 +315,35 @@ public static class MapGenerator
             var tower = new RectI(x, FloorY - h, w, h);
             bool clash = false;
             foreach (var o in placed)
-                if (tower.Grow(48, 22).Intersects(o)) clash = true;
+                if (tower.Grow(48, MinClearance).Intersects(o)) clash = true;
             if (clash) continue;
             placed.Add(tower);
             towers--;
-            // A staircase of ledges up one side, so the top (and the far side) can always be reached.
+            // A staircase of ledges up one side, so the top (and the far side) can always be reached. Ledges a tier
+            // apart are too close to stack, so they zigzag between a column by the tower and one further out (16 px
+            // past the widest inner ledge); the top ledge is always by the tower. The side must have room for both.
+            const int inner = 24, outer = inner + 5 * Tile + 16;
             bool left = rng.Chance(0.5f);
-            for (int y = FloorY - TierSpacing; y > tower.Y; y -= TierSpacing)
+            if (left && x - outer - 5 * Tile < Wall + 16) left = false;
+            else if (!left && tower.Right + outer + 5 * Tile > Width - Wall - 16) left = true;
+            int steps = 0;
+            for (int y = TierY(1); y > tower.Y; y -= TierSpacing) steps++;
+            for (int k = 0; k < steps; k++)
             {
                 int sw = rng.Range(3, 5) * Tile;
-                int sx = left ? x - 24 - sw : tower.Right + 24;
-                TryPlace(placed, new RectI(sx, y, sw, Tile));
+                int off = (steps - 1 - k) % 2 == 0 ? inner : outer;
+                int sx = left ? x - off - sw : tower.Right + off;
+                TryPlace(placed, new RectI(sx, TierY(1 + k), sw, Tile));
             }
         }
     }
 
     private static bool Fits(List<RectI> placed, RectI r)
     {
-        if (r.Y < Wall + 32 || r.Bottom > FloorY - 24) return false; // keep corridors under the ceiling and above the floor
+        // Keep MinClearance under the ceiling, above the floor and between anything within 16 px sideways.
+        if (r.Y < Wall + MinClearance || r.Bottom > FloorY - MinClearance) return false;
         foreach (var o in placed)
-            if (r.Grow(16, 22).Intersects(o)) return false;
+            if (r.Grow(16, MinClearance).Intersects(o)) return false;
         return true;
     }
 
@@ -697,9 +719,9 @@ public static class MapGenerator
         map.Solids.Add(new RectI(Wall, FloorY, Width - Wall * 2, Height - FloorY));
         var plats = new List<RectI>
         {
-            new(120, 394, 112, 8), new(568, 394, 112, 8),
-            new(336, 354, 128, 8), new(152, 314, 96, 8), new(552, 314, 96, 8),
-            new(344, 274, 112, 8),
+            new(120, 386, 112, 8), new(568, 386, 112, 8),
+            new(336, 346, 128, 8), new(152, 306, 96, 8), new(552, 306, 96, 8),
+            new(344, 266, 112, 8),
         };
         map.Solids.AddRange(plats);
         BuildSurfaces(map, new List<(int, int)> { (Wall, Width - Wall) }, plats);

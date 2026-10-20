@@ -179,7 +179,8 @@ public partial class GameManager : Node2D
         foreach (var p in Active())
         {
             int count = p.Slot == roundWinner ? Settings.WinnerChoices : Settings.LoserChoices;
-            if (count > 0) entries.Add((p.Slot, CardRegistry.RollOptions(HostRng, count)));
+            var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards) : null;
+            if (ids is { Count: > 0 }) entries.Add((p.Slot, ids));
         }
         if (entries.Count == 0)
         {
@@ -190,7 +191,7 @@ public partial class GameManager : Node2D
         foreach (var (slot, ids) in entries)
         {
             w.U8(slot).U8(ids.Count);
-            foreach (int id in ids) w.U8(id);
+            foreach (int id in ids) w.I16(id); // 16 bits: custom card ids start at 1000
         }
         _hostPicked.Clear();
         _botPickT.Clear();
@@ -955,7 +956,7 @@ public partial class GameManager : Node2D
             int slot = r.U8();
             int count = r.U8();
             var ids = new List<int>();
-            for (int k = 0; k < count; k++) ids.Add(r.U8());
+            for (int k = 0; k < count; k++) ids.Add(r.I16());
             PickOptions[slot] = ids;
         }
         Picked.Clear();

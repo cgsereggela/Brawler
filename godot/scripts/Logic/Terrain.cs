@@ -61,8 +61,8 @@ public static class TerrainGen
     public const int MaxHeight = 40;
     /// <summary>Steepest ramp: rise over run of 1/1.5 (33.7 degrees). Ramps are rounded to whole tiles, so most are gentler.</summary>
     public const float MaxAngle = 34f;
-    /// <summary>Clear air kept between terrain and any platform above it.</summary>
-    public const int Clearance = 40;
+    /// <summary>Clear air kept between terrain and any platform above it (the same as between platforms).</summary>
+    public const int Clearance = MapGenerator.MinClearance;
     /// <summary>Flat floor kept at each hill's feet, between hills, and at pit edges.</summary>
     public const int FootRoom = 40, PitMargin = 32;
 
