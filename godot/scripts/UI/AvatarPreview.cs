@@ -71,7 +71,6 @@ public partial class AvatarPreview : Control
             Look = Look,
             Facing = aim.X < 0 ? -1 : 1,
             Aim = aim,
-            GunAim = new Vector2(aim.X < 0 ? -1 : 1, 0), // level, so it never covers the face
             Scale = Zoom,
             Time = _t,
             Grounded = true,

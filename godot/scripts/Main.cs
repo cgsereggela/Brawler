@@ -25,7 +25,9 @@ namespace Brawler;
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
-///   --aimshots=DIR        screenshot avatars aiming every way (barrel vs aim line, Muzzle dot) into DIR, then quit
+///   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
+///                         some with full recoil) into DIR, then quit
+///   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
 ///   --walkshots=DIR       screenshot leg poses (walk cycle frames, idle, air, wall slide, landing, ramps) into DIR, then quit
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
@@ -33,7 +35,8 @@ namespace Brawler;
 ///   --carddir=DIR         load custom cards from DIR instead of user://cards (so tests leave the real folder alone)
 ///   --overlaycheck        (with --autotest) presses Esc mid-battle, checks the game keeps running under the options
 ///                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
-///                         Esc, then finishes the match
+///                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
+///                         you fight (not under the overlay or the card pick)
 /// </summary>
 public partial class Main : Node
 {
@@ -47,6 +50,7 @@ public partial class Main : Node
     private MenuUI _menu;
     private LobbyUI _lobby;
     private HudUI _hud;
+    private Crosshair _crosshair;
     private CardPickUI _pick;
     private MatchOverUI _over;
     private CustomizeUI _custom;
@@ -114,6 +118,17 @@ public partial class Main : Node
         _custom = new CustomizeUI(_net) { Name = "Customize" };
         _options = new OptionsUI(_sfx) { Name = "Options" };
         foreach (var c in Screens) root.AddChild(c);
+
+        // Above every screen: the crosshair that stands in for the mouse pointer while you fight. The normal cursor
+        // comes back for the card pick, the match-over screen, the Esc overlay and everything outside a match.
+        var aimLayer = new CanvasLayer { Name = "Aim", Layer = 20 };
+        AddChild(aimLayer);
+        _crosshair = new Crosshair(_game)
+        {
+            Name = "Crosshair",
+            ShouldShow = () => _hud.Visible && !_pick.Visible && !_over.Visible && !_options.Visible,
+        };
+        aimLayer.AddChild(_crosshair);
 
         Wire();
         Show(_menu);
@@ -509,7 +524,16 @@ public partial class Main : Node
                 var canvas = new Control();
                 canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
                 _menu.GetParent().AddChild(canvas);
-                var gun = new GunLook(Receiver: 5, Barrel: 6, BarrelThick: 2, Mag: 2, Scope: true, Stock: 2);
+                var gun = GunLook.Default;
+                // Faces that reach furthest (beak, long nose, visor, big eyes, shades, mustache) to check the gun clears them.
+                Appearance Face(int k)
+                {
+                    var look = Appearance.Default();
+                    look[LookPart.Nose] = new[] { 5, 3, 0, 6 }[k % 4];
+                    look[LookPart.Eyes] = new[] { 1, 5, 7, 4 }[k / 4 % 4];
+                    look[LookPart.Mouth] = new[] { 7, 3, 6 }[k % 3];
+                    return look;
+                }
                 canvas.Draw += () =>
                 {
                     const float s = 2.4f;
@@ -522,13 +546,69 @@ public partial class Main : Node
                         canvas.DrawCircle(at + aim * 70, 4, Colors.Red);
                         AvatarArt.Draw(canvas, at, new AvatarPose
                         {
-                            Body = Palette.Player(k % 4), Look = Appearance.Default(), Facing = facing, Aim = aim,
-                            Scale = s, Grounded = true, Gun = true, GunLook = gun, Flash = k % 2 == 0 ? 1 : 0,
+                            Body = Palette.Player(k % 4), Look = Face(k), Facing = facing, Aim = aim,
+                            Scale = s, Grounded = true, Gun = true, GunLook = gun, Flash = k % 2 == 0 ? 1 : 0, Kick = k % 3 == 0 ? 1 : 0,
                         });
                         canvas.DrawCircle(at + AvatarArt.Muzzle(aim, facing, s, gun), 2.5f, Colors.Cyan);
                     }
                 };
                 GetTree().CreateTimer(0.5).Timeout += () => { SaveShot(); GetTree().Quit(0); };
+            }
+            else if (a.StartsWith("--crosshairshots="))
+            {
+                // The crosshair in a range of ammo and reload states, at real size and zoomed 3x, over every arena
+                // theme's scenery and platform color. One screenshot per theme, then quit.
+                _shotDir = a["--crosshairshots=".Length..];
+                Show();
+                var canvas = new Control();
+                canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+                canvas.MouseFilter = Control.MouseFilterEnum.Ignore;
+                _menu.GetParent().AddChild(canvas);
+                var states = new (int Ammo, int Mag, bool Reloading, float Frac, float Kick, float Ready, bool Armed)[]
+                {
+                    (3, 3, false, 0, 0, 0, true), (2, 3, false, 0, 0.8f, 0, true), (1, 3, false, 0, 0, 0, true),
+                    (0, 3, true, 0.3f, 0, 0, true), (0, 3, true, 0.8f, 0, 0, true), (3, 3, false, 0, 0, 0.6f, true),
+                    (1, 1, false, 0, 0, 0, true), (7, 12, false, 0, 0, 0, true), (23, 40, false, 0, 0, 0, true), (0, 3, false, 0, 0, 0, false),
+                };
+                int theme = 0;
+                canvas.Draw += () =>
+                {
+                    var th = ArenaTheme.All[theme];
+                    var vs = canvas.Size;
+                    // A platform band so each state is seen over both the sky and a block.
+                    canvas.DrawRect(new Rect2(0, vs.Y * 0.62f, vs.X, vs.Y * 0.14f), th.Block);
+                    canvas.DrawRect(new Rect2(0, vs.Y * 0.62f, vs.X, 2), Shapes.Hdr(th.Edge, 1.3f));
+                    canvas.DrawString(Brawler.Fx.Fonts.Bold, new Vector2(12, 24), th.Name, HorizontalAlignment.Left, -1, 14, Colors.White);
+                    for (int k = 0; k < states.Length; k++)
+                    {
+                        var st = states[k];
+                        var cs = new CrosshairState
+                        {
+                            Tint = Palette.Player(k % Palette.Players.Length), Armed = st.Armed, Ammo = st.Ammo, Mag = st.Mag,
+                            Reloading = st.Reloading, ReloadFrac = st.Frac, Kick = st.Kick, Ready = st.Ready, Time = 0,
+                        };
+                        float x = vs.X * (k + 0.5f) / states.Length;
+                        Crosshair.Paint(canvas, new Vector2(x, vs.Y * 0.62f), cs);
+                        // Zoomed copy above, over the sky.
+                        canvas.DrawSetTransform(new Vector2(x, vs.Y * 0.3f), 0, new Vector2(2.2f, 2.2f));
+                        Crosshair.Paint(canvas, Vector2.Zero, cs);
+                        canvas.DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+                        Crosshair.Paint(canvas, new Vector2(x, vs.Y * 0.88f), cs);
+                    }
+                };
+                var tree = GetTree();
+                void Next()
+                {
+                    _menuBackdrop.Set(ArenaTheme.All[theme], 3 + theme);
+                    canvas.QueueRedraw();
+                    tree.CreateTimer(0.4).Timeout += () =>
+                    {
+                        SaveShot();
+                        if (++theme >= ArenaTheme.All.Length) tree.Quit(0);
+                        else Next();
+                    };
+                }
+                tree.CreateTimer(0.3).Timeout += Next;
             }
             else if (a.StartsWith("--walkshots="))
             {
@@ -842,6 +922,7 @@ public partial class Main : Node
                 if (_ocFrames < 60) return;
                 var free = ProbeHeldInput();
                 if (free.MoveX <= 0 || !free.Shoot) { Fail("held keys don't register even without the overlay"); return; }
+                if (!_crosshair.Active) { Fail("no crosshair in a battle"); return; }
                 PressEsc();
                 (_ocStage, _ocFrames) = (1, 0);
                 return;
@@ -857,6 +938,7 @@ public partial class Main : Node
             case 2: // three seconds under the overlay: nothing paused, the bots keep fighting
                 if (GetTree().Paused || !Mathf.IsEqualApprox(Engine.TimeScale, 1)) { Fail("the game paused"); return; }
                 if (!overlayUp) { Fail("overlay closed by itself during the battle"); return; }
+                if (_ocFrames > 2 && _crosshair.Active) { Fail("the crosshair still replaces the pointer under the overlay"); return; }
                 foreach (var a in _game.LiveAvatars())
                 {
                     if (a.Player == _game.LocalMatchPlayer) continue;
@@ -904,6 +986,7 @@ public partial class Main : Node
                 if (_ocFrames < 6) return;
                 if (_overlay || _options.Visible || LocalInput.Suppressed) { Fail("Esc did not close the overlay"); return; }
                 if (!_hud.Visible || _pick.Visible != (_game.Phase == Phase.CardPick)) { Fail($"after closing: hud {_hud.Visible} pick {_pick.Visible} in {_game.Phase}"); return; }
+                if (_crosshair.Active == _pick.Visible) { Fail($"crosshair {(_crosshair.Active ? "shown" : "hidden")} with the card pick {(_pick.Visible ? "up" : "down")}"); return; }
                 Log.Info($"OVERLAYCHECK Esc closed it; {_game.Phase} screens intact, input restored");
                 _ocStage = OcDone;
                 return;

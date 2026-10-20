@@ -47,7 +47,7 @@ public partial class Avatar : CharacterBody2D
     private const float PushSpeed = 0.55f; // crates move at this fraction of your run speed
     // A wall jump kicks you off at this multiple of run speed, then steering is weak for WallJumpLock seconds. Kept small
     // so you can steer straight back and climb a single wall by jumping off it while holding toward it.
-    private const float WallJumpKick = 1.15f, WallJumpLock = 0.1f;
+    private const float WallJumpKick = 1.15f, WallJumpLock = 0.05f;
 
     public MatchPlayer Player;
     public GameManager Game;
@@ -674,20 +674,13 @@ public partial class Avatar : CharacterBody2D
             Shapes.Gradient(this, bar, hpCol.Lightened(0.3f), hpCol.Darkened(0.15f));
         }
 
-        // Ammo dots or a reload sweep.
-        var pipPos = barPos + new Vector2(0, barH + 2.6f);
-        if (Reloading)
+        // Your own ammo and reload are on the crosshair (UI/Crosshair.cs). Other players keep a thin reload sweep
+        // under their HP bar, so you can see when they can't shoot back.
+        if (Reloading && !mine)
         {
-            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(barW, 1.4f)), 0.7f), new Color(1, 1, 1, 0.18f));
-            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(Mathf.Max(1.4f, barW * ReloadFrac), 1.4f)), 0.7f), Palette.Accent);
-        }
-        else
-        {
-            int ammo = S.Int(Stat.Ammo);
-            float gap = Mathf.Min(3.2f, barW / Mathf.Max(1, ammo));
-            float r = Mathf.Clamp(gap * 0.36f, 0.5f, 1.1f);
-            for (int i = 0; i < ammo; i++)
-                DrawCircle(pipPos + new Vector2(gap * (i + 0.5f), 0.7f), r, i < Ammo ? Palette.Accent : new Color(1, 1, 1, 0.2f), true, -1, true);
+            var pipPos = barPos + new Vector2(0, barH + 2.2f);
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(barW, 1.2f)), 0.6f), new Color(1, 1, 1, 0.12f));
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(pipPos, new Vector2(Mathf.Max(1.2f, barW * ReloadFrac), 1.2f)), 0.6f), Palette.Accent with { A = 0.7f });
         }
 
         // "You" marker over the local player.
