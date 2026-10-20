@@ -29,6 +29,85 @@ public static class Sweep
         return best;
     }
 
+    /// <summary>
+    /// <see cref="Cast(Vector2, Vector2, float, IReadOnlyList{RectI})"/> against the rects, then the sloped ground. A slope
+    /// hit reports Index -2 - (its index in <paramref name="slopes"/>), so it never reads as a rect.
+    /// </summary>
+    public static SweepHit? Cast(Vector2 from, Vector2 delta, float radius, IReadOnlyList<RectI> rects, IReadOnlyList<Slope> slopes)
+    {
+        var best = Cast(from, delta, radius, rects);
+        if (slopes == null) return best;
+        for (int i = 0; i < slopes.Count; i++)
+        {
+            var hit = CastSlope(from, delta, radius, slopes[i]);
+            if (hit is { } h && (best == null || h.T < best.Value.T)) best = h with { Index = -2 - i };
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Swept circle vs a slope's outline: the convex polygon grown by the radius (edges pushed out along their normals,
+    /// corners rounded), so a bullet glancing off a ramp bounces off the ramp's real normal. A slope the circle already
+    /// touches at t=0 is ignored, like an overlapped rect.
+    /// </summary>
+    public static SweepHit? CastSlope(Vector2 p, Vector2 d, float radius, Slope s)
+    {
+        float minX = MathF.Min(p.X, p.X + d.X) - radius, maxX = MathF.Max(p.X, p.X + d.X) + radius;
+        float minY = MathF.Min(p.Y, p.Y + d.Y) - radius, maxY = MathF.Max(p.Y, p.Y + d.Y) + radius;
+        if (maxX < s.X1 || minX > s.X2 || maxY < s.Top || minY > s.Bottom) return null;
+        var pts = s.Outline();
+        if (DistanceToConvex(p, pts) < radius) return null;
+        float bestT = float.MaxValue;
+        var bestN = Vector2.Zero;
+        for (int i = 0; i < pts.Length; i++)
+        {
+            Vector2 a = pts[i], b = pts[(i + 1) % pts.Length], e = b - a;
+            float len = e.Length();
+            var n = new Vector2(e.Y, -e.X) / len; // outward, for a clockwise (on screen) outline
+            float dn = Vector2.Dot(d, n);
+            if (dn < -1e-6f)
+            {
+                var a2 = a + n * radius;
+                float t = Vector2.Dot(a2 - p, n) / dn;
+                float u = Vector2.Dot(p + d * t - a2, e) / len;
+                if (t >= 0 && t < bestT && u >= 0 && u <= len) { bestT = t; bestN = n; }
+            }
+            if (RayCircle(p, d, a, radius) is float tc && tc < bestT)
+            {
+                bestT = tc;
+                bestN = Vector2.Normalize(p + d * tc - a);
+            }
+        }
+        return bestT <= 1 ? new SweepHit(bestT, bestN) : null;
+    }
+
+    /// <summary>First t in [0, 1] where p + t·d reaches distance r from c, moving inward; null if never.</summary>
+    private static float? RayCircle(Vector2 p, Vector2 d, Vector2 c, float r)
+    {
+        var f = p - c;
+        float A = Vector2.Dot(d, d), B = 2 * Vector2.Dot(f, d), C = Vector2.Dot(f, f) - r * r;
+        if (A < 1e-9f || B >= 0) return null;
+        float disc = B * B - 4 * A * C;
+        if (disc < 0) return null;
+        float t = (-B - MathF.Sqrt(disc)) / (2 * A);
+        return t >= 0 && t <= 1 ? t : null;
+    }
+
+    /// <summary>Distance from a point to a convex polygon (clockwise on screen); 0 inside.</summary>
+    public static float DistanceToConvex(Vector2 p, Vector2[] pts)
+    {
+        bool inside = true;
+        float best = float.MaxValue;
+        for (int i = 0; i < pts.Length; i++)
+        {
+            Vector2 a = pts[i], b = pts[(i + 1) % pts.Length], e = b - a;
+            if (e.Y * (p.X - a.X) - e.X * (p.Y - a.Y) > 0) inside = false;
+            float k = Math.Clamp(Vector2.Dot(p - a, e) / Vector2.Dot(e, e), 0, 1);
+            best = MathF.Min(best, Vector2.Distance(p, a + e * k));
+        }
+        return inside ? 0 : best;
+    }
+
     public static SweepHit? SegmentVsBox(Vector2 p, Vector2 d, float minX, float minY, float maxX, float maxY)
     {
         float tEnter = 0f, tExit = 1f;

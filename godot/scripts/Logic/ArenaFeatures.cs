@@ -81,6 +81,9 @@ public static class ArenaFeatures
         if (r.X < MapGenerator.Wall || r.Right > MapLayout.Width - MapGenerator.Wall || r.Y < MapGenerator.Wall) return false;
         foreach (var o in map.Solids)
             if (o.Intersects(r)) return false;
+        // A little extra room around slopes, so nothing pushable starts at the foot or crest of one.
+        foreach (var s in map.Slopes)
+            if (s.Intersects(r.Grow(14, 2))) return false;
         foreach (var o in keep)
             if (o.Intersects(r)) return false;
         return true;
