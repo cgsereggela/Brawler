@@ -78,14 +78,14 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
 - **Chaos** (purple): cards that change how you play. Bullet Hell (a ring of 12 bullets), Upside Down (bullets fall up), Boomerang, Ghost Rounds (through walls), Kamikaze, Recoil Jet (shooting propels you), Warp Rounds (teleport to where your bullets land), Sticky Mines, Chain Lightning, Berserk, One Shot, Wild Rounds, Pinball (you bounce off surfaces), Mind Control (bullets follow your crosshair), Leech Field, plus Vampire, Blink and Glass Cannon.
 
 ## Arenas
-- The arena is 800×450. Each battle's seed picks a **layout style**:
+- The arena is 1000×562 (`MapLayout.Width/Height`). Each battle's seed picks a **layout style**:
   - *Tiers*: scattered platforms with the odd pillar.
   - *Mirror*: a symmetric layout.
   - *Islands*: floating islands over deadly pits.
   - *Towers*: solid towers rising from the floor, climbed by zigzag ledges.
-- About 38% of arenas get **floor terrain** (`godot/scripts/Logic/Terrain.cs`): hills, stepped hills, mesas and shelves against the side walls, with valleys between them. Ramps are at most ~34° and you can run up them; bullets bounce off them at the real angle. Mirror arenas mirror their terrain.
-- Stacked platforms always leave at least 40 px of clear air (`MapGenerator.MinClearance`), enough for a Giant to walk under.
-- **Jump pads** (glowing plates with rising chevrons) launch you about 170 px up. Maps never rely on them to connect spawns.
+- About 40% of arenas get **floor terrain** (`godot/scripts/Logic/Terrain.cs`): hills up to 64 px tall, stepped hills, mesas and shelves against the side walls, with valleys between them. Ramps are at most 40° (under the 45° walkable limit) and you can run up them; bullets bounce off them at the real angle. Mirror arenas mirror their terrain.
+- Stacked platforms always leave at least 50 px of clear air (`MapGenerator.MinClearance`), enough for a Giant to walk under.
+- **Jump pads** (glowing plates with rising chevrons) launch you about 215 px up. Maps never rely on them to connect spawns.
 - **Arena features**, also seeded (`godot/scripts/Logic/ArenaFeatures.cs`). Like pads, maps never rely on them to connect spawns, and they always stay clear of spawns:
   - *Crates* (60 HP): walk into one to push it; you can stand on them and knock them into pits. Some are stacked two high.
   - *Explosive barrels* (30 HP): pushable, and they blow up when destroyed. The blast sets off other barrels nearby.
@@ -95,7 +95,7 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
   - *Sawblades* slide along platform tops. Each hit deals 22 damage and throws you clear. They also chew up crates and barrels.
   - Which hazards appear, and how often, depends on the theme (one table in `godot/scripts/Logic/ThemeRules.cs`): no sawblades or magma on Deep Reef, no magma on Toxic Grove, no poison on Magma Core, no pools at all on Frost Bite.
   - Blocking stops hazard damage too. A hazard or pit kill is credited to whoever hit the victim in the last 4 seconds.
-- **Movement:** gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
+- **Movement:** you run at 144 px/s and a jump rises about 82 px. Gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
 - The seed also picks one of seven **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds). Each theme sets the sky, the silhouettes, drifting motes (bokeh, embers, bubbles, snow, fireflies), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles). Themes are cosmetic and identical on every peer.
 
 ## Effects that grow with your cards
@@ -123,7 +123,7 @@ Everything is computed from the card list every peer already has, so nothing ext
 - Looks are cosmetic only. A hat is drawn above the hitbox and never takes a hit.
 
 ## Look and feel
-- **Rendering:** the game renders at the window's resolution (base 800×450, `canvas_items` stretch) with 4× MSAA. All art is smooth vector shapes drawn in code, and there are no image files.
+- **Rendering:** the game renders at the window's resolution (base 1000×562, the arena's size, `canvas_items` stretch) with 4× MSAA. All art is smooth vector shapes drawn in code, and there are no image files.
 - **Glow:** HDR 2D plus a `WorldEnvironment` glow make anything drawn brighter than 1.0 bloom: bullets, neon edges, muzzle flashes and effects. Use `Shapes.Hdr(color, boost)` to make something glow.
 - **Text:** a system sans font (Bahnschrift on Windows, with fallbacks) through `Fonts.Regular/Bold/Heavy`.
 - **UI:** a glass-panel theme in `UiKit`, with hover bounce on buttons. `TitleText` draws the big animated headings.

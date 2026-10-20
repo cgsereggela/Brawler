@@ -24,7 +24,7 @@ public sealed class BotBrain : IInputSource
     public BotBrain(GameManager game)
     {
         _game = game;
-        _preferredDist = _rng.RandfRange(110, 190);
+        _preferredDist = _rng.RandfRange(140, 240);
     }
 
     public InputFrame Next(Avatar self, float dt)
@@ -58,7 +58,7 @@ public sealed class BotBrain : IInputSource
         f.Aim = predicted + _aimWobble;
 
         bool los = HasLineOfSight(me, target.GlobalPosition);
-        f.Shoot = los && dist < 460 && (self.Ammo > 1 || dist < 160 || _rng.Randf() < 0.05f);
+        f.Shoot = los && dist < 520 && (self.Ammo > 1 || dist < 180 || _rng.Randf() < 0.05f);
 
         // --- movement ---
         if (_decisionT <= 0)
@@ -91,7 +91,7 @@ public sealed class BotBrain : IInputSource
         if (_airT > 1f && SurfaceUnder(map, feet) is int below and >= 0 && below != _surface) { _surface = below; _navT = 0; }
         _navT -= dt;
         bool navigating = false, dropping = false;
-        if ((!los || Mathf.Abs(to.Y) > 60) && _surface >= 0)
+        if ((!los || Mathf.Abs(to.Y) > 75) && _surface >= 0)
         {
             if (_navT <= 0)
             {
@@ -140,7 +140,7 @@ public sealed class BotBrain : IInputSource
                 else
                 {
                     aimX = Inside(x, hop, 10);
-                    if (edge < 34) wantJump = true;
+                    if (edge < 44) wantJump = true;
                 }
             }
             else if (hop.Y > cur.Y + 4 && cur.X2 > hop.X1 && cur.X1 < hop.X2 && feet.Y <= cur.Y + 2 && (onFloor || (x >= cur.X1 && x <= cur.X2)))
@@ -176,7 +176,7 @@ public sealed class BotBrain : IInputSource
         }
 
         bool climbing = navigating && map.Surfaces[_hop].Y < feet.Y - 4, descending = navigating && map.Surfaces[_hop].Y > feet.Y + 4;
-        if (onFloor && !navigating && to.Y < -30 && Mathf.Abs(to.X) < 140) wantJump = true; // target above
+        if (onFloor && !navigating && to.Y < -38 && Mathf.Abs(to.X) < 175) wantJump = true; // target above
         // Wall ahead: jump it / wall-jump up it, but not on the way down, where kicking off a ledge's side just
         // bounces us back up next to it (bots wall-jumped against the same 8 px ledge end for minutes).
         if (self.IsOnWall() && move * self.GetWallNormal().X < 0 && !descending) wantJump = true;
@@ -187,7 +187,7 @@ public sealed class BotBrain : IInputSource
             wantJump = true;
             if (Mathf.Abs(move) < 0.1f) move = _strafeDir;
         }
-        if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 140)) move = -move; // falling into a pit: steer back
+        if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 175)) move = -move; // falling into a pit: steer back
         if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
 
         // Card abilities: spend air jumps or jetpack fuel to climb toward the target or out of a fall,
@@ -197,9 +197,9 @@ public sealed class BotBrain : IInputSource
         // every long drop could never get down off a high ledge, and hovered over it all battle.
         bool pit = !onFloor && !GroundBelow(self, MapLayout.Height);
         // A bot that walked or was knocked off a ledge still has its ground jump (Avatar.MidAirJumpsLeft counts it).
-        if (!onFloor && (self.MidAirJumpsLeft > 0 || jet) && self.Velocity.Y > 20 && ((!descending && (to.Y < -40 || climbing)) || pit))
+        if (!onFloor && (self.MidAirJumpsLeft > 0 || jet) && self.Velocity.Y > 20 && ((!descending && (to.Y < -50 || climbing)) || pit))
             wantJump = true;
-        bool glide = self.S[Stat.Glide] > 0 && !onFloor && self.Velocity.Y > 0 && ((!descending && to.Y < -20) || pit);
+        bool glide = self.S[Stat.Glide] > 0 && !onFloor && self.Velocity.Y > 0 && ((!descending && to.Y < -25) || pit);
 
         if (wantJump && _jumpHold <= -0.15f)
         {
@@ -208,7 +208,7 @@ public sealed class BotBrain : IInputSource
         }
         f.MoveX = Mathf.Clamp(move, -1, 1);
         // Climbing: hold jump all the way up. Letting go early cuts the rise (the short-hop rule), which made bots
-        // miss ledges and turned a jump pad's ~170 px launch into ~80, so pocketed bots never got out.
+        // miss ledges and turned a jump pad's ~215 px launch into ~100, so pocketed bots never got out.
         bool rising = climbing && !onFloor && self.Velocity.Y < 0;
         f.JumpHeld = _jumpHold > 0 || glide || rising;
         f.JumpPresses = _jumps;

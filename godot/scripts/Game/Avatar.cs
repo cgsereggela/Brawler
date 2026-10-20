@@ -48,6 +48,9 @@ public partial class Avatar : CharacterBody2D
     // A wall jump kicks you off at this multiple of run speed, then steering is weak for WallJumpLock seconds. Kept small
     // so you can steer straight back and climb a single wall by jumping off it while holding toward it.
     private const float WallJumpKick = 1.15f, WallJumpLock = 0.1f;
+    // Ground/air acceleration and the jetpack's climb speed, scaled with the 25% faster run and higher jump so speeding
+    // up takes as long as before and a tank of fuel lifts you 25% further.
+    private const float GroundAccel = 1875f, AirAccel = 1190f, JetClimb = 262f;
 
     public MatchPlayer Player;
     public GameManager Game;
@@ -100,9 +103,9 @@ public partial class Avatar : CharacterBody2D
         Ammo = S.Int(Stat.Ammo);
         CollisionLayer = 2;
         CollisionMask = 1;
-        // Slopes are at most ~34 degrees (TerrainGen.MaxAngle), well under the 45 degree floor limit. Constant speed
+        // Slopes are at most 40 degrees (TerrainGen.MaxAngle), under the 45 degree floor limit. Constant speed
         // keeps running uphill as quick as on the flat, and the longer snap holds you to a ramp running down it at
-        // full speed (320 px/s drops ~3.6 px a tick on the steepest ramp) instead of hopping off it.
+        // full speed (the 400 px/s cap drops ~5.6 px a tick on the steepest ramp) instead of hopping off it.
         FloorMaxAngle = Mathf.DegToRad(45);
         FloorConstantSpeed = true;
         FloorSnapLength = 8;
@@ -275,7 +278,7 @@ public partial class Avatar : CharacterBody2D
         _wallJumpLock -= dt;
 
         float control = _wallJumpLock > 0 ? 0.25f : 1f;
-        float accel = (onFloor ? 1500f : 950f) * control * S[Stat.Accel];
+        float accel = (onFloor ? GroundAccel : AirAccel) * control * S[Stat.Accel];
         v.X = Mathf.MoveToward(v.X, f.MoveX * speed, accel * dt);
 
         v.Y += g * dt;
@@ -291,7 +294,7 @@ public partial class Avatar : CharacterBody2D
         if (_jetting)
         {
             _fuel -= dt;
-            v.Y = Mathf.MoveToward(v.Y, -210, 2200 * dt);
+            v.Y = Mathf.MoveToward(v.Y, -JetClimb, 2200 * dt);
         }
 
         if (_jumpBuffer > 0)
@@ -564,7 +567,7 @@ public partial class Avatar : CharacterBody2D
             GlowTex.Draw(this, Vector2.Zero, 30 * size, new Color("#ff3d3d") with { A = 0.25f + 0.25f * pulse });
         }
         // Jetpack flame: from the local sim, or (for remote players) the steady climb the thrust settles at.
-        bool thrust = _jetting || (S[Stat.Jetpack] > 0 && Mathf.Abs(Velocity.Y + 210) < 8);
+        bool thrust = _jetting || (S[Stat.Jetpack] > 0 && Mathf.Abs(Velocity.Y + JetClimb) < 8);
         if (thrust)
         {
             var nozzle = new Vector2(-_facing * HalfSize.X * 0.6f, HalfSize.Y * 0.4f);

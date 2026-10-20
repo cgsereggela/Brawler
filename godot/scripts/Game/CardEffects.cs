@@ -28,7 +28,7 @@ public static class CardEffects
 /// <summary>Blocking teleports you toward your cursor, stopping short of walls.</summary>
 public sealed class BlinkEffect : ICardEffect
 {
-    private const float DistancePerStack = 90f;
+    private const float DistancePerStack = 112f;
 
     public void OnBlock(Avatar self, GameManager game)
     {

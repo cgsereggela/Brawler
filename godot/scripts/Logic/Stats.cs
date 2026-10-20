@@ -86,8 +86,9 @@ public sealed class StatBlock
     {
         var b = new StatBlock();
         b[Stat.MaxHp] = 100;
-        b[Stat.MoveSpeed] = 115;
-        b[Stat.JumpVelocity] = 292;
+        // 25% faster and 25% higher than the original 115 / 292 (an ~82 px apex; height goes with v^2).
+        b[Stat.MoveSpeed] = 144;
+        b[Stat.JumpVelocity] = 326.5f;
         b[Stat.Gravity] = 650;
         b[Stat.Size] = 1;
         b[Stat.BlockCooldown] = 4f;
@@ -141,7 +142,7 @@ public sealed class StatBlock
     private static void Clamp(StatBlock b)
     {
         b[Stat.MaxHp] = MathF.Max(10, b[Stat.MaxHp]);
-        b[Stat.MoveSpeed] = Math.Clamp(b[Stat.MoveSpeed], 40, 320);
+        b[Stat.MoveSpeed] = Math.Clamp(b[Stat.MoveSpeed], 50, 400);
         b[Stat.Gravity] = MathF.Max(150, b[Stat.Gravity]);
         b[Stat.Size] = Math.Clamp(b[Stat.Size], 0.5f, 2.5f);
         b[Stat.BlockCooldown] = MathF.Max(0.6f, b[Stat.BlockCooldown]);
@@ -154,7 +155,7 @@ public sealed class StatBlock
         b[Stat.Damage] = MathF.Max(1, b[Stat.Damage]);
         b[Stat.BulletRadius] = Math.Clamp(b[Stat.BulletRadius], 1, 14);
         b[Stat.SplitCount] = Math.Clamp(b[Stat.SplitCount], 0, 12);
-        b[Stat.JumpVelocity] = Math.Clamp(b[Stat.JumpVelocity], 150, 720);
+        b[Stat.JumpVelocity] = Math.Clamp(b[Stat.JumpVelocity], 168, 805);
         b[Stat.AirJumps] = Math.Clamp(b[Stat.AirJumps], 0, 5);
         b[Stat.Accel] = Math.Clamp(b[Stat.Accel], 0.2f, 4f);
         b[Stat.Armor] = Math.Clamp(b[Stat.Armor], 0, 0.75f);

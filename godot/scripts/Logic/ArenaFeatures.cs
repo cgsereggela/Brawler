@@ -72,7 +72,7 @@ public static class ArenaFeatures
         // Spots extras stay out of: around spawns, the air above jump pads, and each other.
         var keep = new List<RectI>();
         foreach (var sp in map.Spawns) keep.Add(new RectI(sp.X - 26, sp.Y - 40, 52, 46));
-        foreach (var p in map.Pads) keep.Add(new RectI(p.X1 - 10, p.Y - 90, p.X2 - p.X1 + 20, 96));
+        foreach (var p in map.Pads) keep.Add(new RectI(p.X1 - 10, p.Y - MapGenerator.PadAir, p.X2 - p.X1 + 20, MapGenerator.PadAir + 6));
 
         Pits(map, rng, keep);
         OpenAir(map, rng, keep);
@@ -116,8 +116,8 @@ public static class ArenaFeatures
             }
             else if (rng.Chance(0.55f))
             {
-                int lx1 = Math.Max(MapGenerator.Wall + 4, x1 - 40), lx2 = Math.Min(MapLayout.Width - MapGenerator.Wall - 4 - MoverW, x2 + 40 - MoverW);
-                foreach (int lift in new[] { 56, 72, 88 })
+                int lx1 = Math.Max(MapGenerator.Wall + 4, x1 - 50), lx2 = Math.Min(MapLayout.Width - MapGenerator.Wall - 4 - MoverW, x2 + 50 - MoverW);
+                foreach (int lift in new[] { 70, 88, 106 })
                     if (TryMover(map, rng, keep, lx1, lx2, MapGenerator.FloorY - lift)) break;
             }
         }
@@ -130,7 +130,7 @@ public static class ArenaFeatures
         int c = MapGenerator.MinClearance;
         var lane = new RectI(lx1 - 2, y - c, lx2 - lx1 + MoverW + 4, MoverH + c * 2);
         if (!Clear(map, keep, lane)) return false;
-        float period = MathF.Max(3f, (lx2 - lx1) * 2 / 45f);
+        float period = MathF.Max(3f, (lx2 - lx1) * 2 / 56f);
         map.Movers.Add(new Mover(lx1, lx2, y, MoverW, MoverH, period, rng.Range(0f, 1f)));
         keep.Add(lane);
         return true;
@@ -143,8 +143,8 @@ public static class ArenaFeatures
             for (int i = 0; i < 30; i++)
             {
                 // Halfway between two tiers, so it only needs those two clear over its lane.
-                int y = MapGenerator.TierY(rng.Range(1, 6)) - MapGenerator.TierSpacing / 2;
-                int travel = rng.Range(10, 20) * 8;
+                int y = MapGenerator.TierY(rng.Range(1, 7)) - MapGenerator.TierSpacing / 2;
+                int travel = rng.Range(12, 25) * 8;
                 int x = rng.Range(3, (MapLayout.Width - travel - MoverW) / 8 - 3) * 8;
                 if (TryMover(map, rng, keep, x, x + travel, y)) break;
             }
@@ -154,7 +154,7 @@ public static class ArenaFeatures
             for (int i = 0; i < 30; i++)
             {
                 int tiles = rng.Range(4, 7), w = tiles * GlassTile;
-                int y = MapGenerator.TierY(rng.Range(1, 5)) - MapGenerator.TierSpacing / 2;
+                int y = MapGenerator.TierY(rng.Range(1, 6)) - MapGenerator.TierSpacing / 2;
                 int x = rng.Range(3, (MapLayout.Width - w) / 8 - 3) * 8;
                 int c = MapGenerator.MinClearance;
                 var room = new RectI(x - 16, y - c, w + 32, GlassTile + c * 2);
@@ -205,9 +205,9 @@ public static class ArenaFeatures
             var s = map.Surfaces[rng.Range(0, map.Surfaces.Count - 1)];
             if (s.Width < 48) continue;
             float x1 = s.X1 + 10, x2 = s.X2 - 10;
-            if (x2 - x1 > 110)
+            if (x2 - x1 > 140)
             {
-                float len = rng.Range(60f, 110f);
+                float len = rng.Range(75f, 140f);
                 x1 = rng.Range(x1, x2 - len);
                 x2 = x1 + len;
             }
@@ -225,7 +225,7 @@ public static class ArenaFeatures
 
     private static void Crates(MapLayout map, Rng rng, List<RectI> keep, FeatureRules rules)
     {
-        int crates = rng.Range(1, 4), barrels = rng.Chance(rules.BarrelChance) ? rng.Range(1, 2) : 0;
+        int crates = rng.Range(1, 5), barrels = rng.Chance(rules.BarrelChance) ? rng.Range(1, 2) : 0;
         var todo = new List<PropKind>();
         for (int i = 0; i < crates; i++) todo.Add(PropKind.Crate);
         for (int i = 0; i < barrels; i++) todo.Add(PropKind.Barrel);
