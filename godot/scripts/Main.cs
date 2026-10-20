@@ -26,6 +26,7 @@ namespace Brawler;
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
 ///   --aimshots=DIR        screenshot avatars aiming every way (barrel vs aim line, Muzzle dot) into DIR, then quit
+///   --walkshots=DIR       screenshot leg poses (walk cycle frames, idle, air, wall slide, landing, ramps) into DIR, then quit
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
@@ -528,6 +529,80 @@ public partial class Main : Node
                     }
                 };
                 GetTree().CreateTimer(0.5).Timeout += () => { SaveShot(); GetTree().Quit(0); };
+            }
+            else if (a.StartsWith("--walkshots="))
+            {
+                // Leg poses on a ground line with the hitbox outlined: 8 frames of the walk cycle, then idle, walking
+                // backwards, rise / apex / fall, wall slides, a landing squash, and ramps. Screenshot, then quit.
+                _shotDir = a["--walkshots=".Length..];
+                Show();
+                var canvas = new Control();
+                canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+                _menu.GetParent().AddChild(canvas);
+                var hat = Appearance.Default();
+                hat[LookPart.Hat] = 2;
+                var longHair = Appearance.Default();
+                longHair[LookPart.Hair] = 4;
+                longHair[LookPart.Mouth] = 6;
+                var poses = new System.Collections.Generic.List<(string Name, AvatarPose Pose, float Slope, int Wall)>();
+                AvatarPose P(int k) => new()
+                {
+                    Body = Palette.Player(k % 4), Look = Appearance.Default(), Facing = 1, Aim = Vector2.Right, Scale = 5f,
+                    Time = 0.4f + k * 0.37f, Grounded = true, Gun = true, GunLook = GunLook.Default, MoveDir = 1,
+                };
+                for (int k = 0; k < 8; k++)
+                    poses.Add(($"walk {k * 45}", P(k) with { Walk = 1, Moving = true, WalkPhase = k * Mathf.Pi / 4 }, 0, 0));
+                poses.Add(("idle", P(0), 0, 0));
+                poses.Add(("backwards", P(1) with { Walk = 1, Moving = true, MoveDir = -1, WalkPhase = 0.6f }, 0, 0));
+                poses.Add(("rise", P(2) with { Grounded = false, Air = 1, VelY = -280 }, 0, 0));
+                poses.Add(("apex", P(3) with { Grounded = false, Air = 1, VelY = 0 }, 0, 0));
+                poses.Add(("fall", P(0) with { Grounded = false, Air = 1, VelY = 300 }, 0, 0));
+                poses.Add(("wall front", P(1) with { Grounded = false, Air = 1, VelY = 40, Wall = 1, WallSide = 1 }, 0, 1));
+                poses.Add(("wall behind", P(2) with { Grounded = false, Air = 1, VelY = 40, Wall = 1, WallSide = -1 }, 0, -1));
+                poses.Add(("landing", P(3) with { Land = 1 }, 0, 0));
+                foreach (float k in new[] { -0.67f, 0.67f })
+                {
+                    poses.Add(($"ramp {k:+0.00;-0.00} idle", P(0) with { Look = hat, GroundSlope = k, GroundDrop = 7 * Mathf.Abs(k) }, k, 0));
+                    poses.Add(($"ramp {k:+0.00;-0.00} walk", P(1) with { Look = longHair, GroundSlope = k, GroundDrop = 7 * Mathf.Abs(k), Walk = 1, Moving = true, WalkPhase = 1.2f }, k, 0));
+                }
+                poses.Add(("left facing walk", P(2) with { Facing = -1, Aim = Vector2.Left, MoveDir = -1, Walk = 1, Moving = true, WalkPhase = 2f }, 0, 0));
+                poses.Add(("giant idle", P(3) with { Scale = 7.5f, Look = longHair }, 0, 0));
+                int page = 0;
+                canvas.Draw += () =>
+                {
+                    var font = Brawler.Fx.Fonts.Bold;
+                    for (int k = page * 8; k < Mathf.Min(poses.Count, page * 8 + 8); k++)
+                    {
+                        var (name, pose, slope, wall) = poses[k];
+                        float s = pose.Scale;
+                        int cell = k % 8;
+                        var at = canvas.Size * new Vector2((cell % 4 + 0.5f) / 4, 0.3f + 0.48f * (cell / 4));
+                        var hs = new Vector2(Body.W, Body.H) * 0.5f * s;
+                        canvas.DrawRect(new Rect2(at - hs, hs * 2), new Color(1, 1, 1, 0.35f), false, 1);
+                        if (wall != 0)
+                            canvas.DrawRect(new Rect2(at + new Vector2(wall > 0 ? hs.X : -hs.X - 30, -hs.Y - 30), new Vector2(30, hs.Y * 2 + 60)), new Color(0.4f, 0.45f, 0.6f));
+                        else
+                        {
+                            // Ground line: flat at the hitbox bottom, or a ramp touching its uphill corner.
+                            float drop = Mathf.Abs(slope) * hs.X;
+                            var g0 = at + new Vector2(-60, hs.Y + drop + slope * -60);
+                            var g1 = at + new Vector2(60, hs.Y + drop + slope * 60);
+                            canvas.DrawColoredPolygon(new[] { g0, g1, g1 + new Vector2(0, 40), g0 + new Vector2(0, 40) }, new Color(0.3f, 0.32f, 0.45f));
+                            canvas.DrawLine(g0, g1, new Color(0.8f, 0.85f, 1f), 1.5f);
+                        }
+                        AvatarArt.Draw(canvas, at, pose);
+                        canvas.DrawCircle(at + AvatarArt.BodyOffset(pose) + AvatarArt.TorsoAnchor * s, 2f, Colors.Cyan);
+                        canvas.DrawString(font, at + new Vector2(-70, -hs.Y - 60), name, HorizontalAlignment.Left, -1, 18);
+                    }
+                };
+                void NextPage()
+                {
+                    SaveShot();
+                    if (++page * 8 >= poses.Count) { GetTree().Quit(0); return; }
+                    canvas.QueueRedraw();
+                    GetTree().CreateTimer(0.3).Timeout += NextPage;
+                }
+                GetTree().CreateTimer(0.5).Timeout += NextPage;
             }
             else if (a == "--upnpcheck")
             {
