@@ -55,7 +55,7 @@ public static class AvatarArt
     private static readonly Color GunLight = new("#8f8b85"), GunMid = new("#55525a"), GunDark = new("#2c2a31");
 
     // Top of each hair style and hat in sprite space, for placing the HP bar.
-    private static readonly float[] HairTop = { -9.5f, -16.6f, -15.8f, -18.9f, -17f, -11.6f, -17.9f, -10.6f };
+    private static readonly float[] HairTop = { -9.5f, -11.3f, -16.2f, -16.4f, -11.5f, -11.8f, -11.3f, -18.8f };
     private static readonly float[] HatTop = { -9.5f, -14.6f, -21.6f, -18.5f, -17.7f, -22f, -9.5f, -19f, -17.4f, -16.4f, -22.6f };
 
     /// <summary>Topmost point used by this look (hair and hat), for placing the HP bar.</summary>
@@ -103,6 +103,7 @@ public static class AvatarArt
         public CanvasItem Ci;
         public AvatarPose P;
         public Color Body, Hair, Hat;
+        public Color Mask, MaskShade; // the bone mask, tinted toward the player's color
         public Color H(Color c) => P.Hurt ? Colors.White : c;
     }
 
@@ -119,6 +120,9 @@ public static class AvatarArt
         c.Body = p.Hurt ? Colors.White : p.Body;
         c.Hair = Palette.Dye(look.HairColor);
         c.Hat = Palette.Dye(look.HatColor);
+        // A wash of the player's color over the bone, so masks tell players apart as well as cloaks.
+        c.Mask = MaskBone.Lerp(p.Body, 0.15f);
+        c.MaskShade = MaskShade.Lerp(p.Body, 0.1f);
 
         var rig = Solve(p, facing);
         var scale = new Vector2(facing * s, s);
@@ -352,13 +356,13 @@ public static class AvatarArt
         ci.DrawLine(new Vector2(2.6f, 0.8f), new Vector2(3.3f, 3.9f), fold, 0.4f, true);
         // The collar in the player's own color.
         var collar = Shapes.RoundRect(new Rect2(-6.2f, -1.2f, 12.6f, 2.4f), 1.2f);
-        Shapes.Fill(ci, collar, c.H(p.Body.Lerp(MaskShade, 0.12f)), Ink, 0.55f);
+        Shapes.Fill(ci, collar, c.H(p.Body.Lerp(c.MaskShade, 0.12f)), Ink, 0.55f);
         ci.DrawLine(new Vector2(-5f, -0.6f), new Vector2(5.2f, -0.6f), c.H(p.Body.Lightened(0.35f)) with { A = 0.55f }, 0.35f, true);
 
         // The mask: bone white, shaded toward the jaw and the back, with a soft sheen on the brow.
-        Shapes.Fill(ci, MaskOutline, c.H(MaskBone), Ink, 1.0f);
-        Shapes.Gradient(ci, MaskOutline, c.H(MaskBone.Lightened(0.06f)), c.H(MaskShade));
-        ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(MaskShade) with { A = 0.3f });
+        Shapes.Fill(ci, MaskOutline, c.H(c.Mask), Ink, 1.0f);
+        Shapes.Gradient(ci, MaskOutline, c.H(c.Mask.Lightened(0.06f)), c.H(c.MaskShade));
+        ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(c.MaskShade) with { A = 0.3f });
         ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-1.2f, -7.8f), 3.4f, 1f, 16), new Color(1, 1, 1, 0.3f));
     }
 
@@ -388,7 +392,7 @@ public static class AvatarArt
         // Covers the top of a hollow with mask (a lid, a scowl), and carves its edge.
         void Lid(Vector2 a, Vector2 b, float above)
         {
-            ci.DrawColoredPolygon(new[] { a, b, b + new Vector2(0, -above), a + new Vector2(0, -above) }, c.H(MaskBone.Darkened(0.04f)));
+            ci.DrawColoredPolygon(new[] { a, b, b + new Vector2(0, -above), a + new Vector2(0, -above) }, c.H(c.Mask.Darkened(0.04f)));
             ci.DrawLine(a, b, Ink, 0.6f, true);
         }
 
@@ -464,7 +468,7 @@ public static class AvatarArt
     private static void DrawNose(Ctx c, int style)
     {
         var ci = c.Ci;
-        var bone = c.H(MaskBone);
+        var bone = c.H(c.Mask);
         switch (style)
         {
             case 1: // Dot
@@ -476,7 +480,7 @@ public static class AvatarArt
                 break;
             case 3: // Long: a bone snout.
                 Shapes.Fill(ci, Shapes.Capsule(new Vector2(3f, -2f), new Vector2(8.6f, -1.3f), 1.05f), bone, Ink, 0.5f);
-                ci.DrawLine(new Vector2(4f, -1.1f), new Vector2(8.2f, -0.7f), c.H(MaskShade), 0.5f, true);
+                ci.DrawLine(new Vector2(4f, -1.1f), new Vector2(8.2f, -0.7f), c.H(c.MaskShade), 0.5f, true);
                 break;
             case 4: // Pig: two nostril slits.
                 ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(2.7f, -1.5f), 0.4f, 0.7f, 8), c.H(Hollow));
@@ -484,7 +488,7 @@ public static class AvatarArt
                 break;
             case 5: // Beak: bone, shaded below.
                 Shapes.Fill(ci, new[] { new Vector2(3.2f, -3.1f), new Vector2(9.4f, -1.6f), new Vector2(3.2f, -0.1f) }, bone, Ink, 0.5f);
-                ci.DrawColoredPolygon(new[] { new Vector2(3.4f, -1.6f), new Vector2(9.0f, -1.6f), new Vector2(3.4f, -0.3f) }, c.H(MaskShade));
+                ci.DrawColoredPolygon(new[] { new Vector2(3.4f, -1.6f), new Vector2(9.0f, -1.6f), new Vector2(3.4f, -0.3f) }, c.H(c.MaskShade));
                 break;
             case 6: // Clown
                 Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.9f, -1.6f), 1.7f, 1.7f, 16), c.H(new Color("#8e3a3c")), Ink, 0.5f);
@@ -534,7 +538,7 @@ public static class AvatarArt
             case 3: // Grin: a dark crescent with bone teeth.
                 ci.DrawColoredPolygon(GrinShape, c.H(Hollow));
                 for (float x = -0.4f; x <= 3.4f; x += 1.25f)
-                    ci.DrawColoredPolygon(new[] { new Vector2(x, 0), new Vector2(x + 0.9f, 0), new Vector2(x + 0.45f, 0.8f) }, c.H(MaskBone));
+                    ci.DrawColoredPolygon(new[] { new Vector2(x, 0), new Vector2(x + 0.9f, 0), new Vector2(x + 0.45f, 0.8f) }, c.H(c.Mask));
                 break;
             case 4: // Frown
                 ci.DrawArc(new Vector2(1.4f, 2.9f), 2.1f, Mathf.Pi + 0.6f, Mathf.Tau - 0.6f, 14, ink, 0.6f, true);
@@ -542,7 +546,7 @@ public static class AvatarArt
             case 5: // Fangs
                 ci.DrawArc(new Vector2(1.4f, -3f), 3.6f, 1.1f, Mathf.Pi - 1.1f, 14, ink, 0.6f, true);
                 foreach (float fx in new[] { 0.2f, 2.6f })
-                    Shapes.Fill(ci, new[] { new Vector2(fx - 0.55f, 0.4f), new Vector2(fx + 0.55f, 0.4f), new Vector2(fx, 1.9f) }, c.H(MaskBone), Ink, 0.3f);
+                    Shapes.Fill(ci, new[] { new Vector2(fx - 0.55f, 0.4f), new Vector2(fx + 0.55f, 0.4f), new Vector2(fx, 1.9f) }, c.H(c.Mask), Ink, 0.3f);
                 break;
             case 6: // Tongue
                 ci.DrawArc(new Vector2(1.4f, -0.6f), 2.2f, 0.55f, Mathf.Pi - 0.55f, 14, ink, 0.6f, true);
@@ -560,63 +564,111 @@ public static class AvatarArt
         ci.DrawSetTransform(bodyOrigin, 0, scale);
     }
 
-    // ---------- horns (the "hair" option; color = bone tinted by the hair dye) ----------
-    // Drawn behind the mask so their roots disappear under the dome.
+    // ---------- hair (color = hair dye) ----------
 
-    /// <summary>A tapering horn along a curve from its base to its tip; bend pushes the middle sideways.</summary>
-    private static Vector2[] Horn(Vector2 a, Vector2 tip, float width, float bend)
+    private static readonly Vector2[] Hairline =
     {
-        const int n = 10;
-        var d = tip - a;
-        var side = new Vector2(-d.Y, d.X).Normalized();
-        var ctrl = (a + tip) * 0.5f + side * bend;
-        var left = new Vector2[n + 1];
-        var right = new Vector2[n + 1];
-        for (int i = 0; i <= n; i++)
-        {
-            float t = (float)i / n;
-            var pt = a.Lerp(ctrl, t).Lerp(ctrl.Lerp(tip, t), t);
-            var tan = (ctrl - a).Lerp(tip - ctrl, t).Normalized();
-            var nrm = new Vector2(-tan.Y, tan.X);
-            float w = width * 0.5f * Mathf.Pow(1 - t, 0.85f) + 0.05f;
-            left[i] = pt + nrm * w;
-            right[n - i] = pt - nrm * w;
-        }
-        var pts = new Vector2[(n + 1) * 2];
-        left.CopyTo(pts, 0);
-        right.CopyTo(pts, n + 1);
+        new(6.2f, -7.2f), new(4.5f, -6.6f), new(3f, -7.6f), new(1.2f, -6.9f), new(-0.8f, -7.8f), new(-3f, -7.2f), new(-5.2f, -6.4f), new(-6.2f, -3f),
+    };
+
+    private static Vector2[] Cap(params Vector2[] top)
+    {
+        var pts = new Vector2[top.Length + Hairline.Length];
+        top.CopyTo(pts, 0);
+        Hairline.CopyTo(pts, top.Length);
         return pts;
     }
 
-    private static Vector2[][] HornShapes(int style) => style switch
+    private static readonly Vector2[] ShortHair = Cap(
+        new(-7.8f, -2.5f), new(-8.1f, -6f), new(-7.1f, -9f), new(-4.6f, -10.8f), new(0f, -11.3f), new(4.6f, -10.8f), new(7.1f, -9f), new(7.9f, -6.6f));
+
+    private static readonly Vector2[] SpikyHair = Cap(
+        new(-7.8f, -3f), new(-8.2f, -7f), new(-10.4f, -10.2f), new(-6.4f, -10.4f), new(-6.2f, -14.4f), new(-3f, -11.8f), new(-0.8f, -16.2f),
+        new(1.2f, -11.8f), new(4f, -15.4f), new(4.8f, -11.2f), new(8.6f, -12.6f), new(7.4f, -9f), new(9.2f, -7.8f), new(7.8f, -6.6f));
+
+    private static readonly Vector2[] Mohawk =
     {
-        1 => new[] { Horn(new(-3.4f, -7.6f), new(-6.4f, -16.2f), 3f, -2.2f), Horn(new(3.6f, -7.6f), new(6.8f, -16.2f), 3f, 2.2f) },   // Twin
-        2 => new[] { Horn(new(-4.4f, -8f), new(-5.4f, -14.4f), 2.6f, -0.6f), Horn(new(0.4f, -8.6f), new(0.5f, -15.6f), 2.8f, 0f),       // Crown
-                     Horn(new(4.6f, -8f), new(5.8f, -14.4f), 2.6f, 0.6f) },
-        3 => new[] { Horn(new(0.4f, -7.8f), new(1.6f, -18.6f), 3.8f, 1.2f) },                                                             // Spike
-        4 => new[] { Horn(new(-1.6f, -8.4f), new(-11.6f, -16.6f), 3.2f, 2.4f), Horn(new(1.6f, -8.6f), new(-6.4f, -16.8f), 2.8f, 2.2f) }, // Swept
-        5 => new[] { Shapes.Ellipse(new(-3.8f, -9.6f), 1.9f, 2f, 14), Shapes.Ellipse(new(3.9f, -9.6f), 1.9f, 2f, 14) },                    // Nubs
-        6 => new[]                                                                                                                         // Antlers
-        {
-            Horn(new(-3.2f, -7.8f), new(-5.2f, -17.6f), 2.2f, -1.4f), Horn(new(-4.2f, -12.6f), new(-8.6f, -14.8f), 1.3f, -0.6f),
-            Horn(new(3.4f, -7.8f), new(5.6f, -17.6f), 2.2f, 1.4f), Horn(new(4.4f, -12.6f), new(8.8f, -14.8f), 1.3f, 0.6f),
-        },
-        7 => new[] { Horn(new(-4.6f, -8.6f), new(-9.4f, -3f), 3.8f, 5.2f), Horn(new(4.6f, -8.6f), new(9.6f, -3f), 3.8f, -5.2f) },    // Ram
-        _ => Array.Empty<Vector2[]>(),
+        new(-5f, -9.2f), new(-4.6f, -12.2f), new(-3.2f, -14.8f), new(-1f, -16.4f), new(1.6f, -16.4f), new(3.8f, -14.9f), new(4.8f, -12.2f),
+        new(5.2f, -9.4f), new(2f, -10.4f), new(-2f, -10.4f),
+    };
+
+    private static readonly Vector2[] LongHair =
+    {
+        new(-8.6f, 2.2f), new(-8.8f, -6f), new(-7.5f, -9.2f), new(-4.7f, -11f), new(0f, -11.5f), new(4.7f, -11f), new(7.3f, -9f), new(8.1f, -6.4f),
+        new(6.2f, -7.2f), new(4.5f, -6.6f), new(3f, -7.6f), new(1.2f, -6.9f), new(-0.8f, -7.8f), new(-3f, -7.2f), new(-5f, -6.4f),
+        new(-5.7f, -2f), new(-5.5f, 2.4f), new(-7f, 3.6f),
+    };
+
+    private static readonly Vector2[] BowlHair =
+    {
+        new(-8.1f, -2.8f), new(-8.4f, -7f), new(-7.1f, -9.7f), new(-4.1f, -11.4f), new(0f, -11.8f), new(4.1f, -11.4f), new(7.1f, -9.7f),
+        new(8.4f, -7f), new(8.4f, -6.1f), new(-5.6f, -6.1f), new(-6.4f, -2.8f),
+    };
+
+    private static readonly (Vector2 C, float R)[] AfroPuffs =
+    {
+        (new(0f, -11.2f), 5.2f), (new(-4.6f, -10.2f), 4.3f), (new(4.4f, -10.6f), 4.2f), (new(-7f, -6.6f), 3.4f), (new(7.6f, -8f), 2.8f),
+        (new(-2.6f, -13.8f), 3.8f), (new(2.8f, -13.8f), 3.7f), (new(0f, -15.4f), 3.3f), (new(-6.4f, -12.4f), 2.8f), (new(6.6f, -12.4f), 2.6f),
     };
 
     private static void DrawHairBack(Ctx c, int style)
     {
-        var col = MaskBone.Lerp(c.Hair, 0.35f);
-        foreach (var horn in HornShapes(style))
+        if (style != 6) return;
+        // Ponytail swings a little behind the head.
+        float sw = Mathf.Sin(c.P.Time * 3f) * 0.6f;
+        var tail = new[]
         {
-            Shapes.Fill(c.Ci, horn, c.H(col), Ink, 0.75f);
-            Shapes.Gradient(c.Ci, horn, c.H(col.Lightened(0.08f)), c.H(col.Darkened(0.2f)));
-        }
+            new Vector2(-6f, -8.4f), new Vector2(-9.8f, -10f), new Vector2(-12.6f, -8f + sw * 0.3f), new Vector2(-13.2f + sw, -4.2f),
+            new Vector2(-12f + sw, -0.4f), new Vector2(-10.8f + sw * 0.6f, -3.6f), new Vector2(-9.8f, -6.2f), new Vector2(-7.2f, -5.6f),
+        };
+        Shapes.Fill(c.Ci, tail, c.H(c.Hair), c.Hair.Darkened(0.5f), 0.8f);
+        c.Ci.DrawLine(new Vector2(-10.6f, -8.6f), new Vector2(-12.2f + sw, -4f), c.H(c.Hair.Lightened(0.3f)) with { A = 0.7f }, 0.5f, true);
     }
 
-    // Horns are all drawn behind the mask (DrawHairBack); nothing goes in front of it.
-    private static void DrawHair(Ctx c, int style) { }
+    private static void DrawHair(Ctx c, int style)
+    {
+        var ci = c.Ci;
+        var main = c.H(c.Hair);
+        var line = c.Hair.Darkened(0.5f);
+        var shine = c.H(c.Hair.Lightened(0.35f)) with { A = 0.75f };
+        switch (style)
+        {
+            case 1:
+                Shapes.Fill(ci, ShortHair, main, line, 0.8f);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-2f, -9.7f), 2.8f, 0.75f, 12), shine);
+                break;
+            case 2:
+                Shapes.Fill(ci, SpikyHair, main, line, 0.8f);
+                ci.DrawLine(new Vector2(-1f, -14.6f), new Vector2(-1.4f, -11f), shine, 0.6f, true);
+                ci.DrawLine(new Vector2(3.6f, -13.8f), new Vector2(3f, -11f), shine, 0.5f, true);
+                break;
+            case 3:
+                Shapes.Fill(ci, Mohawk, main, line, 0.8f);
+                ci.DrawLine(new Vector2(-1.8f, -14.6f), new Vector2(-3.2f, -11f), shine, 0.6f, true);
+                break;
+            case 4:
+                Shapes.Fill(ci, LongHair, main, line, 0.8f);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-2f, -9.9f), 2.8f, 0.75f, 12), shine);
+                ci.DrawLine(new Vector2(-7.4f, -4f), new Vector2(-7.2f, 1.4f), shine, 0.5f, true);
+                break;
+            case 5:
+                Shapes.Fill(ci, BowlHair, main, line, 0.8f);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-1.5f, -10.1f), 3.4f, 0.8f, 12), shine);
+                for (float x = -3.6f; x < 8f; x += 2.4f)
+                    ci.DrawLine(new Vector2(x, -7.8f), new Vector2(x + 0.2f, -6.3f), line with { A = 0.5f }, 0.35f, true);
+                break;
+            case 6:
+                Shapes.Fill(ci, ShortHair, main, line, 0.8f);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-2f, -9.7f), 2.8f, 0.75f, 12), shine);
+                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(-7.4f, -7.4f), 1.1f, 1.4f, 12), c.H(Red), DarkRed, 0.4f);
+                break;
+            case 7:
+                foreach (var (pc, r) in AfroPuffs) ci.DrawCircle(pc, r + 0.8f, line, true, -1, true);
+                foreach (var (pc, r) in AfroPuffs) ci.DrawCircle(pc, r, main, true, -1, true);
+                foreach (var (pc, r) in AfroPuffs) ci.DrawArc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.45f }, 0.5f, true);
+                break;
+        }
+    }
 
     // ---------- hats (color = hat dye) ----------
 

@@ -21,7 +21,7 @@ public sealed class Appearance
     public static readonly string[] EyeNames = { "Round", "Big", "Dots", "Sleepy", "Angry", "Visor", "Cyclops", "Shades", "Happy" };
     public static readonly string[] NoseNames = { "None", "Dot", "Button", "Long", "Pig", "Beak", "Clown" };
     public static readonly string[] MouthNames = { "Smile", "Flat", "Open", "Grin", "Frown", "Fangs", "Tongue", "Mustache", "Cat" };
-    public static readonly string[] HairNames = { "None", "Twin", "Crown", "Spike", "Swept", "Nubs", "Antlers", "Ram" }; // drawn as horns
+    public static readonly string[] HairNames = { "Bald", "Short", "Spiky", "Mohawk", "Long", "Bowl", "Ponytail", "Afro" };
     public static readonly string[] HatNames = { "None", "Cap", "Top Hat", "Beanie", "Crown", "Party", "Headband", "Viking", "Halo", "Propeller", "Chef" };
 
     /// <summary>Hair and hat dyes. Game code turns the hex into colors.</summary>
@@ -39,8 +39,7 @@ public sealed class Appearance
     public static int Count(LookPart p) => Options[(int)p].Length;
     public static string PartLabel(LookPart p) => p switch
     {
-        LookPart.Hair => "Horns",
-        LookPart.HairColor => "Horn tint",
+        LookPart.HairColor => "Hair color",
         LookPart.HatColor => "Hat color",
         _ => p.ToString(),
     };
