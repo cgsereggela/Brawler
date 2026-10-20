@@ -1,3 +1,4 @@
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.Game;
@@ -14,6 +15,7 @@ public sealed record ArenaTheme(
     Skyline Skyline, Motes Motes, Deco Deco,
     Color MoteA, Color MoteB)
 {
+    // Same order as Logic.ThemeId and ThemeRules.Names (the tests check the names line up).
     public static readonly ArenaTheme[] All =
     {
         new("Neon Night", new("#0e0a2e"), new("#3a1470"), new("#c2307a"), new("#3b2b85"), new("#36f3ff"),
@@ -32,5 +34,9 @@ public sealed record ArenaTheme(
             Skyline.Hills, Motes.Bokeh, Deco.Sprinkles, new("#fff27a"), new("#7af7ff")),
     };
 
-    public static ArenaTheme ForSeed(int seed) => All[(int)((uint)(seed * 2654435761u) >> 8) % All.Length];
+    /// <summary>The look for a theme id; All is in ThemeId order.</summary>
+    public static ArenaTheme Of(ThemeId id) => All[(int)id];
+
+    /// <summary>The seed picks the theme in Logic (the map generator fits the arena extras to it); this is its look.</summary>
+    public static ArenaTheme ForSeed(int seed) => Of(ThemeRules.ForSeed(seed));
 }
