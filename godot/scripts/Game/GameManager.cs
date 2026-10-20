@@ -513,6 +513,8 @@ public partial class GameManager : Node2D
             bool clear = true;
             foreach (var r in Map.Solids)
                 if (box.Intersects(new Rect2(r.X, r.Y, r.W, r.H))) { clear = false; break; }
+            foreach (var s in Map.Slopes)
+                if (s.Overlaps(box.Position.X, box.Position.Y, box.End.X, box.End.Y)) clear = false;
             if (!clear) continue;
             var from = a.GlobalPosition;
             a.GlobalPosition = p;

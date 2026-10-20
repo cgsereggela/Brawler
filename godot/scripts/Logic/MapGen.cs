@@ -44,6 +44,11 @@ public sealed class MapLayout
     public List<Hazard> Hazards { get; } = new();
     public List<SawTrack> Saws { get; } = new();
     public List<Mover> Movers { get; } = new();
+    // Floor terrain (see TerrainGen): raised flat stretches are rects in Solids (also listed in Terrain), the ramps
+    // between levels are Slopes, and Ground holds each terrain-bearing floor segment's top outline for drawing.
+    public List<RectI> Terrain { get; } = new();
+    public List<Slope> Slopes { get; } = new();
+    public List<GroundPoint[]> Ground { get; } = new();
     public MapStyle Style { get; init; }
     public int Seed { get; init; }
     public int Attempts { get; set; }
@@ -52,13 +57,23 @@ public sealed class MapLayout
     public int Headroom { get; init; } = MapGenerator.Headroom;
     /// <summary>Whether the jump graph counts jump pad launches (bots plan with them; map validation never does).</summary>
     public bool UsePads { get; init; }
+
+    /// <summary>True if a rect overlaps any solid or slope.</summary>
+    public bool Blocked(RectI r)
+    {
+        foreach (var o in Solids)
+            if (o.Intersects(r)) return true;
+        foreach (var s in Slopes)
+            if (s.Intersects(r)) return true;
+        return false;
+    }
 }
 
 /// <summary>
 /// Seeded random arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
 /// Each seed picks a <see cref="MapStyle"/> (scattered tiers, a mirrored layout, floating islands over pits,
-/// or towers). Each candidate is validated (spawn spacing, mutual reachability between spawns) and rerolled on
-/// failure. Jump pads are added afterwards as extras: reachability never relies on them.
+/// or towers), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
+/// spacing, mutual reachability between spawns) and rerolled on failure. Jump pads are added afterwards as extras: reachability never relies on them.
 /// </summary>
 public static class MapGenerator
 {
@@ -140,6 +155,7 @@ public static class MapGenerator
                 break;
         }
         map.Solids.AddRange(placed);
+        TerrainGen.Add(map, rng, floor, placed);
 
         BuildSurfaces(map, floor, placed);
         if (!PickSpawns(map, rng, playerCount)) return null;
@@ -355,10 +371,7 @@ public static class MapGenerator
             foreach (var p in map.Pads)
                 if (Math.Abs(p.CenterX - pad.CenterX) < 100) ok = false;
             // It needs open air above, or it just bonks you into a ceiling.
-            var air = new RectI(x - 4, s.Y - 90, PadWidth + 8, 90);
-            foreach (var o in map.Solids)
-                if (o.Intersects(air)) ok = false;
-            if (ok) map.Pads.Add(pad);
+            if (ok && !map.Blocked(new RectI(x - 4, s.Y - 90, PadWidth + 8, 90))) map.Pads.Add(pad);
         }
     }
 
@@ -381,11 +394,14 @@ public static class MapGenerator
 
     private static void BuildSurfaces(MapLayout map, List<(int x1, int x2)> floor, List<RectI> platforms)
     {
-        // Floor segments are split around anything standing on them (towers), so nobody spawns inside one.
+        // Floor segments are split around anything standing on them (towers, terrain), so nobody spawns inside one.
+        var cutters = new List<RectI>(platforms);
+        cutters.AddRange(map.Terrain);
+        foreach (var sl in map.Slopes) cutters.Add(sl.Bounds);
         foreach (var s in floor)
         {
             var open = new List<(int a, int b)> { (s.x1, s.x2) };
-            foreach (var o in platforms)
+            foreach (var o in cutters)
             {
                 if (!o.Intersects(new RectI(s.x1, FloorY - Headroom, s.x2 - s.x1, Headroom))) continue;
                 var next = new List<(int a, int b)>();
@@ -400,13 +416,18 @@ public static class MapGenerator
             foreach (var (a, b) in open)
                 if (b - a >= 16) map.Surfaces.Add(new Surface(a, b, FloorY));
         }
-        foreach (var p in platforms)
+        // Platform tops, then the tops of raised terrain.
+        var tops = new List<RectI>(platforms);
+        tops.AddRange(map.Terrain);
+        foreach (var p in tops)
         {
             if (p.W < 16 || p.Y < Wall + Headroom) continue;
             var head = new RectI(p.X, p.Y - Headroom, p.W, Headroom);
             bool blocked = false;
             foreach (var o in map.Solids)
                 if (o != p && o.Intersects(head)) { blocked = true; break; }
+            foreach (var sl in map.Slopes)
+                if (sl.Intersects(head)) blocked = true;
             if (!blocked) map.Surfaces.Add(new Surface(p.X, p.Right, p.Y));
         }
     }
@@ -484,6 +505,7 @@ public static class MapGenerator
     /// </summary>
     public static bool CanTraverse(MapLayout map, Surface a, Surface b)
     {
+        if (SlopeLinks(map, a, b)) return true;
         if (!CanTraverse(a, b)) return map.UsePads && PadTo(map, a, b) is not null;
         int gx1 = Math.Min(a.X2, b.X2), gx2 = Math.Max(a.X1, b.X1);
         if (gx2 <= gx1)
@@ -498,10 +520,38 @@ public static class MapGenerator
             return b.Y - a.Y >= 40 || b.X1 < a.X1 - 8 || b.X2 > a.X2 + 8;
         }
         int top = Math.Min(a.Y, b.Y) - map.Headroom, bottom = Math.Max(a.Y, b.Y);
-        var corridor = new RectI(gx1, top, gx2 - gx1, bottom - top);
-        foreach (var o in map.Solids)
-            if (o.Intersects(corridor)) return false;
-        return true;
+        return !map.Blocked(new RectI(gx1, top, gx2 - gx1, bottom - top));
+    }
+
+    /// <summary>True if a slope runs from an end of surface a to the facing end of b: walking it gets you there.</summary>
+    public static bool SlopeLinks(MapLayout map, Surface a, Surface b)
+    {
+        foreach (var s in map.Slopes)
+        {
+            if (a.X2 == s.X1 && a.Y == s.Y1 && b.X1 == s.X2 && b.Y == s.Y2) return true;
+            if (a.X1 == s.X2 && a.Y == s.Y2 && b.X2 == s.X1 && b.Y == s.Y1) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// For a body standing on a slope at <paramref name="x"/> with its feet at <paramref name="feetY"/>: the surface at
+    /// the nearer end of that slope (the one it is walking off onto), or -1 if it isn't on a slope with a surface there.
+    /// </summary>
+    public static int SlopeSurface(MapLayout map, float x, float feetY)
+    {
+        foreach (var s in map.Slopes)
+        {
+            if (x < s.X1 || x > s.X2 || Math.Abs(feetY - s.YAt(x)) > 6) continue;
+            bool left = x - s.X1 < s.X2 - x;
+            int ex = left ? s.X1 : s.X2, ey = left ? s.Y1 : s.Y2;
+            for (int i = 0; i < map.Surfaces.Count; i++)
+            {
+                var f = map.Surfaces[i];
+                if (f.Y == ey && (left ? f.X2 == ex : f.X1 == ex)) return i;
+            }
+        }
+        return -1;
     }
 
     /// <summary>Highest climb a pad launch (jump held, base gravity) is planned for: ~173 px apex minus a margin.</summary>
@@ -520,11 +570,7 @@ public static class MapGenerator
             if (p.Y != a.Y || p.X1 < a.X1 - 2 || p.X2 > a.X2 + 2) continue;
             int gap = Math.Max(0, Math.Max(p.X1, b.X1) - Math.Min(p.X2, b.X2));
             if (gap > 40 || (b.X1 < p.X2 && b.X2 > p.X1)) continue; // too far to drift over, or right overhead
-            var column = new RectI(p.X1, b.Y - map.Headroom, p.X2 - p.X1, a.Y - (b.Y - map.Headroom));
-            bool clear = true;
-            foreach (var o in map.Solids)
-                if (o.Intersects(column)) { clear = false; break; }
-            if (clear) return p;
+            if (!map.Blocked(new RectI(p.X1, b.Y - map.Headroom, p.X2 - p.X1, a.Y - (b.Y - map.Headroom)))) return p;
         }
         return null;
     }
@@ -533,10 +579,7 @@ public static class MapGenerator
     private static bool LaunchSpot(MapLayout map, Surface a, Surface b, int x1, int x2)
     {
         if (x2 - x1 < 10) return false;
-        var air = new RectI(x1, b.Y - map.Headroom, x2 - x1, a.Y - (b.Y - map.Headroom));
-        foreach (var o in map.Solids)
-            if (o.Intersects(air)) return false;
-        return true;
+        return !map.Blocked(new RectI(x1, b.Y - map.Headroom, x2 - x1, a.Y - (b.Y - map.Headroom)));
     }
 
     /// <summary>Where on surface a to jump from to climb onto b, which overlaps it from above (NaN if nowhere).</summary>
@@ -612,6 +655,9 @@ public static class MapGenerator
         int headroom = (int)Math.Ceiling(bodyH) + 1;
         var nav = new MapLayout { Seed = map.Seed, Style = map.Style, Headroom = headroom, UsePads = true, Attempts = map.Attempts, UsedFallback = map.UsedFallback };
         nav.Solids.AddRange(map.Solids);
+        nav.Terrain.AddRange(map.Terrain);
+        nav.Slopes.AddRange(map.Slopes);
+        nav.Ground.AddRange(map.Ground);
         nav.Spawns.AddRange(map.Spawns);
         nav.Pads.AddRange(map.Pads);
         int hw = (int)Math.Ceiling(bodyW * 0.5f);

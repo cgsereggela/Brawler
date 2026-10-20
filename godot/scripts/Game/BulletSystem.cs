@@ -196,7 +196,7 @@ public partial class BulletSystem : Node2D
         var delta = b.Vel * dt;
         for (int iter = 0; iter < 4 && delta.LengthSquared() > 1e-6f; iter++)
         {
-            var hit = Sweep.Cast(ToN(b.Pos), ToN(delta), b.Radius, solids);
+            var hit = Sweep.Cast(ToN(b.Pos), ToN(delta), b.Radius, solids, Game.Map?.Slopes);
             if (hit == null)
             {
                 b.Pos += delta;

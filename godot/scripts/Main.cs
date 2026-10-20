@@ -24,6 +24,7 @@ namespace Brawler;
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
+///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
 ///   --aimshots=DIR        screenshot avatars aiming every way (barrel vs aim line, Muzzle dot) into DIR, then quit
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
@@ -463,6 +464,36 @@ public partial class Main : Node
                 void Next()
                 {
                     if (k >= seeds.Count) { tree.Quit(0); return; }
+                    _game.DebugStartBattle(seeds[k++]);
+                    tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
+                }
+                tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+            }
+            else if (a == "--terrainshots" && _shotDir != null)
+            {
+                // Screenshot a battle on the hilliest seed of each arena theme (one per map style first), then quit.
+                _autoMode = "arena";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var maps = Enumerable.Range(1, 600).Select(s => (Seed: s, M: MapGenerator.Generate(s, 4))).Where(x => x.M.Slopes.Count > 0).ToList();
+                var seeds = ArenaTheme.All.Select(th => maps.Where(x => ArenaTheme.ForSeed(x.Seed) == th)
+                        .OrderByDescending(x => x.M.Slopes.Count + x.M.Terrain.Count).Select(x => x.Seed).FirstOrDefault())
+                    .Where(s => s > 0).ToList();
+                foreach (MapStyle st in System.Enum.GetValues<MapStyle>())
+                    if (maps.FirstOrDefault(x => x.M.Style == st).Seed is int s and > 0 && !seeds.Contains(s)) seeds.Insert(0, s);
+                var tree = GetTree();
+                int k = 0;
+                void Next()
+                {
+                    if (k >= seeds.Count) { tree.Quit(0); return; }
+                    var m = MapGenerator.Generate(seeds[k], 4);
+                    Log.Info($"TERRAINSHOT seed {seeds[k]} {m.Style} {ArenaTheme.ForSeed(seeds[k]).Name}: {m.Slopes.Count} slopes, {m.Terrain.Count} raised");
                     _game.DebugStartBattle(seeds[k++]);
                     tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
                 }

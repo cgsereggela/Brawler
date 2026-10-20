@@ -39,7 +39,7 @@ public sealed class BlinkEffect : ICardEffect
         var from = self.GlobalPosition;
         var delta = self.AimDir * dist;
         float r = Mathf.Max(self.HalfSize.X, self.HalfSize.Y);
-        var hit = Sweep.Cast(new NVec(from.X, from.Y), new NVec(delta.X, delta.Y), r, game.Map.Solids);
+        var hit = Sweep.Cast(new NVec(from.X, from.Y), new NVec(delta.X, delta.Y), r, game.Map.Solids, game.Map.Slopes);
         float t = hit?.T ?? 1f;
         var to = from + delta * Mathf.Max(0, t - 0.02f);
         // The sweep ignores solids it starts inside of (its radius is the larger half-extent), so a blink from

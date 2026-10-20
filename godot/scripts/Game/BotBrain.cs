@@ -81,7 +81,10 @@ public sealed class BotBrain : IInputSource
         // --- navigation: out of sight, or far above/below → follow the jump graph one surface at a time ---
         var map = NavMap(self);
         var feet = me + new Vector2(0, self.HalfSize.Y);
-        if (onFloor && SurfaceAt(map, feet, 4) is int here and >= 0 && here != _surface) { _surface = here; _navT = 0; }
+        int here = onFloor ? SurfaceAt(map, feet, 4) : -1;
+        // On a ramp: plan from the surface at its nearer end.
+        if (onFloor && here < 0) here = MapGenerator.SlopeSurface(map, feet.X, feet.Y);
+        if (here >= 0 && here != _surface) { _surface = here; _navT = 0; }
         // Long in the air (wall-jumping, gliding, jetting) means the surface we last stood on says little about
         // where we are; plan from where we'd land instead, or stale plans can loop forever without touching down.
         _airT = onFloor ? 0 : _airT + dt;
@@ -106,7 +109,8 @@ public sealed class BotBrain : IInputSource
             var hop = map.Surfaces[_hop];
             var cur = map.Surfaces[_surface];
             float x = me.X, aimX;
-            if (hop.Y < cur.Y - 4)
+            if (MapGenerator.SlopeLinks(map, cur, hop)) aimX = Inside(x, hop, 10); // a ramp leads there: just run
+            else if (hop.Y < cur.Y - 4)
             {
                 // Climbing: get clear of the platform's underside, then jump toward it and steer onto it.
                 bool overlap = cur.X2 > hop.X1 && cur.X1 < hop.X2;
@@ -281,6 +285,8 @@ public sealed class BotBrain : IInputSource
         float w = half.X * 2 + 2, x1 = right ? s.X2 : s.X1 - w, y1 = s.Y - half.Y * 2 - 2, y2 = s.Y + 6;
         foreach (var r in map.Solids)
             if (r.X < x1 + w && x1 < r.Right && r.Y < y2 && y1 < r.Bottom) return false;
+        foreach (var sl in map.Slopes)
+            if (sl.Overlaps(x1, y1, x1 + w, y2)) return false;
         return true;
     }
 
@@ -346,7 +352,7 @@ public sealed class BotBrain : IInputSource
     private bool HasLineOfSight(Vector2 from, Vector2 to)
     {
         var d = to - from;
-        var hit = Sweep.Cast(new NVec(from.X, from.Y), new NVec(d.X, d.Y), 1, _game.Map.Solids);
+        var hit = Sweep.Cast(new NVec(from.X, from.Y), new NVec(d.X, d.Y), 1, _game.Map.Solids, _game.Map.Slopes);
         return hit == null;
     }
 
@@ -364,6 +370,8 @@ public sealed class BotBrain : IInputSource
     {
         foreach (var r in _game.Map.Solids)
             if (x >= r.X && x < r.Right && r.Bottom > y && r.Y < y + depth) return true;
+        foreach (var s in _game.Map.Slopes)
+            if (x >= s.X1 && x < s.X2 && s.Bottom > y && s.YAt(x) < y + depth) return true;
         return false;
     }
 

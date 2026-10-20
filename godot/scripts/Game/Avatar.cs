@@ -100,7 +100,12 @@ public partial class Avatar : CharacterBody2D
         Ammo = S.Int(Stat.Ammo);
         CollisionLayer = 2;
         CollisionMask = 1;
-        FloorSnapLength = 4;
+        // Slopes are at most ~34 degrees (TerrainGen.MaxAngle), well under the 45 degree floor limit. Constant speed
+        // keeps running uphill as quick as on the flat, and the longer snap holds you to a ramp running down it at
+        // full speed (320 px/s drops ~3.6 px a tick on the steepest ramp) instead of hopping off it.
+        FloorMaxAngle = Mathf.DegToRad(45);
+        FloorConstantSpeed = true;
+        FloorSnapLength = 8;
         var shape = new CollisionShape2D { Shape = new RectangleShape2D { Size = HalfSize * 2 } };
         AddChild(shape);
     }
@@ -174,6 +179,14 @@ public partial class Avatar : CharacterBody2D
             if (r.Right < c.X) left = true;
             if (r.X > c.X) right = true;
         }
+        // Sloped ground only ever pinches from below or the side it rises on.
+        foreach (var s in map.Slopes)
+        {
+            if (!s.Overlaps(c.X - hs.X, c.Y - hs.Y, c.X + hs.X, c.Y + hs.Y)) continue;
+            down = true;
+            if (s.X2 < c.X) left = true;
+            if (s.X1 > c.X) right = true;
+        }
         return (up && down) || (left && right);
     }
 
@@ -181,6 +194,8 @@ public partial class Avatar : CharacterBody2D
     {
         foreach (var r in map.Solids)
             if (c.X + hs.X > r.X && c.X - hs.X < r.Right && c.Y + hs.Y > r.Y && c.Y - hs.Y < r.Bottom) return true;
+        foreach (var s in map.Slopes)
+            if (s.Overlaps(c.X - hs.X, c.Y - hs.Y, c.X + hs.X, c.Y + hs.Y)) return true;
         return false;
     }
 
@@ -498,7 +513,7 @@ public partial class Avatar : CharacterBody2D
         var from = GlobalPosition;
         var delta = AvatarArt.Muzzle(AimDir, _facing, S[Stat.Size], Gun);
         var hit = Sweep.Cast(new System.Numerics.Vector2(from.X, from.Y), new System.Numerics.Vector2(delta.X, delta.Y),
-            Mathf.Max(1, S[Stat.BulletRadius]), Game.Arena.Solids);
+            Mathf.Max(1, S[Stat.BulletRadius]), Game.Arena.Solids, Game.Map?.Slopes);
         float t = hit is { } h ? Mathf.Max(0, h.T - 0.05f) : 1;
         return from + delta * t;
     }
