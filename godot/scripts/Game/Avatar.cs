@@ -39,8 +39,10 @@ public sealed class MatchPlayer
 public partial class Avatar : CharacterBody2D
 {
     public const float BaseW = Body.W, BaseH = Body.H;
-    // Gravity is gentle (see StatBlock.Base) and walking off a ledge leaves a generous moment to still jump, so a
-    // missed step can be saved mid-air. Falls are capped low enough to read and react to.
+    // Gravity is gentle (see StatBlock.Base) and leaving the ground without jumping keeps the ground jump for the
+    // whole time in the air (JumpCharges), so a missed step can be saved mid-air. Coyote time now only decides that
+    // a press just after leaving the floor is a ground jump rather than a wall jump. Falls are capped low enough to
+    // read and react to.
     private const float CoyoteTime = 0.2f, WallCoyoteTime = 0.1f, JumpBuffer = 0.12f, WallSlideSpeed = 40f, MaxFall = 430f;
     private const float PushSpeed = 0.55f; // crates move at this fraction of your run speed
 
@@ -64,9 +66,12 @@ public partial class Avatar : CharacterBody2D
     public Vector2 HalfSize => new Vector2(BaseW, BaseH) * S[Stat.Size] * 0.5f;
     public Rect2 Bounds => new(GlobalPosition - HalfSize, HalfSize * 2);
     public bool BlockReady => BlockCd <= 0;
+    /// <summary>Jumps usable in the air right now: the kept ground (ledge) jump plus card air jumps. For bots.</summary>
+    public int MidAirJumpsLeft => _jumps.Left;
 
     private float _coyote, _wallCoyote, _jumpBuffer, _wallJumpLock;
-    private int _airJumpsLeft, _livesUsed;
+    private JumpCharges _jumps;
+    private int _livesUsed;
     private float _fuel, _leechT;
     private bool _jetting;
     private float _wallNormalX;
@@ -237,11 +242,10 @@ public partial class Avatar : CharacterBody2D
         bool onFloor = IsOnFloor();
         bool onWall = IsOnWallOnly();
 
-        if (onFloor || onWall)
-        {
-            _airJumpsLeft = S.Int(Stat.AirJumps);
-            _fuel = S[Stat.Jetpack];
-        }
+        // Landing restores every jump; touching a wall restores the air jumps and fuel but not the ground jump.
+        if (onFloor) _jumps.Land(S.Int(Stat.AirJumps));
+        else if (onWall) _jumps.Air = S.Int(Stat.AirJumps);
+        if (onFloor || onWall) _fuel = S[Stat.Jetpack];
         if (onFloor) _coyote = CoyoteTime; else _coyote -= dt;
         if (onWall)
         {
@@ -275,7 +279,8 @@ public partial class Avatar : CharacterBody2D
         if (_jumpBuffer > 0)
         {
             float jv = S[Stat.JumpVelocity];
-            if (_coyote > 0)
+            var kind = _jumps.Use(_coyote > 0, _wallCoyote > 0, _fuel > 0, jumpPressed);
+            if (kind == JumpKind.Ground)
             {
                 v.Y = -jv;
                 _coyote = 0;
@@ -291,14 +296,14 @@ public partial class Avatar : CharacterBody2D
                 _wallJumpLock = 0.14f;
                 Game.OnJump(this);
             }
-            else if (_airJumpsLeft > 0)
+            else if (kind is JumpKind.Ledge or JumpKind.Air)
             {
-                v.Y = -jv * 0.9f;
-                _airJumpsLeft--;
+                // The kept ground jump (walked or knocked off a ledge) is a full jump; card air jumps are a bit weaker.
+                v.Y = kind == JumpKind.Ledge ? -jv : -jv * 0.9f;
                 _jumpBuffer = 0;
                 Game.OnJump(this, air: true);
             }
-            else if (_fuel > 0 && jumpPressed)
+            else if (kind == JumpKind.Jet)
             {
                 _jetting = true;
                 _jumpBuffer = 0;
@@ -310,6 +315,7 @@ public partial class Avatar : CharacterBody2D
         {
             v.Y = -MapGenerator.PadVelocity;
             _coyote = 0;
+            _jumps.Ground = false; // a pad launch counts as the ground jump
         }
 
         Velocity = v;

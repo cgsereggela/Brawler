@@ -192,7 +192,8 @@ public sealed class BotBrain : IInputSource
         // Only a real pit (nothing below at all) counts as a fall to save: a jetpack bot that "saved" itself from
         // every long drop could never get down off a high ledge, and hovered over it all battle.
         bool pit = !onFloor && !GroundBelow(self, MapLayout.Height);
-        if (!onFloor && (self.S[Stat.AirJumps] > 0 || jet) && self.Velocity.Y > 20 && ((!descending && (to.Y < -40 || climbing)) || pit))
+        // A bot that walked or was knocked off a ledge still has its ground jump (Avatar.MidAirJumpsLeft counts it).
+        if (!onFloor && (self.MidAirJumpsLeft > 0 || jet) && self.Velocity.Y > 20 && ((!descending && (to.Y < -40 || climbing)) || pit))
             wantJump = true;
         bool glide = self.S[Stat.Glide] > 0 && !onFloor && self.Velocity.Y > 0 && ((!descending && to.Y < -20) || pit);
 
