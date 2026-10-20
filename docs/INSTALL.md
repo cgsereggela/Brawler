@@ -53,13 +53,15 @@ switches to OpenGL by itself if Vulkan isn't available.
 
 ## 3. Play
 
-| Action | Keys |
+| Action | Keys (change them in Options → Controls) |
 |---|---|
 | Move | A / D (or arrows) |
-| Jump / wall jump | W / Space (you can still jump for a moment after running off a ledge) |
+| Jump / wall jump | W / Space / Up. If you walk or get knocked off a ledge without jumping, you keep that jump and can use it any time while falling. |
 | Shoot | Left mouse (hold) |
 | Block | Right mouse / Shift |
-| Leave match | Esc twice |
+| Options during a match | Esc. They open over the game, which keeps running; your character stands still while they're open. |
+| Leave match | Esc, then **Leave match**, then **Yes** |
+| Windowed ⇄ full screen | Alt+Enter |
 
 - **Play vs Bots:** you against bots. Add up to three in the lobby.
 - **Host Game:** opens a lobby that friends can join. You can fill empty slots with bots.
@@ -68,6 +70,20 @@ switches to OpenGL by itself if Vulkan isn't available.
 
 Win battles to take a round, and win rounds to take the match. After every round everyone picks a card,
 and players who lost get more cards to choose from.
+
+## Options
+
+Open **Options** from the main menu or the lobby, or press **Esc** during a match. Every change applies at once and is saved.
+
+- **Audio:** master, music and sound-effect volume.
+- **Video → Window:** *Windowed* (a normal window), *Borderless* (fills the screen without a frame, alt-tabs instantly) or
+  *Fullscreen* (exclusive full screen, can be a little smoother but is slower to alt-tab). Alt+Enter switches between
+  windowed and your last full-screen choice.
+- **Video → Bloom:** how strongly bright things glow (shots, explosions, lava, neon edges). Default 50%. 100% is the full
+  glow and 0% turns it off, which also saves some GPU time.
+- **Controls:** each action has three slots. Click a slot, then press the key or mouse button you want (Esc cancels).
+  Right-click a slot to clear it. If that key already belongs to another action it moves over, and the menu tells you.
+  **Reset to defaults** puts everything back. The menu shows the letters printed on your own keyboard layout.
 
 ## Updating
 

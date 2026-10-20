@@ -7,3 +7,4 @@ tools/*/obj/
 tools/*/out/
 build/
 dist/
+.claude/worktrees/

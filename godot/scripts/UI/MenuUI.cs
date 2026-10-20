@@ -76,7 +76,10 @@ public partial class MenuUI : Control
         bottomRow.AddChild(quit);
         body.AddChild(bottomRow);
 
-        var hint = UiKit.Label("A/D move   W/Space jump   LMB shoot   RMB/Shift block", UiKit.Tiny, Palette.TextDim with { A = 0.8f }, HorizontalAlignment.Center);
+        // The player's own bindings; refreshed whenever the menu comes back (for example after Options).
+        static string Controls() => Keybinds.Summary() + "   Esc options";
+        var hint = UiKit.Label(Controls(), UiKit.Tiny, Palette.TextDim with { A = 0.8f }, HorizontalAlignment.Center);
+        VisibilityChanged += () => { if (Visible) hint.Text = Controls(); };
         hint.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom);
         hint.OffsetTop = -26;
         hint.OffsetBottom = -8;

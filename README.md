@@ -19,13 +19,20 @@ You don't need anything else installed. Step-by-step guides:
 Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe with `--path godot`.
 
 ### Controls
+Defaults; rebind them in Options → Controls.
+
 | Action | Keys |
 |---|---|
 | Move | A / D (or arrows) |
-| Jump / wall jump | W / Space |
+| Jump / wall jump | W / Space / Up (walk off a ledge and you keep your jump for the whole fall) |
 | Shoot | Left mouse (hold) |
 | Block | Right mouse / Shift |
-| Leave match | Esc twice |
+| Options in a match | Esc (an overlay; the game keeps running) |
+| Leave match | Esc → Leave match → Yes |
+| Windowed ⇄ full screen | Alt+Enter |
+
+Options also has window mode (Windowed / Borderless / Fullscreen) and bloom strength (default 50%). Everything is saved to
+`%APPDATA%\Godot\app_userdata\Brawler\settings.cfg`.
 
 ### Playing with friends
 - **Host:** Menu → *Host Game*. The lobby shows your LAN/VPN address(es) and the port (default `24565`). It also asks
@@ -197,7 +204,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -211,4 +218,9 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --cards=random:5  # every battle deals 5 random cards to each player
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --cards=57,62,69    # everyone holds these card ids (offline only)
 "$GODOT" --path godot -- --themebench                                  # frame time per arena theme (vsync off)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first
+"$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
+"$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect
+"$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked
+"$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
 ```
