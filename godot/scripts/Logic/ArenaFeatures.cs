@@ -115,11 +115,12 @@ public static class ArenaFeatures
         }
     }
 
-    /// <summary>A mover on [lx1, lx2] at height y, if its whole lane (plus room to ride it and pass under) is free.</summary>
+    /// <summary>A mover on [lx1, lx2] at height y, if its whole lane (plus MinClearance to ride it and pass under) is free.</summary>
     private static bool TryMover(MapLayout map, Rng rng, List<RectI> keep, int lx1, int lx2, int y)
     {
         if (lx2 - lx1 < 48) return false;
-        var lane = new RectI(lx1 - 2, y - 34, lx2 - lx1 + MoverW + 4, MoverH + 34 + 22);
+        int c = MapGenerator.MinClearance;
+        var lane = new RectI(lx1 - 2, y - c, lx2 - lx1 + MoverW + 4, MoverH + c * 2);
         if (!Clear(map, keep, lane)) return false;
         float period = MathF.Max(3f, (lx2 - lx1) * 2 / 45f);
         map.Movers.Add(new Mover(lx1, lx2, y, MoverW, MoverH, period, rng.Range(0f, 1f)));
@@ -133,7 +134,8 @@ public static class ArenaFeatures
         if (map.Movers.Count == 0 && rng.Chance(0.45f))
             for (int i = 0; i < 30; i++)
             {
-                int y = MapGenerator.FloorY - MapGenerator.TierSpacing * rng.Range(1, 6) - 20;
+                // Halfway between two tiers, so it only needs those two clear over its lane.
+                int y = MapGenerator.TierY(rng.Range(1, 6)) - MapGenerator.TierSpacing / 2;
                 int travel = rng.Range(10, 20) * 8;
                 int x = rng.Range(3, (MapLayout.Width - travel - MoverW) / 8 - 3) * 8;
                 if (TryMover(map, rng, keep, x, x + travel, y)) break;
@@ -144,9 +146,10 @@ public static class ArenaFeatures
             for (int i = 0; i < 30; i++)
             {
                 int tiles = rng.Range(4, 7), w = tiles * GlassTile;
-                int y = MapGenerator.FloorY - MapGenerator.TierSpacing * rng.Range(1, 5) - 16;
+                int y = MapGenerator.TierY(rng.Range(1, 5)) - MapGenerator.TierSpacing / 2;
                 int x = rng.Range(3, (MapLayout.Width - w) / 8 - 3) * 8;
-                var room = new RectI(x - 16, y - 30, w + 32, GlassTile + 30 + 24);
+                int c = MapGenerator.MinClearance;
+                var room = new RectI(x - 16, y - c, w + 32, GlassTile + c * 2);
                 if (!Clear(map, keep, room)) continue;
                 for (int k = 0; k < tiles; k++) map.Props.Add(new PropSpawn(PropKind.Glass, x + k * GlassTile, y, GlassTile, GlassTile));
                 keep.Add(room);
@@ -200,7 +203,8 @@ public static class ArenaFeatures
                 x2 = x1 + len;
             }
             float y = s.Y - 2; // mostly above the surface, its bottom teeth sunk into a slot
-            var zone = new RectI((int)(x1 - r - 6), (int)(y - r - 30), (int)(x2 - x1 + 2 * r + 12), (int)(r + 34));
+            int zx1 = (int)MathF.Floor(x1 - r - 6), zx2 = (int)MathF.Ceiling(x2 + r + 6); // round outward, never shrink
+            var zone = new RectI(zx1, (int)(y - r - 30), zx2 - zx1, (int)(r + 34));
             if (!ClearOfKeep(keep, zone)) continue;
             float period = MathF.Max(2.2f, (x2 - x1) * 2 / 55f);
             map.Saws.Add(new SawTrack(x1, y, x2, y, r, period, rng.Range(0f, 1f)));
