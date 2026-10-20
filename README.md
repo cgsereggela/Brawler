@@ -85,6 +85,7 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
   - *Islands*: floating islands over deadly pits.
   - *Towers*: solid towers rising from the floor, climbed by zigzag ledges.
 - About 38% of arenas get **floor terrain** (`godot/scripts/Logic/Terrain.cs`): hills, stepped hills, mesas and shelves against the side walls, with valleys between them. Ramps are at most ~34° and you can run up them; bullets bounce off them at the real angle. Mirror arenas mirror their terrain.
+- The floor is a thick band (`MapGenerator.FloorDepth`, 32 px) along the bottom of the screen. Your cards are listed inside it, so they never cover the fight.
 - Stacked platforms always leave at least 40 px of clear air (`MapGenerator.MinClearance`), enough for a Giant to walk under.
 - **Jump pads** (glowing plates with rising chevrons) launch you about 170 px up. Maps never rely on them to connect spawns.
 - **Arena features**, also seeded (`godot/scripts/Logic/ArenaFeatures.cs`). Like pads, maps never rely on them to connect spawns, and they always stay clear of spawns:

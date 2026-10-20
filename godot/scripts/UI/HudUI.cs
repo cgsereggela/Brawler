@@ -111,11 +111,12 @@ public partial class HudUI : Control
         var me = _game.LocalMatchPlayer;
         if (me != null && me.Cards.Count > 0 && _game.Phase != Phase.CardPick)
         {
-            float bx = 10;
+            // Centered in the floor band (MapGenerator.FloorDepth), so the strip never covers the fight.
+            float bx = 10, band = vs.Y * MapGenerator.FloorDepth / MapLayout.Height;
             foreach (var c in CardRegistry.Resolve(me.Cards))
             {
                 float w = bold.GetStringSize(c.Name, HorizontalAlignment.Left, -1, 11).X + 24;
-                var r = new Rect2(bx, vs.Y - 26, w, 18);
+                var r = new Rect2(bx, vs.Y - band / 2 - 9, w, 18);
                 Pill(r, new Color(0.06f, 0.03f, 0.13f, 0.7f), new Color(1, 1, 1, 0.1f));
                 DrawCircle(r.Position + new Vector2(9, 9), 3.5f, UiKit.CategoryColor(c.Category), true, -1, true);
                 DrawString(bold, r.Position + new Vector2(16, 13), c.Name, HorizontalAlignment.Left, -1, 11, Palette.Text);
