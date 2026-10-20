@@ -183,11 +183,15 @@ public static class CardRegistry
             if (ById.TryGetValue(id, out var c)) yield return c;
     }
 
-    /// <summary>Picks <paramref name="count"/> distinct random cards.</summary>
-    public static List<int> RollOptions(Rng rng, int count)
+    /// <summary>
+    /// Picks <paramref name="count"/> distinct random cards, skipping <paramref name="disabled"/> ones (see CardPool).
+    /// If the pool runs short the offer is just smaller; if nothing at all is enabled, every card is back in play,
+    /// so a pick can never come up empty.
+    /// </summary>
+    public static List<int> RollOptions(Rng rng, int count, IReadOnlySet<int> disabled = null)
     {
-        var pool = new List<int>();
-        foreach (var c in All) pool.Add(c.Id);
+        var pool = CardPool.Allowed(disabled);
+        if (pool.Count == 0) pool = CardPool.Allowed(null);
         var result = new List<int>();
         while (result.Count < count && pool.Count > 0)
         {

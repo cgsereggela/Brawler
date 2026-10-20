@@ -179,7 +179,8 @@ public partial class GameManager : Node2D
         foreach (var p in Active())
         {
             int count = p.Slot == roundWinner ? Settings.WinnerChoices : Settings.LoserChoices;
-            if (count > 0) entries.Add((p.Slot, CardRegistry.RollOptions(HostRng, count)));
+            var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards) : null;
+            if (ids is { Count: > 0 }) entries.Add((p.Slot, ids));
         }
         if (entries.Count == 0)
         {

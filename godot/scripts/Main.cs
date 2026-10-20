@@ -16,6 +16,8 @@ namespace Brawler;
 ///   --autotest            offline match, local player + 3 bots all on autopilot; exits 0 when the match ends
 ///   --autohost[=port]     host a LAN game with 1 bot, autopilot, start once a client joins
 ///   --autojoin[=ip:port]  join a LAN game on autopilot
+///                         (all three take some cards out of the pool and fail if a pick offers one; the joiner also
+///                         checks it received the host's disabled list)
 ///   --simulate=N          play N bot-only matches back to back (2–4 players) to fill the card stats log; exits 0
 ///   --players=A[-B]       player count (or range) per simulated match, default 2-4
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
@@ -118,13 +120,16 @@ public partial class Main : Node
         {
             SaveProfile();
             _net.StartOffline();
+            LoadCardPool();
             _net.AddBot();
             Show(_lobby);
         };
         _menu.HostLan += () =>
         {
             SaveProfile();
-            if (_net.Host(_menu.Port)) Show(_lobby);
+            if (!_net.Host(_menu.Port)) return;
+            LoadCardPool();
+            Show(_lobby);
         };
         _menu.JoinLan += () =>
         {
@@ -217,6 +222,14 @@ public partial class Main : Node
 
     private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
 
+    /// <summary>A new lobby starts from the card pool this player last hosted with.</summary>
+    private void LoadCardPool()
+    {
+        var s = _net.Lobby.Settings;
+        s.DisabledCards = CardPoolSettings.Load();
+        _net.SetSettings(s);
+    }
+
     private void Show(params Control[] screens)
     {
         bool inArena = screens.Contains(_hud);
@@ -244,6 +257,7 @@ public partial class Main : Node
             t.Timeout += () =>
             {
                 if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
+                else if (_poolCheck && _poolPicks == 0) Finish(1, "poolcheck: the match ended without a card pick");
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -310,7 +324,10 @@ public partial class Main : Node
                 _net.AddBot();
                 _net.AddBot();
                 _net.AddBot();
-                _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3 });
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3, DisabledCards = new(AutoDisabled) });
+                var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
+                if (!roundTrip.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: lobby round trip gave [{string.Join(",", roundTrip)}]"); return; }
+                StartPoolCheck();
                 Log.Info("AUTOTEST offline starting");
                 _game.HostStartMatch();
             }
@@ -324,7 +341,8 @@ public partial class Main : Node
                 _net.UseUpnp = false;
                 if (!_net.Host(port)) { Finish(1, "could not host"); return; }
                 _net.AddBot();
-                _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2 });
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, DisabledCards = new(AutoDisabled) });
+                StartPoolCheck();
                 _net.LobbyChanged += AutoHostMaybeStart;
             }
             else if (a.StartsWith("--autojoin"))
@@ -336,6 +354,8 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.LocalName = "AutoJoin";
+                StartPoolCheck();
+                _net.LobbyChanged += AutoJoinCheckPool;
                 _net.Join(parts[0], port);
             }
             else if (a.StartsWith("--simulate"))
@@ -501,6 +521,21 @@ public partial class Main : Node
                     },
                     () =>
                     {
+                        _net.SetSettings(new MatchSettings { DisabledCards = new(AutoDisabled) });
+                        _lobby.ShowCardPool(true);
+                    },
+                    () =>
+                    {
+                        // Every category's None: the pool stops at its minimum and says why. Saves next to the shots.
+                        CardPoolSettings.Path = $"{_shotDir}/cards_settings.cfg";
+                        foreach (var b in _lobby.FindChildren("*", "Button", true, false).OfType<Button>().Where(b => b.Text == "None"))
+                            b.EmitSignal(BaseButton.SignalName.Pressed);
+                        int left = CardPool.EnabledCount(_net.Lobby.Settings.DisabledCards);
+                        Log.Info($"MENUSHOTS card pool after None everywhere: {left} enabled, saved [{string.Join(",", CardPoolSettings.Load().OrderBy(id => id))}]");
+                    },
+                    () =>
+                    {
+                        _lobby.ShowCardPool(false);
                         _net.UseUpnp = false; // a screenshot run must not touch the router
                         _net.Host(24611);
                         _net.AddBot();
@@ -608,6 +643,39 @@ public partial class Main : Node
             SimMatchEnded(-1);
         }
         if (_shotDir != null && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+    }
+
+    // ---------- card pool check (--autotest, --autohost, --autojoin) ----------
+
+    // Out of the pool in test matches: a few cards from every category, plus ids no card has (custom cards
+    // another machine may have) to show unknown ids pass through.
+    private static readonly int[] AutoDisabled = { 1, 2, 3, 17, 30, 43, 55, 56, 57, 58, 59, 60, 1000, 4242 };
+    private bool _poolCheck;
+    private int _poolPicks;
+
+    private void StartPoolCheck()
+    {
+        _poolCheck = true;
+        _game.CardPickBegan += () =>
+        {
+            if (!_poolCheck) return;
+            _poolPicks++;
+            var offered = _game.PickOptions.Values.SelectMany(ids => ids).ToList();
+            var bad = offered.Where(AutoDisabled.Contains).ToList();
+            if (bad.Count > 0) { Finish(1, $"poolcheck: disabled cards offered: {string.Join(",", bad)}"); return; }
+            if (_game.PickOptions.Values.Any(ids => ids.Distinct().Count() != ids.Count)) { Finish(1, "poolcheck: an offer repeats a card"); return; }
+            Log.Info($"POOLCHECK pick {_poolPicks}: {offered.Count} cards offered, none disabled");
+        };
+    }
+
+    /// <summary>The client's first lobby must carry the host's disabled list exactly.</summary>
+    private void AutoJoinCheckPool()
+    {
+        if (_net.Lobby.Players.Count == 0) return;
+        _net.LobbyChanged -= AutoJoinCheckPool;
+        var got = _net.Lobby.Settings.DisabledCards;
+        if (!got.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: client got disabled [{string.Join(",", got.OrderBy(id => id))}]"); return; }
+        Log.Info($"POOLCHECK client has the host's disabled list: {string.Join(",", got.OrderBy(id => id))}");
     }
 
     // ---------- --overlaycheck: the Esc options overlay over a running match ----------
