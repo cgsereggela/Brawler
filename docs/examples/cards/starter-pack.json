@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1001,
+    "name": "Moon Boots",
+    "description": ["Half gravity", "+1 mid-air jump", "-10% HP"],
+    "category": "Movement",
+    "mods": [
+      { "stat": "Gravity", "op": "mul", "value": 0.5 },
+      { "stat": "AirJumps", "op": "add", "value": 1 },
+      { "stat": "MaxHp", "op": "mul", "value": 0.9 }
+    ]
+  },
+  {
+    "id": 1002,
+    "name": "Porcupine",
+    "description": ["Attackers take 30% of", "the damage they deal you", "Take 10% less damage", "-10% move speed"],
+    "category": "Body",
+    "mods": [
+      { "stat": "Thorns", "op": "add", "value": 0.3 },
+      { "stat": "Armor", "op": "add", "value": 0.1 },
+      { "stat": "MoveSpeed", "op": "mul", "value": 0.9 }
+    ]
+  },
+  {
+    "id": 1003,
+    "name": "Phase Step",
+    "description": ["Blocking teleports you", "far toward your cursor", "-30% block cooldown", "-15% damage"],
+    "category": "Chaos",
+    "effect": "blink",
+    "mods": [
+      { "stat": "TeleportOnBlock", "op": "add", "value": 1.5 },
+      { "stat": "BlockCooldown", "op": "mul", "value": 0.7 },
+      { "stat": "Damage", "op": "mul", "value": 0.85 }
+    ]
+  }
+]

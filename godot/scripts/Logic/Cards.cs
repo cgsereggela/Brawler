@@ -173,6 +173,42 @@ public static class CardRegistry
             A(Stat.Guided, 9));
         Add(69, "Leech Field", "Drain 30 HP/s from enemies\nclose to you\n-30% damage", CardCategory.Chaos,
             A(Stat.Leech, 30), M(Stat.Damage, 0.7f));
+
+        BuiltInCount = All.Count;
+    }
+
+    /// <summary>Built-in cards are the first this many entries of <see cref="All"/>; custom cards follow them.</summary>
+    private static readonly int BuiltInCount;
+
+    public static bool IsCustom(int id) => id >= CustomCards.MinId;
+
+    /// <summary>The custom cards in play right now (the local set, or the host's while in someone else's lobby).</summary>
+    public static IReadOnlyList<CardDef> Custom => All.GetRange(BuiltInCount, All.Count - BuiltInCount);
+
+    /// <summary>
+    /// Adds a card at runtime, after the built-ins, so it can be rolled. False if its id is taken.
+    /// Callers validate first (CustomCards.Validate); this only guards the id.
+    /// </summary>
+    public static bool Register(CardDef card)
+    {
+        if (card == null || ById.ContainsKey(card.Id)) return false;
+        All.Add(card);
+        ById[card.Id] = card;
+        return true;
+    }
+
+    /// <summary>Drops every runtime-registered card, leaving the built-ins.</summary>
+    public static void ResetToBuiltIns()
+    {
+        for (int i = BuiltInCount; i < All.Count; i++) ById.Remove(All[i].Id);
+        All.RemoveRange(BuiltInCount, All.Count - BuiltInCount);
+    }
+
+    /// <summary>Replaces the custom set: built-ins plus exactly these cards, in this order.</summary>
+    public static void SetCustom(IEnumerable<CardDef> cards)
+    {
+        ResetToBuiltIns();
+        foreach (var c in cards) Register(c);
     }
 
     public static CardDef Get(int id) => ById.TryGetValue(id, out var c) ? c : null;

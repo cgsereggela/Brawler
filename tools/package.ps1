@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Runs on Windows PowerShell 5.1 and on PowerShell 7 (pwsh), so the GitHub release workflow uses this same script.
-  Each zip holds the game plus README.txt, the player guide (docs/INSTALL.md + docs/PLAYING_ONLINE.md).
+  Each zip holds the game plus README.txt, the player guide (docs/INSTALL.md + docs/PLAYING_ONLINE.md), and a
+  custom-cards folder with docs/CUSTOM_CARDS.md and the example card files from docs/examples/cards.
 
   Needs the Godot .NET (mono) editor and its export templates for the same version. Pass -InstallTemplates to
   download the templates (about 1 GB, from the official Godot GitHub release) if they are missing.
@@ -93,6 +94,13 @@ New-Item -ItemType Directory -Force $build, $dist | Out-Null
 $text = (Get-Content (Join-Path $root 'docs/INSTALL.md') -Raw) + "`n`n" + (Get-Content (Join-Path $root 'docs/PLAYING_ONLINE.md') -Raw)
 [System.IO.File]::WriteAllText($guide, $text.Replace('{VERSION}', $Version))
 
+# The custom card guide and example card files, for players who want to make their own cards.
+$extras = Join-Path $build 'custom-cards'
+if (Test-Path $extras) { Remove-Item -Recurse -Force $extras }
+New-Item -ItemType Directory -Force $extras | Out-Null
+Copy-Item (Join-Path $root 'docs/CUSTOM_CARDS.md') $extras
+Copy-Item (Join-Path $root 'docs/examples/cards/*.json') $extras
+
 Write-Host 'Importing assets...'
 Invoke-Godot --headless --path $project --import | Out-Null
 
@@ -128,13 +136,14 @@ foreach ($p in $Platforms) {
     $zipPath = Join-Path $dist "Brawler-$Version-$p.zip"
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
     if ($p -eq 'macos') {
-        # Godot already zips the .app bundle; add the guide next to it.
+        # Godot already zips the .app bundle; add the guide and the custom card folder next to it.
         Copy-Item $out $zipPath
-        if ($haveZip) { & zip -qj $zipPath $guide }
-        else { Add-ToZip $zipPath $build @($guide) }
+        if ($haveZip) { & zip -qj $zipPath $guide; Push-Location $build; & zip -qr $zipPath custom-cards; Pop-Location }
+        else { Add-ToZip $zipPath $build (@($guide) + @(Get-ChildItem $extras -File | ForEach-Object { $_.FullName })) }
     }
     else {
         Copy-Item $guide $dir
+        Copy-Item $extras $dir -Recurse
         if ($haveZip) { Push-Location $dir; & zip -qr $zipPath .; Pop-Location }
         else { Add-ToZip $zipPath $dir @(Get-ChildItem $dir -Recurse -File | ForEach-Object { $_.FullName }) }
     }

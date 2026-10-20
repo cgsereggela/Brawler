@@ -26,6 +26,7 @@ namespace Brawler;
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
+///   --carddir=DIR         load custom cards from DIR instead of user://cards (so tests leave the real folder alone)
 ///   --overlaycheck        (with --autotest) presses Esc mid-battle, checks the game keeps running under the options
 ///                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
 ///                         Esc, then finishes the match
@@ -58,6 +59,9 @@ public partial class Main : Node
         Keybinds.Init();
         AudioSettings.Init();
         DisplaySettings.Init();
+        // Before anything rolls or names a card (--cards= included).
+        var cardDir = OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--carddir="));
+        CustomCardLoader.Load(cardDir?["--carddir=".Length..].Replace('\\', '/'));
 
         // Bloom: anything drawn brighter than 1.0 (HDR 2D) glows.
         var env = new Godot.Environment

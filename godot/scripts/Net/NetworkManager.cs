@@ -113,6 +113,7 @@ public partial class NetworkManager : Node
         Mode = NetMode.None;
         Lobby = new LobbyState();
         InMatch = false;
+        CustomCardLoader.RestoreLocal(); // a client may have been using the host's cards
     }
 
     private void AddHumanLocal()
@@ -222,6 +223,9 @@ public partial class NetworkManager : Node
         if (Lobby.Players.Exists(p => p.ColorIdx == color)) color = Lobby.FreeColor();
         name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
         if (name.Length > 12) name = name[..12];
+        // Everyone plays with the host's custom cards. Sent before the lobby on the same reliable channel, so the
+        // client has them long before any card pick.
+        RpcId(sender, MethodName.SyncCards, CustomCards.Serialize(CardRegistry.Custom));
         Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look) });
         BroadcastLobby();
     }
@@ -250,6 +254,14 @@ public partial class NetworkManager : Node
     private void Rejected(string reason)
     {
         EndSession(reason);
+    }
+
+    /// <summary>Client: the host's custom card definitions replace ours until we leave (Reset restores them).</summary>
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncCards(byte[] data)
+    {
+        if (Mode != NetMode.Client) return;
+        CustomCardLoader.UseHostCards(data);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
