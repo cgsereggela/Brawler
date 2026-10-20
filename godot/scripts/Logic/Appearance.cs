@@ -21,15 +21,15 @@ public sealed class Appearance
     public static readonly string[] EyeNames = { "Round", "Big", "Dots", "Sleepy", "Angry", "Visor", "Cyclops", "Shades", "Happy" };
     public static readonly string[] NoseNames = { "None", "Dot", "Button", "Long", "Pig", "Beak", "Clown" };
     public static readonly string[] MouthNames = { "Smile", "Flat", "Open", "Grin", "Frown", "Fangs", "Tongue", "Mustache", "Cat" };
-    public static readonly string[] HairNames = { "Bald", "Short", "Spiky", "Mohawk", "Long", "Bowl", "Ponytail", "Afro" };
+    public static readonly string[] HairNames = { "None", "Twin", "Crown", "Spike", "Swept", "Nubs", "Antlers", "Ram" }; // drawn as horns
     public static readonly string[] HatNames = { "None", "Cap", "Top Hat", "Beanie", "Crown", "Party", "Headband", "Viking", "Halo", "Propeller", "Chef" };
 
     /// <summary>Hair and hat dyes. Game code turns the hex into colors.</summary>
     public static readonly (string Name, string Hex)[] Dyes =
     {
-        ("Black", "#2a2430"), ("Brown", "#6b4226"), ("Blonde", "#f2d16b"), ("Ginger", "#e0712d"),
-        ("Grey", "#a9a9bb"), ("White", "#f4f4f8"), ("Blue", "#3d6bff"), ("Pink", "#ff6fb0"),
-        ("Green", "#3fbf5f"), ("Purple", "#8e4dff"), ("Red", "#d63a3a"),
+        ("Black", "#2a2430"), ("Brown", "#6b4a36"), ("Blonde", "#d9c48a"), ("Ginger", "#b8693a"),
+        ("Grey", "#9a98a3"), ("White", "#ece6d8"), ("Blue", "#4f6fa8"), ("Pink", "#c27a98"),
+        ("Green", "#5f9a68"), ("Purple", "#7a5fa8"), ("Red", "#a84444"),
     };
 
     private static readonly string[] DyeNames = Dyes.Select(d => d.Name).ToArray();
@@ -39,7 +39,8 @@ public sealed class Appearance
     public static int Count(LookPart p) => Options[(int)p].Length;
     public static string PartLabel(LookPart p) => p switch
     {
-        LookPart.HairColor => "Hair color",
+        LookPart.Hair => "Horns",
+        LookPart.HairColor => "Horn tint",
         LookPart.HatColor => "Hat color",
         _ => p.ToString(),
     };
