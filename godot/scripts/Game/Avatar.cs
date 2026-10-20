@@ -47,7 +47,7 @@ public partial class Avatar : CharacterBody2D
     private const float PushSpeed = 0.55f; // crates move at this fraction of your run speed
     // A wall jump kicks you off at this multiple of run speed, then steering is weak for WallJumpLock seconds. Kept small
     // so you can steer straight back and climb a single wall by jumping off it while holding toward it.
-    private const float WallJumpKick = 1.15f, WallJumpLock = 0.1f;
+    private const float WallJumpKick = 1.15f, WallJumpLock = 0.05f;
 
     public MatchPlayer Player;
     public GameManager Game;
