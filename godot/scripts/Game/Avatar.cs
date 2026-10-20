@@ -43,6 +43,9 @@ public partial class Avatar : CharacterBody2D
     // missed step can be saved mid-air. Falls are capped low enough to read and react to.
     private const float CoyoteTime = 0.2f, WallCoyoteTime = 0.1f, JumpBuffer = 0.12f, WallSlideSpeed = 40f, MaxFall = 430f;
     private const float PushSpeed = 0.55f; // crates move at this fraction of your run speed
+    // A wall jump kicks you off at this multiple of run speed, then steering is weak for WallJumpLock seconds. Kept small
+    // so you can steer straight back and climb a single wall by jumping off it while holding toward it.
+    private const float WallJumpKick = 1.15f, WallJumpLock = 0.1f;
 
     public MatchPlayer Player;
     public GameManager Game;
@@ -285,10 +288,10 @@ public partial class Avatar : CharacterBody2D
             else if (_wallCoyote > 0)
             {
                 v.Y = -jv * 0.95f * S[Stat.WallJump];
-                v.X = _wallNormalX * speed * 1.5f;
+                v.X = _wallNormalX * speed * WallJumpKick;
                 _wallCoyote = 0;
                 _jumpBuffer = 0;
-                _wallJumpLock = 0.14f;
+                _wallJumpLock = WallJumpLock;
                 Game.OnJump(this);
             }
             else if (_airJumpsLeft > 0)
