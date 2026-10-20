@@ -121,6 +121,7 @@ Everything is computed from the card list every peer already has, so nothing ext
 - **Customize Character** (in the menu or lobby) opens the editor: body color, eyes, nose, mouth, hair, hair color, hat and hat color, plus *Randomize*. The preview follows your mouse.
 - Your name, color and look are saved to `%APPDATA%\Godot\app_userdata\Brawler\profile.cfg` and sent to everyone in the lobby. Bots get a random look.
 - Looks are cosmetic only. A hat is drawn above the hitbox and never takes a hit.
+- Characters hold the gun out at arm's length, and it swings around the front of the body as they aim, so it never covers the face. Bullets leave from the drawn muzzle: the arm and gun geometry lives in `godot/scripts/Logic/GunRig.cs`, shared by the art and the host's bullet origin, and the unit tests sweep every aim to check the gun stays clear of every face option.
 
 ## Look and feel
 - **Rendering:** the game renders at the window's resolution (base 800×450, `canvas_items` stretch) with 4× MSAA. All art is smooth vector shapes drawn in code, and there are no image files.
@@ -133,7 +134,7 @@ Everything is computed from the card list every peer already has, so nothing ext
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
   scripts/Main.cs           wiring, screens, automated test modes
-  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, ArenaFeatures, Sweep, Appearance,
+  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, ArenaFeatures, Sweep, Appearance, GunRig,
                             StatsModel/StatsReport, Synth (sound and music)
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
   scripts/Net/              NetworkManager (ENet host/join, lobby sync, version check), PortOpener (UPnP)

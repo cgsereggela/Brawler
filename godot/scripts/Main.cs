@@ -25,7 +25,8 @@ namespace Brawler;
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
-///   --aimshots=DIR        screenshot avatars aiming every way (barrel vs aim line, Muzzle dot) into DIR, then quit
+///   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
+///                         some with full recoil) into DIR, then quit
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
@@ -508,7 +509,16 @@ public partial class Main : Node
                 var canvas = new Control();
                 canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
                 _menu.GetParent().AddChild(canvas);
-                var gun = new GunLook(Receiver: 5, Barrel: 6, BarrelThick: 2, Mag: 2, Scope: true, Stock: 2);
+                var gun = GunLook.Default;
+                // Faces that reach furthest (beak, long nose, visor, big eyes, shades, mustache) to check the gun clears them.
+                Appearance Face(int k)
+                {
+                    var look = Appearance.Default();
+                    look[LookPart.Nose] = new[] { 5, 3, 0, 6 }[k % 4];
+                    look[LookPart.Eyes] = new[] { 1, 5, 7, 4 }[k / 4 % 4];
+                    look[LookPart.Mouth] = new[] { 7, 3, 6 }[k % 3];
+                    return look;
+                }
                 canvas.Draw += () =>
                 {
                     const float s = 2.4f;
@@ -521,8 +531,8 @@ public partial class Main : Node
                         canvas.DrawCircle(at + aim * 70, 4, Colors.Red);
                         AvatarArt.Draw(canvas, at, new AvatarPose
                         {
-                            Body = Palette.Player(k % 4), Look = Appearance.Default(), Facing = facing, Aim = aim,
-                            Scale = s, Grounded = true, Gun = true, GunLook = gun, Flash = k % 2 == 0 ? 1 : 0,
+                            Body = Palette.Player(k % 4), Look = Face(k), Facing = facing, Aim = aim,
+                            Scale = s, Grounded = true, Gun = true, GunLook = gun, Flash = k % 2 == 0 ? 1 : 0, Kick = k % 3 == 0 ? 1 : 0,
                         });
                         canvas.DrawCircle(at + AvatarArt.Muzzle(aim, facing, s, gun), 2.5f, Colors.Cyan);
                     }

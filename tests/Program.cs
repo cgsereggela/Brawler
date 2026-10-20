@@ -856,5 +856,71 @@ void Check(bool cond, string name, string detail = "")
     Check(fallbacks <= seeds * 3 / 200, "Fallback rate stays under 0.5% with the clearance", $"{fallbacks}/{seeds * 3}");
 }
 
+// ---------- Gun rig: arms hold the gun clear of the face; muzzle is shared by art and bullets ----------
+{
+    // Add any new gun look here: the hand path in GunRig must keep every look clear of the face.
+    var looks = new[]
+    {
+        ("default", GunLook.Default),
+    };
+    // Every aim the facing rules allow in sprite space: up to MaxBackAimX behind, from straight up round to straight down.
+    float back = MathF.Asin(GunRig.MaxBackAimX);
+    foreach (var (name, look) in looks)
+    {
+        var boxes = GunRig.Footprint(look);
+        int covered = 0;
+        var bad = new SortedSet<int>();
+        float minMargin = float.MaxValue;
+        string worst = "";
+        for (float deg = -90 - back * 180 / MathF.PI; deg <= 90 + back * 180 / MathF.PI + 1e-3f; deg += 0.5f)
+            foreach (float kick in new[] { 0f, 0.5f, 1f })
+            {
+                float rad = deg * MathF.PI / 180;
+                var (hand, angle) = GunRig.Pose(new Vector2(MathF.Cos(rad), MathF.Sin(rad)), kick);
+                foreach (var (x, y, w, h) in boxes)
+                    for (float u = x; u <= x + w + 1e-3f; u += Math.Min(0.25f, w))
+                        for (float v = y; v <= y + h + 1e-3f; v += Math.Min(0.25f, h))
+                        {
+                            var p = GunRig.ToSprite(new Vector2(u, v), hand, angle);
+                            foreach (var (fx, fy, fw, fh) in GunRig.Face)
+                            {
+                                // Signed distance outside the face box (negative = inside).
+                                float dx = Math.Max(fx - p.X, p.X - (fx + fw)), dy = Math.Max(fy - p.Y, p.Y - (fy + fh));
+                                float margin = dx > 0 && dy > 0 ? MathF.Sqrt(dx * dx + dy * dy) : Math.Max(dx, dy);
+                                if (margin < minMargin) { minMargin = margin; worst = $"{deg:0.#} deg kick {kick} gun ({u:0.##},{v:0.##}) at {p} in face box {fx},{fy}"; }
+                                if (margin < 0) { covered++; bad.Add((int)MathF.Floor(deg / 5) * 5); }
+                            }
+                        }
+            }
+        Check(covered == 0, $"Gun ({name}) never covers the eyes, nose or mouth at any allowed aim or recoil",
+            $"closest {minMargin:0.00} px at {worst}{(covered > 0 ? $"; {covered} points inside, aims (5-degree bands): {string.Join(",", bad)}" : "")}");
+    }
+
+    // The muzzle mirrors with facing, scales with size and sits past the body at arm's length.
+    var g = GunLook.Default;
+    var right = GunRig.Muzzle(new Vector2(1, 0), 1, 1, g);
+    var left = GunRig.Muzzle(new Vector2(-1, 0), -1, 1, g);
+    var big = GunRig.Muzzle(new Vector2(1, 0), 1, 2, g);
+    Check(MathF.Abs(right.X + left.X) < 1e-4f && MathF.Abs(right.Y - left.Y) < 1e-4f, "Muzzle mirrors with facing", $"{right} / {left}");
+    Check(Vector2.Distance(big, right * 2) < 1e-4f, "Muzzle scales with size", $"{big} vs {right * 2}");
+    Check(right.X > Body.W / 2 + 8, "Level muzzle is held out at arm's length past the body", $"{right}");
+    var up = GunRig.Muzzle(new Vector2(0, -1), 1, 1, g);
+    Check(up.Y < -Body.H / 2 && up.X > Body.W / 2, "Upward muzzle is raised above the head, out in front of the face", $"{up}");
+
+    // The muzzle (bullet origin) follows the aim smoothly: no jumps as the aim sweeps, so bullets leave the barrel.
+    float maxStep = 0;
+    for (int facing = -1; facing <= 1; facing += 2)
+        for (float deg = -100; deg < 100; deg += 1)
+        {
+            Vector2 A(float d) => new(facing * MathF.Cos(d * MathF.PI / 180), MathF.Sin(d * MathF.PI / 180));
+            maxStep = Math.Max(maxStep, Vector2.Distance(GunRig.Muzzle(A(deg), facing, 1, g), GunRig.Muzzle(A(deg + 1), facing, 1, g)));
+        }
+    Check(maxStep < 0.6f, "Muzzle moves smoothly as the aim turns (1 degree steps)", $"largest step {maxStep:0.000} px");
+
+    // Same inputs, same muzzle: the host's bullet origin is a pure function every peer can reproduce.
+    Check(GunRig.Muzzle(new Vector2(0.6f, -0.8f), 1, 1.3f, g) == GunRig.Muzzle(new Vector2(0.6f, -0.8f), 1, 1.3f, g),
+        "Muzzle is deterministic");
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

@@ -25,14 +25,6 @@ public struct AvatarPose
     public float Flash;       // 0..1 muzzle flash
 }
 
-/// <summary>Gun shape parameters. Every gun is built from these, so cards can later swap in a different look.</summary>
-public readonly record struct GunLook(int Receiver = 5, int Barrel = 6, int BarrelThick = 2, int Mag = 0, bool Scope = false, int Stock = 0)
-{
-    // Spelled out: new() on a record struct skips the primary constructor and gives all zeros.
-    public static readonly GunLook Default = new(Receiver: 5, Barrel: 6, BarrelThick: 2, Mag: 0, Scope: false, Stock: 0);
-    public int MuzzleX => Receiver + Barrel - 1;
-}
-
 /// <summary>
 /// Vector art for players: body, face parts, hair, hats and the gun, built from smooth polygons so they stay crisp
 /// at any resolution. Sprite space faces right with the body centered on (0,0) and covering x -7..7, y -9..9
@@ -59,16 +51,37 @@ public static class AvatarArt
     public static float TopY(Appearance look)
         => Mathf.Min(HairTop[Math.Clamp(look.Hair, 0, HairTop.Length - 1)], HatTop[Math.Clamp(look.Hat, 0, HatTop.Length - 1)]);
 
-    /// <summary>Where the hand holds the gun, relative to the body center (world units, unrotated).</summary>
-    public static Vector2 GunPivot(Vector2 aim, float scale) => (new Vector2(0, 3f) + aim * 5f) * scale;
-
-    /// <summary>Muzzle position relative to the body center, matching what Draw renders with no recoil.</summary>
+    /// <summary>
+    /// Muzzle position relative to the body center, matching what Draw renders with no recoil. The geometry lives in
+    /// <see cref="GunRig"/> (engine-independent) so the host's bullet origin and the art always agree.
+    /// </summary>
     public static Vector2 Muzzle(Vector2 aim, int facing, float scale, GunLook g)
-        => GunXform(GunPivot(aim, scale), aim.Angle(), scale, facing) * new Vector2(g.MuzzleX + 1, -g.BarrelThick * 0.5f);
+    {
+        var m = GunRig.Muzzle(new System.Numerics.Vector2(aim.X, aim.Y), facing, scale, g);
+        return new Vector2(m.X, m.Y);
+    }
 
-    /// <summary>Gun space to body space: mirror the gun's y when facing left, then rotate to the aim, then move to the hand.</summary>
-    private static Transform2D GunXform(Vector2 pivot, float angle, float scale, int facing)
-        => new(angle, new Vector2(scale, facing < 0 ? -scale : scale), 0, pivot);
+    private static System.Numerics.Vector2 N(Vector2 v) => new(v.X, v.Y);
+    private static Vector2 G(System.Numerics.Vector2 v) => new(v.X, v.Y);
+
+    /// <summary>Sprite-space aim the gun follows: GunAim if set, else Aim, else straight ahead.</summary>
+    private static System.Numerics.Vector2 SpriteGunAim(AvatarPose p, int facing)
+    {
+        var aim = p.GunAim.LengthSquared() > 0.01f ? p.GunAim : p.Aim.LengthSquared() > 0.01f ? p.Aim : new Vector2(facing, 0);
+        return GunRig.SpriteAim(N(aim), facing);
+    }
+
+    /// <summary>
+    /// Gun space to canvas space: rotate to the gun angle and move to the hand (sprite space, see <see cref="GunRig"/>),
+    /// then mirror by facing and scale like the body, around <paramref name="bodyOrigin"/>. Mirroring after the rotation
+    /// keeps the grip hanging down on both sides.
+    /// </summary>
+    private static Transform2D GunXform(Vector2 bodyOrigin, Vector2 hand, float angle, float scale, int facing)
+    {
+        float cs = Mathf.Cos(angle), sn = Mathf.Sin(angle);
+        return new Transform2D(new Vector2(facing * cs, sn) * scale, new Vector2(-facing * sn, cs) * scale,
+            bodyOrigin + new Vector2(facing * hand.X, hand.Y) * scale);
+    }
 
     // =====================================================================
     // Drawing
@@ -112,7 +125,9 @@ public static class AvatarArt
         Shapes.Fill(ci, Shapes.Ellipse(back, 2.7f, 1.7f, 16), shoe.Darkened(0.1f), shoeLine, 0.5f);
         Shapes.Fill(ci, Shapes.Ellipse(front, 2.7f, 1.7f, 16), shoe, shoeLine, 0.5f);
 
-        ci.DrawSetTransform(origin + new Vector2(0, (bob - breathe) * s), 0, scale);
+        var bodyOrigin = origin + new Vector2(0, (bob - breathe) * s);
+        ci.DrawSetTransform(bodyOrigin, 0, scale);
+        if (p.Gun) DrawArms(c, facing); // behind the body, in body (sprite) space, so they ride along with it
         DrawHairBack(c, look.Hair);
         DrawBody(c, breathe);
         DrawEyes(c, look.Eyes, facing);
@@ -121,7 +136,7 @@ public static class AvatarArt
         DrawHair(c, look.Hair);
         DrawHat(c, look.Hat);
 
-        if (p.Gun) DrawGun(c, origin + new Vector2(0, bob * s), s, facing);
+        if (p.Gun) DrawGun(c, bodyOrigin, s, facing);
         ci.DrawSetTransformMatrix(Transform2D.Identity);
     }
 
@@ -582,19 +597,33 @@ public static class AvatarArt
         }
     }
 
+    // ---------- arms ----------
+    // Two stubby arms in the body color, from the shoulders (GunRig.FrontShoulder / BackShoulder, sprite space) to the
+    // hands on the grip and the foregrip. Drawn before the body, so the body hides their roots and they can never
+    // cover the face; only the part reaching out past the body shows.
+
+    private const float ArmRadius = 1.05f, ArmOutline = 0.55f;
+
+    private static void DrawArms(Ctx c, int facing)
+    {
+        var p = c.P;
+        var g = p.GunLook == default ? GunLook.Default : p.GunLook;
+        var (hand, angle) = GunRig.Pose(SpriteGunAim(p, facing), p.Kick);
+        var grip = G(GunRig.ToSprite(new System.Numerics.Vector2(0.6f, 0.2f), hand, angle));
+        var fore = G(GunRig.ToSprite(g.ForegripLocal, hand, angle));
+        var line = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
+        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.BackShoulder), fore, ArmRadius), c.H(p.Body.Darkened(0.22f)), line, ArmOutline);
+        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.FrontShoulder), grip, ArmRadius), c.H(p.Body.Darkened(0.08f)), line, ArmOutline);
+    }
+
     // ---------- gun ----------
 
-    private static void DrawGun(Ctx c, Vector2 origin, float s, int facing)
+    private static void DrawGun(Ctx c, Vector2 bodyOrigin, float s, int facing)
     {
         var ci = c.Ci;
         var p = c.P;
-        var aim = p.GunAim.LengthSquared() > 0.01f ? p.GunAim.Normalized()
-            : p.Aim.LengthSquared() > 0.01f ? p.Aim.Normalized() : new Vector2(facing, 0);
-        float angle = aim.Angle() - p.Kick * 0.35f * facing;
-        var pivot = origin + GunPivot(aim, s) - aim * (p.Kick * 2.5f * s);
-        // Flip the gun's own y (before rotating) when facing left so the grip always hangs down. Built as an explicit
-        // matrix: scaling after the rotation would mirror the aim angle instead and point the barrel up/down-swapped.
-        ci.DrawSetTransformMatrix(GunXform(pivot, angle, s, facing));
+        var (hand, angle) = GunRig.Pose(SpriteGunAim(p, facing), p.Kick);
+        ci.DrawSetTransformMatrix(GunXform(bodyOrigin, G(hand), angle, s, facing));
 
         var g = p.GunLook == default ? GunLook.Default : p.GunLook;
         const float ow = 0.45f;
@@ -618,8 +647,11 @@ public static class AvatarArt
             ci.DrawCircle(new Vector2(g.Receiver - 0.8f, -4.55f), 0.55f, c.H(Shapes.Hdr(Visor, 1.3f)), true, -1, true);
         }
 
-        // The hand on the grip, in the body color.
-        Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.Body, p.Hurt ? Colors.White : p.Body.Darkened(0.6f), 0.5f);
+        // The hands on the grip and the foregrip, in the body color (the arms behind the body reach these).
+        var handLine = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
+        var fore = G(g.ForegripLocal);
+        Shapes.Fill(ci, Shapes.Ellipse(fore, 1.3f, 1.2f, 14), c.H(p.Body.Darkened(0.12f)), handLine, 0.5f);
+        Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.Body, handLine, 0.5f);
         ci.DrawCircle(new Vector2(0.2f, -0.5f), 0.5f, new Color(1, 1, 1, 0.4f), true, -1, true);
 
         if (p.Flash > 0)
