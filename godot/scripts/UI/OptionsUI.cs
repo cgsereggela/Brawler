@@ -9,19 +9,38 @@ namespace Brawler.UI;
 /// Settings, in tabs: Audio (volume sliders), Video (window mode, bloom) and Controls (key bindings). Each tab's
 /// rows are built by their own class (DisplayOptions, BloomOptions, ControlsOptions). Audio applies live and is
 /// saved on Done.
+/// In overlay mode (Esc during a match) it dims the still-running game behind it and adds a Leave match button
+/// with a confirm step.
 /// </summary>
 public partial class OptionsUI : Control
 {
-    public event Action Closed;
+    public event Action Closed, LeaveRequested;
 
     private readonly Sfx _sfx;
     private ulong _lastPreview;
+    private bool _overlay;
+    private ColorRect _dim;
+    private Control _leaveButton, _leaveConfirm, _done;
 
     public OptionsUI(Sfx sfx) => _sfx = sfx;
     public OptionsUI() { }
 
+    /// <summary>Overlay mode: dim backdrop and the Leave match button. Off for the full-screen menu and lobby options.</summary>
+    public void SetOverlay(bool overlay)
+    {
+        _overlay = overlay;
+        if (_dim == null) return;
+        _dim.Visible = overlay;
+        ShowLeaveConfirm(false);
+    }
+
     public override void _Ready()
     {
+        // Lets the running game show through, and swallows clicks meant for the screens behind (card pick, match over).
+        _dim = new ColorRect { Color = new Color(0.02f, 0.01f, 0.06f, 0.45f), MouseFilter = MouseFilterEnum.Stop };
+        _dim.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        AddChild(_dim);
+
         var (_, body) = UiKit.CenteredPanel(this, 460);
         body.AddChild(new TitleText("OPTIONS", 30, 1.5f, Palette.Cool, Palette.Hot));
 
@@ -42,19 +61,69 @@ public partial class OptionsUI : Control
         AddSlider(grid, "Sound FX", AudioSettings.Effects, v => AudioSettings.Effects = v, "shoot");
 
         body.AddChild(UiKit.Spacer(4));
-        var done = UiKit.Primary("DONE", () =>
+        // Footer: Done fills it; in a match Leave sits to its left and swaps the row for a confirm prompt.
+        var footer = UiKit.HBox(10);
+        body.AddChild(footer);
+        _leaveButton = Danger(UiKit.Button("LEAVE MATCH", () => ShowLeaveConfirm(true), 150));
+        footer.AddChild(_leaveButton);
+        _done = UiKit.Primary("DONE", Close);
+        _done.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        footer.AddChild(_done);
+        var confirm = UiKit.HBox(8);
+        confirm.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _leaveConfirm = confirm;
+        footer.AddChild(confirm);
+        var ask = UiKit.Label("Leave match?", UiKit.Body, Palette.Text, HorizontalAlignment.Center, Fonts.Bold);
+        ask.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ask.VerticalAlignment = VerticalAlignment.Center;
+        confirm.AddChild(ask);
+        confirm.AddChild(Danger(UiKit.Button("YES", () => { AudioSettings.Save(); LeaveRequested?.Invoke(); }, 80)));
+        confirm.AddChild(NoFocus(UiKit.Button("NO", () => ShowLeaveConfirm(false), 80)));
+        SetOverlay(_overlay);
+    }
+
+    private void Close()
+    {
+        AudioSettings.Save();
+        Closed?.Invoke();
+    }
+
+    private void ShowLeaveConfirm(bool ask)
+    {
+        _leaveButton.Visible = _overlay && !ask;
+        _done.Visible = !ask;
+        _leaveConfirm.Visible = ask;
+    }
+
+    // A focused button fires on Space or Enter, which also jump while the match runs behind the overlay.
+    private static Button NoFocus(Button b)
+    {
+        b.FocusMode = FocusModeEnum.None;
+        return b;
+    }
+
+    /// <summary>The frosted button tinted hot, for leaving.</summary>
+    private static Button Danger(Button b)
+    {
+        StyleBoxFlat Box(float bg, float border) => new()
         {
-            AudioSettings.Save();
-            Closed?.Invoke();
-        });
-        body.AddChild(done);
+            BgColor = Palette.Hot with { A = bg }, BorderColor = Palette.Hot with { A = border },
+            BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10,
+            ContentMarginLeft = 14, ContentMarginRight = 14, ContentMarginTop = 7, ContentMarginBottom = 7,
+            AntiAliasing = true,
+        };
+        b.AddThemeStyleboxOverride("normal", Box(0.12f, 0.55f));
+        b.AddThemeStyleboxOverride("hover", Box(0.28f, 1f));
+        b.AddThemeStyleboxOverride("pressed", Box(0.45f, 1f));
+        b.AddThemeColorOverride("font_color", Palette.Hot.Lightened(0.35f));
+        return NoFocus(b);
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (!Visible || e is not InputEventKey { Pressed: true, Keycode: Key.Escape }) return;
-        AudioSettings.Save();
-        Closed?.Invoke();
+        if (!Visible || e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) return;
+        Close();
         GetViewport().SetInputAsHandled();
     }
 
