@@ -17,8 +17,18 @@ public struct AvatarPose
     public Vector2 GunAim;    // where the gun points; zero = same as Aim
     public float Scale;       // Stat.Size
     public float Time;        // seconds; drives idle breathing, halo bob, propeller, visor scan
-    public float WalkPhase;   // advances with distance walked
+    public float WalkPhase;   // stride cycle in radians (one full cycle = two steps), advanced with distance walked
     public bool Grounded, Moving, Blink, Hurt;
+    // Leg animation (cosmetic). All optional: left at 0, Grounded + Moving give a full walk and !Grounded a full air pose.
+    public float Walk;        // 0..1 stride strength (eases in and out with speed)
+    public int MoveDir;       // world direction of travel: -1 left, +1 right (0 = forward)
+    public float Air;         // 0..1 blend from the ground pose to the air pose
+    public float VelY;        // world vertical speed (px/s): rising tucks a knee, falling dangles the legs
+    public float Wall;        // 0..1 wall-slide blend
+    public int WallSide;      // world side the wall is on: -1 left, +1 right
+    public float GroundDrop;  // sprite units the ground sits below the hitbox bottom under the body's center (slopes)
+    public float GroundSlope; // ground dy/dx in world space (positive = descending to the right)
+    public float Land;        // 0..1 landing squash, decays after touching down
     public bool Gun;
     public GunLook GunLook;
     public float Kick;        // 0..1 recoil
@@ -27,8 +37,9 @@ public struct AvatarPose
 
 /// <summary>
 /// Vector art for players: body, face parts, hair, hats and the gun, built from smooth polygons so they stay crisp
-/// at any resolution. Sprite space faces right with the body centered on (0,0) and covering x -7..7, y -9..9
-/// (feet at the bottom). Option indices follow the name lists in <see cref="Appearance"/>.
+/// at any resolution. Sprite space faces right with the hitbox centered on (0,0) and covering x -7..7, y -9..9: the
+/// round body fills the top (y -9.5..BodyBottom) and two short legs reach down to the soles on y = 9. Option indices
+/// follow the name lists in <see cref="Appearance"/>.
 /// </summary>
 public static class AvatarArt
 {
@@ -109,27 +120,17 @@ public static class AvatarArt
         c.Hair = Palette.Dye(look.HairColor);
         c.Hat = Palette.Dye(look.HatColor);
 
-        // Walk cycle: feet alternate and the body bobs with the stride. Idle: a slow breath.
-        bool walking = p.Grounded && p.Moving;
-        float phase = walking ? p.WalkPhase * Mathf.Pi * 0.5f : 0;
-        float stride = walking ? Mathf.Sin(phase) : 0;
-        float bob = walking ? Mathf.Abs(Mathf.Sin(phase)) * 0.9f : !p.Grounded ? -0.6f : 0;
-        float breathe = p.Grounded && !p.Moving ? Mathf.Sin(p.Time * 2.4f) * 0.25f : 0;
-
+        var rig = Solve(p, facing);
         var scale = new Vector2(facing * s, s);
         ci.DrawSetTransform(origin, 0, scale);
-        var shoe = c.H(p.Body.Darkened(0.45f));
-        var shoeLine = p.Body.Darkened(0.68f);
-        Vector2 back = !p.Grounded ? new(-3.6f, 7.2f) : new(-3.2f + stride * 1.6f, 7.9f - Mathf.Max(0, -stride) * 1.1f);
-        Vector2 front = !p.Grounded ? new(3.4f, 7.0f) : new(2.9f - stride * 1.6f, 7.9f - Mathf.Max(0, stride) * 1.1f);
-        Shapes.Fill(ci, Shapes.Ellipse(back, 2.7f, 1.7f, 16), shoe.Darkened(0.1f), shoeLine, 0.5f);
-        Shapes.Fill(ci, Shapes.Ellipse(front, 2.7f, 1.7f, 16), shoe, shoeLine, 0.5f);
+        DrawLegs(c, rig);
 
-        var bodyOrigin = origin + new Vector2(0, (bob - breathe) * s);
+        // Everything above the hips (arms, body, face, hair, hat, gun) is drawn around the animated torso origin.
+        var bodyOrigin = origin + BodyOffset(p);
         ci.DrawSetTransform(bodyOrigin, 0, scale);
         if (p.Gun) DrawArms(c, facing); // behind the body, in body (sprite) space, so they ride along with it
         DrawHairBack(c, look.Hair);
-        DrawBody(c, breathe);
+        DrawBody(c, rig.Breathe);
         DrawEyes(c, look.Eyes, facing);
         DrawNose(c, look.Nose);
         DrawMouth(c, look.Mouth);
@@ -140,15 +141,171 @@ public static class AvatarArt
         ci.DrawSetTransformMatrix(Transform2D.Identity);
     }
 
+    // ---------- body and legs ----------
+
+    // The round body rides on two short legs. In sprite space the body spans y -9.5..BodyBottom and the soles rest
+    // on y = 9, the bottom of the hitbox. Everything above the hips (body, face, hair, hat, gun) moves together by
+    // BodyOffset, so add-ons that hang off the body (arms) should follow BodyOffset too.
+    public const float BodyTop = -9.5f, BodyBottom = 3.4f;
+    private const float HipX = 2.2f, HipY = 1.4f, SoleY = 9f, ShoeRx = 2.45f, ShoeRy = 1.4f, LegLen = 5.8f, LegR = 1.1f;
+    private const float FootX = 2.5f, StrideX = 2.5f, StepLift = 2.2f;
+
+    /// <summary>Middle of the body in sprite space before <see cref="BodyOffset"/> (faces right, unscaled).</summary>
+    public static readonly Vector2 TorsoAnchor = new(0, (BodyTop + BodyBottom) * 0.5f);
+
+    /// <summary>
+    /// How far the upper body (and everything drawn on it, gun included) is moved this frame by the walk bob, breathing,
+    /// landing squash, slopes and the wall-slide lean. World units relative to the draw origin (facing and scale applied).
+    /// </summary>
+    public static Vector2 BodyOffset(AvatarPose p)
+    {
+        int facing = p.Facing < 0 ? -1 : 1;
+        float s = p.Scale <= 0 ? 1 : p.Scale;
+        var rig = Solve(p, facing);
+        return new Vector2(rig.Body.X * facing, rig.Body.Y - rig.Breathe) * s;
+    }
+
+    private struct Rig
+    {
+        public Vector2 Body;            // upper-body offset, sprite space
+        public float Breathe;
+        public Vector2 Back, Front;     // shoe centers, sprite space
+        public float BackTilt, FrontTilt;
+        public float BackToe, FrontToe; // which way each toe points (+1 forward)
+    }
+
+    /// <summary>Pose â†’ body offset and foot placement. Pure function of the pose, so previews and BodyOffset agree.</summary>
+    private static Rig Solve(in AvatarPose p, int facing)
+    {
+        float air = p.Air > 0 ? Mathf.Clamp(p.Air, 0, 1) : p.Grounded ? 0 : 1;
+        float walk = (p.Walk > 0 ? Mathf.Clamp(p.Walk, 0, 1) : p.Grounded && p.Moving ? 1 : 0) * (1 - air);
+        float wall = Mathf.Clamp(p.Wall, 0, 1) * air;
+        float ground = 1 - air;
+        int dir = (p.MoveDir < 0 ? -1 : 1) * facing; // sprite-space direction of travel
+        float slope = Mathf.Clamp(p.GroundSlope, -1.2f, 1.2f) * facing;
+        float drop = Mathf.Clamp(p.GroundDrop, 0, 8);
+        float phase = p.WalkPhase;
+
+        var rig = new Rig { BackToe = 1, FrontToe = 1 };
+        rig.Breathe = ground * (1 - walk) * Mathf.Sin(p.Time * 2.4f) * 0.25f;
+
+        // Ground: planted feet when idle; when walking each foot sweeps back along the ground (stance) and lifts
+        // forward (swing), the two half a cycle apart. Each sole sits on the ground line under it, so on a ramp the
+        // downhill foot reaches further down.
+        (Vector2 at, float tilt) OnGround(float restX, float ph)
+        {
+            float x = restX + dir * StrideX * Mathf.Sin(ph) * walk;
+            float lift = Mathf.Max(0, Mathf.Cos(ph)) * StepLift * walk;
+            float under = Mathf.Clamp(drop + slope * x, -0.5f, 9f);
+            float tilt = Mathf.Atan(slope) - dir * lift * 0.12f;
+            return (new Vector2(x, SoleY - ShoeRy + under - lift), tilt);
+        }
+        var (gb, gbt) = OnGround(-FootX, phase);
+        var (gf, gft) = OnGround(FootX, phase + Mathf.Pi);
+        // Legs pass under the body at the top of the bob, the body is lowest with the feet spread.
+        float bob = -walk * (0.2f + 0.9f * Mathf.Abs(Mathf.Cos(phase)));
+        var body = new Vector2(0, bob + ground * (0.3f * drop + 1.6f * Mathf.Clamp(p.Land, 0, 1)));
+
+        // Air: rising tucks the front knee up, the apex is neutral, falling lets both legs dangle and kick.
+        float t = Mathf.Clamp(p.VelY / 260f, -1, 1);
+        Vector2 ab = new(-2.4f, 7.3f), af = new(2.9f, 6.6f);
+        float abt = 0.25f, aft = 0.1f;
+        if (t < 0)
+        {
+            ab = ab.Lerp(new Vector2(-2.2f, 7.9f), -t);
+            af = af.Lerp(new Vector2(3.3f, 5.0f), -t);
+            abt += 0.35f * -t;
+            body.Y += air * 0.6f * t;
+        }
+        else
+        {
+            float kick = Mathf.Sin(p.Time * 13f) * 0.5f * t;
+            ab = ab.Lerp(new Vector2(-3.1f, 8.4f + kick), t);
+            af = af.Lerp(new Vector2(2.6f, 8.0f - kick), t);
+            abt += 0.2f * t;
+            aft += 0.25f * t;
+        }
+
+        rig.Back = gb.Lerp(ab, air);
+        rig.Front = gf.Lerp(af, air);
+        rig.BackTilt = Mathf.Lerp(gbt, abt, air);
+        rig.FrontTilt = Mathf.Lerp(gft, aft, air);
+
+        // Wall slide: soles flat against the wall (feet turned up it), body leaning away.
+        if (wall > 0)
+        {
+            int side = (p.WallSide < 0 ? -1 : 1) * facing; // +1 = wall in front of the face
+            var high = new Vector2(side * 5.4f, 4.9f);
+            var low = new Vector2(side * 4.6f, 8.0f);
+            float up = -side * Mathf.Pi * 0.5f;
+            if (side > 0)
+            {
+                rig.Front = rig.Front.Lerp(high, wall);
+                rig.Back = rig.Back.Lerp(low, wall);
+            }
+            else
+            {
+                rig.Back = rig.Back.Lerp(high, wall);
+                rig.Front = rig.Front.Lerp(low, wall);
+                rig.BackToe = rig.FrontToe = -1;
+            }
+            rig.FrontTilt = Mathf.Lerp(rig.FrontTilt, up, wall);
+            rig.BackTilt = Mathf.Lerp(rig.BackTilt, up, wall);
+            body += new Vector2(-side * 0.9f, -0.3f) * wall;
+        }
+        rig.Body = body;
+        return rig;
+    }
+
+    private static void DrawLegs(Ctx c, Rig rig)
+    {
+        var b = c.P.Body;
+        var line = c.P.Hurt ? Colors.White : b.Darkened(0.68f);
+        Leg(c, rig, -HipX, rig.Back, rig.BackTilt, rig.BackToe, c.H(b.Darkened(0.3f)), c.H(b.Darkened(0.55f)), line);
+        Leg(c, rig, HipX, rig.Front, rig.FrontTilt, rig.FrontToe, c.H(b.Darkened(0.16f)), c.H(b.Darkened(0.45f)), line);
+    }
+
+    private static void Leg(Ctx c, Rig rig, float hipX, Vector2 foot, float tilt, float toe, Color leg, Color shoe, Color line)
+    {
+        var ci = c.Ci;
+        var hip = rig.Body + new Vector2(hipX, HipY - rig.Breathe);
+        var rot = Vector2.FromAngle(tilt);
+        var up = new Vector2(rot.Y, -rot.X); // the shoe's "up", away from the sole
+        var ankle = foot + up * (ShoeRy * 0.45f) - rot * (toe * 0.5f);
+        // Two-bone leg: when the foot is closer than the leg is long, the knee bends forward.
+        var d = ankle - hip;
+        float len = d.Length();
+        var knee = (hip + ankle) * 0.5f;
+        if (len < LegLen && len > 0.01f)
+        {
+            var perp = new Vector2(-d.Y, d.X) / len;
+            if (perp.X < 0) perp = -perp;
+            knee += perp * Mathf.Sqrt(LegLen * LegLen * 0.25f - len * len * 0.25f);
+        }
+        Shapes.Fill(ci, Shapes.Capsule(hip, knee, LegR), leg, line, 0.45f);
+        Shapes.Fill(ci, Shapes.Capsule(knee, ankle, LegR * 0.95f), leg, line, 0.45f);
+
+        // Shoe: a rounded sole-down oval, toe pushed forward, rotated to the ground (or wall) under it.
+        var pts = Shapes.Ellipse(new Vector2(toe * 0.55f, 0), ShoeRx, ShoeRy, 16);
+        for (int i = 0; i < pts.Length; i++)
+        {
+            var q = pts[i];
+            if (q.Y > 0) q.Y *= 0.7f; // flatter sole
+            pts[i] = foot + rot * q.X + up * -q.Y;
+        }
+        Shapes.Fill(ci, pts, shoe, line, 0.5f);
+        ci.DrawLine(foot + rot * (toe * -0.6f) + up * 0.75f, foot + rot * (toe * 1.6f) + up * 0.75f, new Color(1, 1, 1, 0.25f), 0.4f, true);
+    }
+
     private static void DrawBody(Ctx c, float breathe)
     {
-        var body = Shapes.RoundRect(new Rect2(-7f - breathe * 0.4f, -9.5f, 14f + breathe * 0.8f, 16.6f), 6.2f, 6);
+        var body = Shapes.RoundRect(new Rect2(-7f - breathe * 0.4f, BodyTop, 14f + breathe * 0.8f, BodyBottom - BodyTop), 6.2f, 6);
         Shapes.Fill(c.Ci, body, c.Body, c.P.Hurt ? Colors.White : c.P.Body.Darkened(0.6f), 0.9f);
         Shapes.Gradient(c.Ci, body, c.H(c.P.Body.Lightened(0.16f)), c.H(c.P.Body.Darkened(0.24f)));
         // Glossy highlight and a soft belly shade.
         c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-3.4f, -6.4f), 2.4f, 1.3f, 14), new Color(1, 1, 1, 0.38f));
         c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-4.6f, -4.6f), 0.7f, 0.6f, 10), new Color(1, 1, 1, 0.45f));
-        c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(0.6f, 4.6f), 5.4f, 1.8f, 18), new Color(0, 0, 0, 0.08f));
+        c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(0.6f, BodyBottom - 1.6f), 5f, 1.4f, 18), new Color(0, 0, 0, 0.08f));
     }
 
     // ---------- eyes ----------
@@ -377,9 +534,9 @@ public static class AvatarArt
 
     private static readonly Vector2[] LongHair =
     {
-        new(-8.6f, 4.2f), new(-8.8f, -6f), new(-7.5f, -9.2f), new(-4.7f, -11f), new(0f, -11.5f), new(4.7f, -11f), new(7.3f, -9f), new(8.1f, -6.4f),
+        new(-8.6f, 2.2f), new(-8.8f, -6f), new(-7.5f, -9.2f), new(-4.7f, -11f), new(0f, -11.5f), new(4.7f, -11f), new(7.3f, -9f), new(8.1f, -6.4f),
         new(6.2f, -7.2f), new(4.5f, -6.6f), new(3f, -7.6f), new(1.2f, -6.9f), new(-0.8f, -7.8f), new(-3f, -7.2f), new(-5f, -6.4f),
-        new(-5.7f, -2f), new(-5.5f, 4.6f), new(-7f, 5.8f),
+        new(-5.7f, -2f), new(-5.5f, 2.4f), new(-7f, 3.6f),
     };
 
     private static readonly Vector2[] BowlHair =
@@ -432,7 +589,7 @@ public static class AvatarArt
             case 4:
                 Shapes.Fill(ci, LongHair, main, line, 0.8f);
                 ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-2f, -9.9f), 2.8f, 0.75f, 12), shine);
-                ci.DrawLine(new Vector2(-7.4f, -4f), new Vector2(-7.2f, 3f), shine, 0.5f, true);
+                ci.DrawLine(new Vector2(-7.4f, -4f), new Vector2(-7.2f, 1.4f), shine, 0.5f, true);
                 break;
             case 5:
                 Shapes.Fill(ci, BowlHair, main, line, 0.8f);

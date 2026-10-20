@@ -88,6 +88,9 @@ public partial class Avatar : CharacterBody2D
     // Animation only (never affects the simulation).
     private int _facing = 1;
     private float _walkPhase, _animT, _blinkT, _nextBlink = 2f, _kick, _flash;
+    // Legs: blends eased toward what the geometry and velocity say (works the same for remote players).
+    private float _walk, _air, _wall, _land, _airVy, _groundDrop, _groundSlope;
+    private int _moveDir = 1, _wallSide = 1;
     public GunLook Gun = GunLook.Default;
 
     public void Setup(MatchPlayer owner, GameManager game, Vector2 pos)
@@ -532,7 +535,7 @@ public partial class Avatar : CharacterBody2D
         _flash = Mathf.Max(0, _flash - dt * 14);
         _animT += dt;
         if (Mathf.Abs(AimDir.X) > 0.15f) _facing = AimDir.X < 0 ? -1 : 1;
-        _walkPhase += Mathf.Abs(Velocity.X) * dt / 7f;
+        AnimateLegs(dt);
         _blinkT -= dt;
         if (_blinkT < -_nextBlink)
         {
@@ -540,6 +543,47 @@ public partial class Avatar : CharacterBody2D
             _nextBlink = 1.8f + (GetInstanceId() % 7) * 0.4f + (_animT % 1.3f);
         }
         QueueRedraw();
+    }
+
+    /// <summary>
+    /// Leg animation state, from position, velocity and the level geometry only: the host, a predicting client and an
+    /// interpolated remote player all have those, so everyone sees the same steps. Cosmetic; never touches the sim.
+    /// </summary>
+    private void AnimateLegs(float dt)
+    {
+        float size = S[Stat.Size];
+        var hs = HalfSize;
+        var pos = GlobalPosition;
+        var solids = Game?.Arena?.Solids;
+        var slopes = Game?.Map?.Slopes;
+        var foot = FootingProbe.Probe(pos.X, pos.Y + hs.Y, hs.X, 4f * size, 12f * size, solids, slopes);
+        float vx = Velocity.X;
+
+        // One stride cycle (two steps) per ~30 px walked, capped so very fast builds don't blur their feet.
+        _walkPhase = (_walkPhase + Mathf.Min(Mathf.Abs(vx), 240f) * dt * Mathf.Tau / (30f * size)) % (Mathf.Tau * 64);
+        if (Mathf.Abs(vx) > 6) _moveDir = vx < 0 ? -1 : 1;
+        _walk = Mathf.MoveToward(_walk, foot.Grounded ? Mathf.Clamp(Mathf.Abs(vx) / 45f, 0, 1) : 0, dt * 7);
+
+        bool wasGrounded = _air < 0.5f;
+        _air = Mathf.MoveToward(_air, foot.Grounded ? 0 : 1, dt * 12);
+        if (!foot.Grounded) _airVy = Velocity.Y;
+        else if (!wasGrounded || _airVy > 0)
+        {
+            // Touchdown: squash in proportion to how hard we came down.
+            if (_airVy > 150) _land = Mathf.Max(_land, Mathf.Clamp(_airVy / 420f, 0.35f, 1));
+            _airVy = 0;
+        }
+        _land = Mathf.MoveToward(_land, 0, dt * 6);
+
+        _groundDrop = Mathf.Lerp(_groundDrop, foot.Grounded ? foot.Drop / size : 0, Mathf.Min(1, dt * 20));
+        _groundSlope = Mathf.Lerp(_groundSlope, foot.Grounded ? foot.Slope : 0, Mathf.Min(1, dt * 20));
+
+        // Wall slide: airborne, sliding down slowly, with a wall right beside us.
+        int side = foot.Grounded ? 0 : FootingProbe.WallSide(pos.X, pos.Y, hs.X, hs.Y, solids);
+        float slide = WallSlideSpeed / Mathf.Max(0.1f, S[Stat.WallJump]);
+        bool sliding = side != 0 && Velocity.Y > 0 && Velocity.Y < slide + 30;
+        if (side != 0) _wallSide = side;
+        _wall = Mathf.MoveToward(_wall, sliding ? 1 : 0, dt * 10);
     }
 
     /// <summary>Visible tells for cards that change how a player works (everyone can read them at a glance).</summary>
@@ -588,8 +632,17 @@ public partial class Avatar : CharacterBody2D
             Scale = size,
             Time = _animT,
             WalkPhase = _walkPhase,
-            Grounded = Mathf.Abs(Velocity.Y) < 1f,
-            Moving = Mathf.Abs(Velocity.X) > 12f,
+            Grounded = _air < 0.5f,
+            Moving = _walk > 0,
+            Walk = _walk,
+            MoveDir = _moveDir,
+            Air = _air,
+            VelY = Velocity.Y,
+            Wall = _wall,
+            WallSide = _wallSide,
+            GroundDrop = _groundDrop,
+            GroundSlope = _groundSlope,
+            Land = _land,
             Blink = _blinkT > 0,
             Hurt = _hurtFlash > 0,
             Gun = true,

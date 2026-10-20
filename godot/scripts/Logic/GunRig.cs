@@ -21,7 +21,8 @@ public readonly record struct GunLook(int Receiver = 5, int Barrel = 6, int Barr
 /// players see is the muzzle bullets come from. Engine-independent so the unit tests can check it.
 ///
 /// Spaces: <b>sprite space</b> is the character facing right at Size 1, body centered on (0,0) and covering
-/// x -7..7, y -9.5..7 (see <see cref="Body"/>). <b>Body space</b> is sprite space mirrored by facing and scaled by
+/// x -7..7, y -9.5..3.4 above two legs reaching y 9 (see <see cref="Body"/>; the art also bobs the body while walking,
+/// which the host muzzle ignores: it uses this fixed rig). <b>Body space</b> is sprite space mirrored by facing and scaled by
 /// size, relative to the body center. <b>Gun space</b> has +x along the barrel and +y toward the grip, with the
 /// shooting hand at the origin.
 ///
@@ -38,7 +39,8 @@ public static class GunRig
     /// <summary>
     /// Where the shooting hand sits (sprite space) for each sprite-space aim angle in degrees (-90 up, 0 ahead,
     /// 90 down), interpolated in between. Aiming up, the arm swings out to the front so the gun rises beside the
-    /// face instead of across it; level, the gun is held at chest height under the nose; aiming down it hangs low.
+    /// face instead of across it; level, the gun is held at chest height under the nose; aiming down it hangs in
+    /// front of the legs (the body sits on legs below y 3.4, see Game/AvatarArt.BodyBottom) rather than into them.
     /// </summary>
     public static readonly (float Deg, Vector2 Hand)[] HandPath =
     {
@@ -48,9 +50,9 @@ public static class GunRig
         (-30, new(14.0f, 3.2f)),
         (0, new(11.5f, 4.2f)),
         (30, new(10.0f, 6.5f)),
-        (60, new(7.5f, 9.0f)),
-        (90, new(2.0f, 9.5f)),
-        (100, new(0.0f, 9.5f)),
+        (60, new(9.5f, 7.5f)),
+        (90, new(5.5f, 8.0f)),
+        (100, new(4.0f, 8.0f)),
     };
 
     /// <summary>Recoil: how far the hand is pushed back and how much the muzzle climbs (radians) at kick 1.</summary>
