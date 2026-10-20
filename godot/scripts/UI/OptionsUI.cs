@@ -5,7 +5,11 @@ using Godot;
 
 namespace Brawler.UI;
 
-/// <summary>Volume sliders for master, music and sound effects. Changes apply live and are saved on Done.</summary>
+/// <summary>
+/// Settings, in tabs: Audio (volume sliders), Video (window mode, bloom) and Controls (key bindings). Each tab's
+/// rows are built by their own class (DisplayOptions, BloomOptions, ControlsOptions). Audio applies live and is
+/// saved on Done.
+/// </summary>
 public partial class OptionsUI : Control
 {
     public event Action Closed;
@@ -18,14 +22,21 @@ public partial class OptionsUI : Control
 
     public override void _Ready()
     {
-        var (_, body) = UiKit.CenteredPanel(this, 380);
+        var (_, body) = UiKit.CenteredPanel(this, 460);
         body.AddChild(new TitleText("OPTIONS", 30, 1.5f, Palette.Cool, Palette.Hot));
-        body.AddChild(UiKit.Label("AUDIO", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
+
+        var tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 220) };
+        body.AddChild(tabs);
+        var audio = Tab(tabs, "Audio");
+        var video = Tab(tabs, "Video");
+        DisplayOptions.Build(video);
+        BloomOptions.Build(video);
+        ControlsOptions.Build(Tab(tabs, "Controls"));
 
         var grid = new GridContainer { Columns = 3 };
         grid.AddThemeConstantOverride("h_separation", 12);
         grid.AddThemeConstantOverride("v_separation", 10);
-        body.AddChild(grid);
+        audio.AddChild(grid);
         AddSlider(grid, "Master", AudioSettings.Master, v => AudioSettings.Master = v, "shoot");
         AddSlider(grid, "Music", AudioSettings.Music, v => AudioSettings.Music = v, null);
         AddSlider(grid, "Sound FX", AudioSettings.Effects, v => AudioSettings.Effects = v, "shoot");
@@ -45,6 +56,14 @@ public partial class OptionsUI : Control
         AudioSettings.Save();
         Closed?.Invoke();
         GetViewport().SetInputAsHandled();
+    }
+
+    private static VBoxContainer Tab(TabContainer tabs, string title)
+    {
+        var box = UiKit.VBox(10);
+        box.Name = title;
+        tabs.AddChild(box);
+        return box;
     }
 
     private void AddSlider(GridContainer grid, string label, float value, Action<float> set, string preview)

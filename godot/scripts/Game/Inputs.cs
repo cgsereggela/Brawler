@@ -14,6 +14,9 @@ public sealed class LocalInput : IInputSource
     private byte _jumps, _blocks;
     private readonly Node2D _world;
 
+    /// <summary>While true (for example while a menu is open over the game) the local player gets no input.</summary>
+    public static bool Suppressed;
+
     public LocalInput(Node2D world) => _world = world;
 
     public static void RegisterActions()
@@ -40,6 +43,7 @@ public sealed class LocalInput : IInputSource
 
     public InputFrame Next(Avatar self, float dt)
     {
+        if (Suppressed) return new InputFrame { JumpPresses = _jumps, BlockPresses = _blocks, Aim = _world.GetGlobalMousePosition() };
         if (Input.IsActionJustPressed("jump")) _jumps++;
         if (Input.IsActionJustPressed("block")) _blocks++;
         return new InputFrame

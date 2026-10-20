@@ -50,7 +50,9 @@ public partial class Main : Node
     public override void _Ready()
     {
         LocalInput.RegisterActions();
+        Keybinds.Init();
         AudioSettings.Init();
+        DisplaySettings.Init();
 
         // Bloom: anything drawn brighter than 1.0 (HDR 2D) glows.
         var env = new Godot.Environment
@@ -64,6 +66,7 @@ public partial class Main : Node
             GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive,
         };
         for (int i = 0; i < 7; i++) env.SetGlowLevel(i, i is >= 1 and <= 4 ? 1f : 0f);
+        BloomSettings.Init(env);
         AddChild(new WorldEnvironment { Environment = env });
 
         // Animated scenery behind the menus (the arena has its own).

@@ -1,0 +1,10 @@
+issues to fix:
+- when aiming to the left the of the character, the gun points down when aiming up, and up when aiming down, almost like the y-axis is inverted when aiming left, the aim itself is fine, the the drawing of the gun is wrong
+- gravity still doesn't feel right, I want to be able to jump in mid air if I didn't jump off of the ground
+- jumping off of the walls doesn't feel right it pushes the player to far off the wall 
+
+features to add:
+- setting to scale the bloom, it's very strong by default and being able to turn it down is essential, it should be set to 50% by default
+- settings to rebind the controls
+- users need to be able to access the settings menu during the game, using a shortcut key,  it shouldn't pause the game, but it should be an overlay
+- fullscreen, windowed-borderless and windowed modes added to the settings menu
