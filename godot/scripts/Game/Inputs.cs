@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Brawler.Core;
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.Game;
@@ -19,26 +21,20 @@ public sealed class LocalInput : IInputSource
 
     public LocalInput(Node2D world) => _world = world;
 
+    /// <summary>Creates the input actions with their default bindings; Keybinds.Init then applies the player's own.</summary>
     public static void RegisterActions()
     {
-        Bind("move_left", Key.A, Key.Left);
-        Bind("move_right", Key.D, Key.Right);
-        Bind("jump", Key.W, Key.Space, Key.Up);
-        Bind("block", Key.Shift);
-        BindMouse("shoot", MouseButton.Left);
-        BindMouse("block", MouseButton.Right);
+        var defaults = Keybinds.Defaults();
+        foreach (var a in BindTable.Actions) Bind(a, defaults.Row(a));
     }
 
-    private static void Bind(string action, params Key[] keys)
+    /// <summary>Replaces an action's inputs (creating the action if needed); empty slots are skipped.</summary>
+    public static void Bind(string action, IEnumerable<Binding> bindings)
     {
         if (!InputMap.HasAction(action)) InputMap.AddAction(action);
-        foreach (var k in keys) InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = k });
-    }
-
-    private static void BindMouse(string action, MouseButton b)
-    {
-        if (!InputMap.HasAction(action)) InputMap.AddAction(action);
-        InputMap.ActionAddEvent(action, new InputEventMouseButton { ButtonIndex = b });
+        InputMap.ActionEraseEvents(action);
+        foreach (var b in bindings)
+            if (Keybinds.ToEvent(b) is { } e) InputMap.ActionAddEvent(action, e);
     }
 
     public InputFrame Next(Avatar self, float dt)
