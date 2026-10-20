@@ -25,6 +25,9 @@ namespace Brawler;
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
+///   --overlaycheck        (with --autotest) presses Esc mid-battle, checks the game keeps running under the options
+///                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
+///                         Esc, then finishes the match
 /// </summary>
 public partial class Main : Node
 {
@@ -34,6 +37,7 @@ public partial class Main : Node
     private Music _music;
     private OptionsUI _options;
     private Control _optionsReturn;
+    private bool _overlay; // options open over a running match (Esc), rather than as its own screen
     private MenuUI _menu;
     private LobbyUI _lobby;
     private HudUI _hud;
@@ -133,7 +137,12 @@ public partial class Main : Node
         _custom.Closed += () => Show(_customReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
         _menu.Options += () => OpenOptions(_menu);
         _lobby.OptionsPressed += () => OpenOptions(_lobby);
-        _options.Closed += () => Show(_optionsReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
+        _options.Closed += () =>
+        {
+            if (_overlay) CloseOverlay();
+            else Show(_optionsReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
+        };
+        _options.LeaveRequested += () => _net.Leave();
 
         _net.Status += _menu.SetStatus;
         _net.LobbyChanged += () =>
@@ -151,7 +160,6 @@ public partial class Main : Node
         _lobby.StartPressed += () => _game.HostStartMatch();
         _lobby.LeavePressed += () => _net.Leave();
 
-        _hud.LeaveRequested += () => _net.Leave();
         _over.BackToLobby += () => _game.HostReturnToLobby();
         _over.LeavePressed += () => _net.Leave();
 
@@ -174,17 +182,48 @@ public partial class Main : Node
     private void OpenOptions(Control from)
     {
         _optionsReturn = from;
+        _options.SetOverlay(false);
         Show(_options);
+    }
+
+    /// <summary>Options over the match, which keeps running underneath; only your own input is muted.</summary>
+    private void OpenOverlay()
+    {
+        if (_overlay || !_hud.Visible) return;
+        _overlay = true;
+        _options.SetOverlay(true);
+        _options.Visible = true;
+        LocalInput.Suppressed = true;
+    }
+
+    private void CloseOverlay()
+    {
+        _overlay = false;
+        _options.Visible = false;
+        _options.SetOverlay(false);
+        LocalInput.Suppressed = false;
+    }
+
+    // Esc in a match opens the overlay. Unhandled only, so an Esc taken by the Controls tab's key capture (or the
+    // open overlay closing itself) never reaches here. Test modes never open it, except --overlaycheck on purpose.
+    public override void _UnhandledInput(InputEvent e)
+    {
+        if (e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) return;
+        if (_overlay || !_hud.Visible || (_autoMode != null && !_overlayCheck)) return;
+        OpenOverlay();
+        GetViewport().SetInputAsHandled();
     }
 
     private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
 
     private void Show(params Control[] screens)
     {
-        foreach (var c in Screens)
-            c.Visible = screens.Contains(c);
-        // The menu scenery shows whenever no arena is on screen, with a new theme each time you come back.
         bool inArena = screens.Contains(_hud);
+        // Leaving the arena (back to the lobby or menu) closes the overlay; screen changes inside the match keep it on top.
+        if (_overlay && !inArena) CloseOverlay();
+        foreach (var c in Screens)
+            c.Visible = screens.Contains(c) || (c == _options && _overlay);
+        // The menu scenery shows whenever no arena is on screen, with a new theme each time you come back.
         if (!inArena && !_menuBackdrop.Visible)
             _menuBackdrop.Set(ArenaTheme.All[(int)(GD.Randi() % (uint)ArenaTheme.All.Length)], (int)GD.Randi());
         _menuBackdrop.Visible = !inArena;
@@ -201,7 +240,11 @@ public partial class Main : Node
         else if (_autoMode != null)
         {
             var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
-            t.Timeout += () => Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
+            t.Timeout += () =>
+            {
+                if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
+                else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
+            };
         }
     }
 
@@ -234,6 +277,7 @@ public partial class Main : Node
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
+            else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
             else if (a.StartsWith("--players="))
             {
@@ -246,6 +290,7 @@ public partial class Main : Node
         }
         if (args.Any(a => a is "--autotest" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
             _game.Stats.Enabled = forceStats;
+        if (_overlayCheck) _game.CardPickBegan += () => _ocSawPick = true;
         if (_shotDir != null)
         {
             _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
@@ -508,6 +553,7 @@ public partial class Main : Node
     public override void _PhysicsProcess(double delta)
     {
         if (_autoMode == null) return;
+        if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -531,6 +577,128 @@ public partial class Main : Node
             SimMatchEnded(-1);
         }
         if (_shotDir != null && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+    }
+
+    // ---------- --overlaycheck: the Esc options overlay over a running match ----------
+
+    private bool _overlayCheck, _ocSawPick;
+    private int _ocStage;
+    private long _ocFrames;
+    private float _ocMoved;
+    private readonly System.Collections.Generic.Dictionary<int, Vector2> _ocLast = new();
+    private const int OcDone = 7;
+
+    private static void PressEsc()
+    {
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = false });
+    }
+
+    /// <summary>What the local player would send right now with move-right and shoot held down.</summary>
+    private InputFrame ProbeHeldInput()
+    {
+        Input.ActionPress("move_right");
+        Input.ActionPress("shoot");
+        var f = new LocalInput(_game).Next(null, 1f / 60);
+        Input.ActionRelease("move_right");
+        Input.ActionRelease("shoot");
+        return f;
+    }
+
+    private static Button FindButton(Node n, string text)
+    {
+        foreach (var c in n.GetChildren())
+            if (c is Button b && b.Text == text) return b;
+            else if (FindButton(c, text) is { } found) return found;
+        return null;
+    }
+
+    private static CardView FirstCard(Node n)
+    {
+        foreach (var c in n.GetChildren())
+            if (c is CardView cv && cv.IsVisibleInTree()) return cv;
+            else if (FirstCard(c) is { } found) return found;
+        return null;
+    }
+
+    private void OverlayCheckStep()
+    {
+        void Fail(string why) { _overlayCheck = false; Finish(1, $"overlaycheck: {why}"); }
+        bool overlayUp = _overlay && _options.Visible && LocalInput.Suppressed;
+        _ocFrames++;
+        switch (_ocStage)
+        {
+            case 0: // a battle well under way: press Esc
+                if (_game.Phase != Phase.Fighting) { _ocFrames = 0; return; }
+                if (_ocFrames < 60) return;
+                var free = ProbeHeldInput();
+                if (free.MoveX <= 0 || !free.Shoot) { Fail("held keys don't register even without the overlay"); return; }
+                PressEsc();
+                (_ocStage, _ocFrames) = (1, 0);
+                return;
+            case 1: // the overlay is up and your held keys do nothing
+                if (!_overlay) { if (_ocFrames > 10) Fail("Esc did not open the overlay"); return; }
+                if (!overlayUp) { Fail("overlay flagged open but not shown, or input not suppressed"); return; }
+                var muted = ProbeHeldInput();
+                if (muted.MoveX != 0 || muted.Shoot) { Fail("held keys still move or shoot under the overlay"); return; }
+                Log.Info("OVERLAYCHECK Esc opened the overlay mid-battle; held move+shoot give no input");
+                (_ocStage, _ocFrames, _ocMoved) = (2, 0, 0);
+                _ocLast.Clear();
+                return;
+            case 2: // three seconds under the overlay: nothing paused, the bots keep fighting
+                if (GetTree().Paused || !Mathf.IsEqualApprox(Engine.TimeScale, 1)) { Fail("the game paused"); return; }
+                if (!overlayUp) { Fail("overlay closed by itself during the battle"); return; }
+                foreach (var a in _game.LiveAvatars())
+                {
+                    if (a.Player == _game.LocalMatchPlayer) continue;
+                    if (_ocLast.TryGetValue(a.Player.Slot, out var p)) _ocMoved += a.GlobalPosition.DistanceTo(p);
+                    _ocLast[a.Player.Slot] = a.GlobalPosition;
+                }
+                if (_ocFrames == 60 && _shotDir != null) SaveShot();
+                if (_ocFrames < 180) return;
+                if (_ocMoved < 100) { Fail($"bots moved only {_ocMoved:0}px in 3s under the overlay"); return; }
+                Log.Info($"OVERLAYCHECK game kept running: bots moved {_ocMoved:0}px in 3s, now battle {_game.BattleNumber} {_game.Phase}");
+                (_ocStage, _ocFrames, _ocSawPick) = (3, 0, false);
+                return;
+            case 3: // stays open through battle ends and new battles until a card pick comes up under it
+                if (!overlayUp) { Fail($"overlay closed by itself ({_game.Phase})"); return; }
+                if (_ocFrames > 60 * 180) { Fail("no card pick within 3 minutes"); return; }
+                if (!_ocSawPick || _game.Phase != Phase.CardPick || FirstCard(_pick) is not { } card) return;
+                // Hover a card: the overlay, not the card, must be what the mouse is over.
+                var at = GetViewport().GetFinalTransform() * card.GetGlobalRect().GetCenter();
+                Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+                (_ocStage, _ocFrames) = (4, 0);
+                return;
+            case 4: // card pick under the overlay: both on screen, overlay on top and catching the mouse
+                if (_ocFrames < 6) return;
+                if (_game.Phase != Phase.CardPick) { (_ocStage, _ocFrames, _ocSawPick) = (3, 0, false); return; }
+                if (!overlayUp || !_pick.Visible || !_hud.Visible) { Fail($"card pick screens wrong: options {_options.Visible} pick {_pick.Visible} hud {_hud.Visible}"); return; }
+                var hovered = GetViewport().GuiGetHoveredControl();
+                if (hovered == null || !(hovered == _options || _options.IsAncestorOf(hovered))) { Fail($"mouse over a card reaches {hovered?.GetPath().ToString() ?? "nothing"}, not the overlay"); return; }
+                Log.Info($"OVERLAYCHECK card pick came up under the overlay; the mouse hits {hovered.Name}, not the cards");
+                if (_shotDir != null) SaveShot();
+                FindButton(_options, "LEAVE MATCH")?.EmitSignal(BaseButton.SignalName.Pressed);
+                (_ocStage, _ocFrames) = (5, 0);
+                return;
+            case 5: // Leave asks first; No backs out without leaving
+                if (_ocFrames < 6) return;
+                if (FindButton(_options, "YES") is not { } yes || !yes.IsVisibleInTree() || FindButton(_options, "LEAVE MATCH").IsVisibleInTree())
+                { Fail("Leave match did not ask for confirmation"); return; }
+                if (_shotDir != null) SaveShot();
+                FindButton(_options, "NO").EmitSignal(BaseButton.SignalName.Pressed);
+                if (!FindButton(_options, "LEAVE MATCH").IsVisibleInTree() || _net.Mode == NetMode.None) { Fail("No did not back out of leaving"); return; }
+                Log.Info("OVERLAYCHECK Leave match asks first; No backs out");
+                PressEsc();
+                (_ocStage, _ocFrames) = (6, 0);
+                return;
+            case 6: // Esc closed it; the card pick is still there and input is back
+                if (_ocFrames < 6) return;
+                if (_overlay || _options.Visible || LocalInput.Suppressed) { Fail("Esc did not close the overlay"); return; }
+                if (!_hud.Visible || _pick.Visible != (_game.Phase == Phase.CardPick)) { Fail($"after closing: hud {_hud.Visible} pick {_pick.Visible} in {_game.Phase}"); return; }
+                Log.Info($"OVERLAYCHECK Esc closed it; {_game.Phase} screens intact, input restored");
+                _ocStage = OcDone;
+                return;
+        }
     }
 
     // --shots=<dir>: save a screenshot every 4 simulated seconds during an autotest (needs a window, not --headless).

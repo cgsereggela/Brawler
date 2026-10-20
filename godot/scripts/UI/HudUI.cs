@@ -6,16 +6,13 @@ using Godot;
 
 namespace Brawler.UI;
 
-/// <summary>Player chips, center banners, the loadout strip and the double-Esc leave prompt, drawn directly.</summary>
+/// <summary>Player chips, center banners and the loadout strip, drawn directly. Leaving is in the Esc options overlay.</summary>
 public partial class HudUI : Control
 {
     private readonly GameManager _game;
     private string _banner = "";
     private Color _bannerColor;
     private float _bannerT, _bannerMax, _t;
-    private ulong _escAt;
-
-    public event System.Action LeaveRequested;
 
     public HudUI(GameManager game) => _game = game;
     public HudUI() { }
@@ -37,20 +34,6 @@ public partial class HudUI : Control
         _bannerT -= (float)delta;
         _t += (float)delta;
         QueueRedraw();
-    }
-
-    public override void _UnhandledInput(InputEvent e)
-    {
-        if (!Visible || e is not InputEventKey { Pressed: true, Keycode: Key.Escape }) return;
-        ulong now = Time.GetTicksMsec();
-        if (now - _escAt < 1500) LeaveRequested?.Invoke();
-        else
-        {
-            _escAt = now;
-            _banner = "Press Esc again to leave";
-            _bannerColor = Palette.TextDim;
-            _bannerT = _bannerMax = 1.5f;
-        }
     }
 
     private void Pill(Rect2 r, Color bg, Color? border = null)
