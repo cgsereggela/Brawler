@@ -1,0 +1,11 @@
+{
+  "id": 1000,
+  "name": "Bounce House",
+  "description": ["+3 bullet bounces", "Bigger bullets", "-15% damage"],
+  "category": "Gun",
+  "mods": [
+    { "stat": "Bounces", "op": "add", "value": 3 },
+    { "stat": "BulletRadius", "op": "mul", "value": 1.3 },
+    { "stat": "Damage", "op": "mul", "value": 0.85 }
+  ]
+}

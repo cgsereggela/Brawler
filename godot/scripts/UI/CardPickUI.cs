@@ -187,6 +187,14 @@ public partial class CardView : Control
         Shapes.DrawClosed(this, face, border, 1.5f + _hover * 1.2f);
         if (Chosen) Shapes.DrawClosed(this, Shapes.RoundRect(rect.Grow(4), 17, 6), Shapes.Hdr(Colors.White, 1.2f) with { A = 0.6f + 0.4f * pulse }, 2f);
 
+        // Player-made cards (custom card files) get a tag hanging off the bottom edge, clear of the category and badge.
+        if (CardRegistry.IsCustom(_card.Id))
+        {
+            var tag = new Rect2(W / 2 - 29, H - 10, 58, 20);
+            DrawColoredPolygon(Shapes.RoundRect(tag, 10), Palette.Cool);
+            DrawString(Fonts.Heavy, tag.Position + new Vector2(0, 14.5f), "CUSTOM", HorizontalAlignment.Center, tag.Size.X, 11, new Color(0.02f, 0.1f, 0.14f));
+        }
+
         if (_owned > 0)
         {
             var badge = new Rect2(W - 44, -8, 50, 20);
