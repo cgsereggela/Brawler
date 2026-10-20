@@ -71,6 +71,14 @@ switches to OpenGL by itself if Vulkan isn't available.
 Win battles to take a round, and win rounds to take the match. After every round everyone picks a card,
 and players who lost get more cards to choose from.
 
+The host decides which cards can come up: click **Cards** in the lobby and untick the ones you don't want
+(at least 7 must stay in). Your choice is remembered next time you host. Friends can open it to see the pool.
+
+### Your own cards
+You can make your own cards with a small text file, no programming needed. The `custom-cards` folder in the zip
+has a guide (`CUSTOM_CARDS.md`) and examples. Put card files in the `cards` folder inside the settings folder
+listed under **Updating** below. When you host, your friends play with your cards automatically.
+
 ## Options
 
 Open **Options** from the main menu or the lobby, or press **Esc** during a match. Every change applies at once and is saved.

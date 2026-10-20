@@ -67,6 +67,7 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 ## Rules
 - A **battle** ends when one player is left standing. Win *N battles* to take a **round**, and win *M rounds* to take the **match**. Both numbers are set in the lobby.
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
+- The host picks which cards can come up: **Cards** in the lobby opens the card pool, where cards can be switched off one by one or per category (at least 7 stay in). Everyone else can open it to see the pool. The host's choice is saved in the `[cards]` section of `settings.cfg`.
 - Each battle gets a newly generated arena.
 
 ## Cards
@@ -81,7 +82,9 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
   - *Tiers*: scattered platforms with the odd pillar.
   - *Mirror*: a symmetric layout.
   - *Islands*: floating islands over deadly pits.
-  - *Towers*: solid towers rising from the floor.
+  - *Towers*: solid towers rising from the floor, climbed by zigzag ledges.
+- About 38% of arenas get **floor terrain** (`godot/scripts/Logic/Terrain.cs`): hills, stepped hills, mesas and shelves against the side walls, with valleys between them. Ramps are at most ~34° and you can run up them; bullets bounce off them at the real angle. Mirror arenas mirror their terrain.
+- Stacked platforms always leave at least 40 px of clear air (`MapGenerator.MinClearance`), enough for a Giant to walk under.
 - **Jump pads** (glowing plates with rising chevrons) launch you about 170 px up. Maps never rely on them to connect spawns.
 - **Arena features**, also seeded (`godot/scripts/Logic/ArenaFeatures.cs`). Like pads, maps never rely on them to connect spawns, and they always stay clear of spawns:
   - *Crates* (60 HP): walk into one to push it; you can stand on them and knock them into pits. Some are stacked two high.
@@ -90,6 +93,7 @@ There are 69 cards in four categories. Strong cards come with a tradeoff (less d
   - *Moving platforms* glide back and forth over pits or through open air and carry whoever is standing on them.
   - *Magma pools* burn (45 damage/s) while you stand in them. *Poison pools* hurt less (16/s) but keep working for 2 s after you step out.
   - *Sawblades* slide along platform tops. Each hit deals 22 damage and throws you clear. They also chew up crates and barrels.
+  - Which hazards appear, and how often, depends on the theme (one table in `godot/scripts/Logic/ThemeRules.cs`): no sawblades or magma on Deep Reef, no magma on Toxic Grove, no poison on Magma Core, no pools at all on Frost Bite.
   - Blocking stops hazard damage too. A hazard or pit kill is credited to whoever hit the victim in the last 4 seconds.
 - **Movement:** gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
 - The seed also picks one of seven **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds). Each theme sets the sky, the silhouettes, drifting motes (bokeh, embers, bubbles, snow, fireflies), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles). Themes are cosmetic and identical on every peer.
@@ -149,6 +153,9 @@ docs/                       player guides (INSTALL, PLAYING_ONLINE), release not
 The host is authoritative. Clients send one `InputFrame` per physics tick, and the host simulates every avatar, resolves hits and broadcasts a 60 Hz snapshot. Each client predicts its own movement and snaps back only if it drifts more than 24 px. Bullets are sent as **spawn events**: every peer simulates them locally, but only the host decides hits, splits and explosions. Each arena is rebuilt from a **seed**, so a map costs 4 bytes on the wire.
 
 ## Adding a card
+**Without the source code:** drop a JSON card file into the `cards` folder next to your settings (`%APPDATA%\Godot\app_userdata\Brawler\cards` on Windows). Custom cards use ids 1000 and up, and in multiplayer everyone plays with the host's custom cards. The format, every stat name and examples are in [docs/CUSTOM_CARDS.md](docs/CUSTOM_CARDS.md); the release zips include it in a `custom-cards` folder.
+
+**Built in, from source:**
 1. Add a line to `CardRegistry` in `godot/scripts/Logic/Cards.cs`:
    ```csharp
    Add(70, "Longshot", "+80% bullet speed\n+30% damage\n+50% fire cooldown", CardCategory.Gun,
@@ -204,7 +211,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip) and custom cards (every parse error, id range, clamping, host sync format).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -223,4 +230,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect
 "$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
+"$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed
+"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
 ```
+`--autotest`, `--autohost` and `--autojoin` also switch some cards off in the card pool and fail if a pick ever offers one; the client checks that it received the host's list.
