@@ -34,5 +34,6 @@ public static class BloomOptions
             if (!dragging) BloomSettings.Save();
         };
         grid.AddChild(slider);
-        grid.AddChild(pct);    }
+        grid.AddChild(pct);
+    }
 }

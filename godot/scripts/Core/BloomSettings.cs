@@ -24,7 +24,8 @@ public static class BloomSettings
         foreach (var a in OS.GetCmdlineUserArgs())
             if (a.StartsWith("--bloom=") && float.TryParse(a["--bloom=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float pct))
                 Amount = Mathf.Clamp(pct / 100f, 0, 1);
-        Apply();    }
+        Apply();
+    }
 
     /// <summary>
     /// Scales intensity and spread together, linearly: at 50% hit flashes keep a hot core instead of blowing out
@@ -35,7 +36,8 @@ public static class BloomSettings
         if (_env == null) return;
         _env.GlowEnabled = Amount > 0.001f;
         _env.GlowIntensity = FullIntensity * Amount;
-        _env.GlowStrength = FullStrength * Amount;    }
+        _env.GlowStrength = FullStrength * Amount;
+    }
 
     public static void Save()
     {
