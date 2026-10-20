@@ -3,7 +3,15 @@
 A ROUNDS-style 2–4 player platform shooter: lose a round, pick a card, come back stronger.
 Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
-## Run it
+## Download and play
+
+**Just want to play?** Grab the zip for your system from the **[Releases](../../releases/latest)** page, extract it and run it.
+You don't need anything else installed. Step-by-step guides:
+
+- **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.
+- **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
+
+## Run from source
 
 1. Open `godot/project.godot` in **Godot 4.7 .NET** (you already have `Godot_v4.7.2-stable_mono_win64`).
 2. Press **Build** (hammer icon) once, then **Run** (F5).
@@ -19,11 +27,35 @@ Or from a terminal: `dotnet build godot/Brawler.csproj`, then run the Godot exe 
 | Block | Right mouse / Shift |
 | Leave match | Esc twice |
 
-### Playing with friends (LAN / direct IP)
-- **Host:** Menu → *Host LAN Game*. The lobby shows your local IP(s) and the port (default `24565`).
-- **Join:** Enter the host's IP and port and click *Join*.
-- Over the internet, the host must forward UDP port 24565, or you can use a virtual LAN such as Tailscale, ZeroTier or Radmin VPN.
+### Playing with friends
+- **Host:** Menu → *Host Game*. The lobby shows your LAN/VPN address(es) and the port (default `24565`). It also asks
+  the router to forward the port via UPnP and, if that works, shows the public `ip:port` with a **Copy** button.
+- **Join:** type the host's address (`ip`, `ip:port` or `host:port`) and click *Join*. The last address is remembered.
+- Players must run the same version (`application/config/version`, shown in the menu); the host rejects mismatches.
+- Different home networks: see **[docs/PLAYING_ONLINE.md](docs/PLAYING_ONLINE.md)**.
 - **Test alone:** in Godot use *Debug → Customize Run Instances → 2*, host in one window and join `127.0.0.1` in the other.
+
+## Making a release
+Players download zips from GitHub Releases. Builds come from Godot's export presets in `godot/export_presets.cfg`
+(Windows, Linux, macOS universal, ad-hoc signed), zipped by `tools/package.ps1` together with a `README.txt` made from
+`docs/INSTALL.md` + `docs/PLAYING_ONLINE.md`.
+
+**Automatic (GitHub Actions):** push a version tag and `.github/workflows/release.yml` runs the tests, exports all three
+platforms on Linux, and publishes a release with the zips (notes from `docs/RELEASE_NOTES.md` plus the commit list).
+The tag becomes the game version.
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+Running the workflow by hand (*Actions → Release → Run workflow*) builds the zips as a downloadable artifact without
+publishing a release.
+
+**Local:** needs the Godot .NET editor and its export templates (`-InstallTemplates` downloads them, about 1 GB, once).
+```bash
+powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Godot "C:/path/to/Godot_v4.7.2-stable_mono_win64_console.exe" -InstallTemplates
+```
+Output goes to `dist/Brawler-<version>-<platform>.zip`. Pass `-Platforms windows` to build just one and `-Version 0.2.0` to bump the version.
+When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in `Brawler.csproj` together.
 
 ## Rules
 - A **battle** ends when one player is left standing. Win *N battles* to take a **round**, and win *M rounds* to take the **match**. Both numbers are set in the lobby.
@@ -93,7 +125,7 @@ godot/
   scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, ArenaFeatures, Sweep, Appearance,
                             StatsModel/StatsReport, Synth (sound and music)
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
-  scripts/Net/              NetworkManager: ENet host/join, lobby sync
+  scripts/Net/              NetworkManager (ENet host/join, lobby sync, version check), PortOpener (UPnP)
   scripts/Game/             GameManager (match flow + netcode, hit/kill effects), Avatar, AvatarArt (character + gun vector art),
                             BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Arena (crates, glass,
                             movers, pools, saws), Backdrop (scenery),
@@ -102,6 +134,8 @@ godot/
   scripts/UI/               menu, lobby, character editor, HUD, card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
 tools/CardStats/            card balance report from the stats log (dotnet run)
+tools/package.ps1           export + zip release builds (see Making a release)
+docs/                       player guides (INSTALL, PLAYING_ONLINE), release notes, card stats
 ```
 
 ### Netcode in one paragraph
@@ -163,7 +197,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, and character looks (wire and profile round-trips, option wrapping).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, and character looks (wire and profile round-trips, option wrapping).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash

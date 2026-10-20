@@ -11,7 +11,9 @@ public partial class LobbyUI : Control
     public event Action StartPressed, LeavePressed, CustomizePressed, OptionsPressed;
 
     private readonly NetworkManager _net;
-    private Label _info;
+    private Label _info, _internet;
+    private Button _copy;
+    private HBoxContainer _inviteRow;
     private HBoxContainer _players;
     private Button _addBot, _start, _color;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
@@ -26,6 +28,18 @@ public partial class LobbyUI : Control
         _info = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         _info.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         body.AddChild(_info);
+
+        // Host only: the internet address (from UPnP) and a copy button, so the invite can be pasted to friends.
+        _inviteRow = UiKit.HBox(6);
+        _inviteRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _internet = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
+        _internet.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _internet.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _copy = UiKit.Button("Copy", CopyInvite, 0, "Small");
+        _copy.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        _inviteRow.AddChild(_internet);
+        _inviteRow.AddChild(_copy);
+        body.AddChild(_inviteRow);
 
         _players = UiKit.HBox(8);
         _players.Alignment = BoxContainer.AlignmentMode.Center;
@@ -55,10 +69,59 @@ public partial class LobbyUI : Control
         body.AddChild(bottom);
 
         _net.LobbyChanged += Refresh;
+        _net.PortsChanged += Refresh;
         Refresh();
     }
 
-    public override void _ExitTree() => _net.LobbyChanged -= Refresh;
+    public override void _ExitTree()
+    {
+        _net.LobbyChanged -= Refresh;
+        _net.PortsChanged -= Refresh;
+    }
+
+    private const string Guide = "see Playing online in README.txt";
+
+    private void RefreshInvite()
+    {
+        _inviteRow.Visible = _net.Mode == NetMode.Host;
+        if (!_inviteRow.Visible) return;
+        var ports = _net.Ports;
+        int port = _net.Port;
+        Color warn = Palette.Hot.Lightened(0.35f);
+        (string text, Color color) = ports.State switch
+        {
+            PortState.Working => ("Internet: asking your router to open the port...", Palette.TextDim),
+            PortState.Opened when ports.BehindCgnat =>
+                ($"Internet: your ISP shares your public address (CGNAT), so friends can't reach you directly. Use Tailscale or ZeroTier ({Guide}).", warn),
+            PortState.Opened when ports.PublicIp != "" =>
+                ($"Internet: {ports.PublicIp}:{port}  (port opened automatically)", Palette.Cool.Lightened(0.2f)),
+            PortState.Opened => ($"Internet: port {port} opened, but the router didn't report your public IP. Search \"what is my IP\".", Palette.TextDim),
+            PortState.Idle => ("Copy your address and send it to friends on your network or VPN.", Palette.TextDim),
+            _ => ($"Internet: the router didn't open the port automatically. Forward UDP {port} by hand or use a VPN ({Guide}).", warn),
+        };
+        _internet.Text = text;
+        _internet.AddThemeColorOverride("font_color", color);
+        _copy.Visible = InviteAddress() != "";
+    }
+
+    /// <summary>The address a friend should paste: the public one when the port is open, else this machine's LAN/VPN address.</summary>
+    private string InviteAddress()
+    {
+        var ports = _net.Ports;
+        string port = _net.Port == NetworkManager.DefaultPort ? "" : $":{_net.Port}";
+        if (ports.State == PortState.Opened && ports.PublicIp != "" && !ports.BehindCgnat) return ports.PublicIp + port;
+        var local = NetworkManager.LocalAddresses();
+        return local.Length > 0 ? local[0] + port : "";
+    }
+
+    private void CopyInvite()
+    {
+        string address = InviteAddress();
+        if (address == "") return;
+        DisplayServer.ClipboardSet(address);
+        _copy.Text = "Copied!";
+        GetTree().CreateTimer(1.5).Timeout += () => { if (IsInstanceValid(_copy)) _copy.Text = "Copy"; };
+    }
 
     private SpinBox AddSpin(GridContainer grid, string label, int min, int max)
     {
@@ -132,10 +195,11 @@ public partial class LobbyUI : Control
         _info.Text = _net.Mode switch
         {
             NetMode.Offline => "Offline match. Add bots and start.",
-            NetMode.Host => $"Hosting on port {_net.Port}. Friends join with: {string.Join(" / ", NetworkManager.LocalAddresses())}",
+            NetMode.Host => $"Hosting on port {_net.Port}. Same network or VPN: {string.Join(" / ", NetworkManager.LocalAddresses())}",
             NetMode.Client => "Connected. Waiting for the host to start.",
             _ => "",
         };
+        RefreshInvite();
 
         UiKit.ClearChildren(_players);
         for (int slot = 0; slot < LobbyState.MaxPlayers; slot++)

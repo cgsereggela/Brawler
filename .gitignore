@@ -5,3 +5,5 @@ tests/obj/
 tools/*/bin/
 tools/*/obj/
 tools/*/out/
+build/
+dist/

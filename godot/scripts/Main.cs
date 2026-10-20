@@ -22,6 +22,7 @@ namespace Brawler;
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
+///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
 /// </summary>
@@ -120,7 +121,9 @@ public partial class Main : Node
         _menu.JoinLan += () =>
         {
             SaveProfile();
-            _net.Join(_menu.AddressEdit.Text.Trim(), _menu.Port);
+            var (host, port) = NetAddress.Parse(_menu.AddressEdit.Text, _menu.Port);
+            Profile.SaveLastAddress(_menu.AddressEdit.Text.Trim());
+            _net.Join(host, port);
         };
         _menu.Customize += () => OpenCustomize(_menu);
         _lobby.CustomizePressed += () => OpenCustomize(_lobby);
@@ -269,6 +272,7 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.LocalName = "AutoHost";
+                _net.UseUpnp = false;
                 if (!_net.Host(port)) { Finish(1, "could not host"); return; }
                 _net.AddBot();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2 });
@@ -391,6 +395,14 @@ public partial class Main : Node
                 }
                 tree.CreateTimer(1.0, true, false, true).Timeout += Next;
             }
+            else if (a == "--upnpcheck")
+            {
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    string result = PortOpener.Probe();
+                    Callable.From(() => { Log.Info($"UPNPCHECK {result}"); GetTree().Quit(0); }).CallDeferred();
+                });
+            }
             else if (a == "--menushots" && _shotDir != null)
             {
                 // Screenshot the menu, the character editor, an offline lobby with bots, and a gallery
@@ -408,6 +420,14 @@ public partial class Main : Node
                         _net.AddBot();
                         Show(_lobby);
                     },
+                    () =>
+                    {
+                        _net.UseUpnp = false; // a screenshot run must not touch the router
+                        _net.Host(24611);
+                        _net.AddBot();
+                        Show(_lobby);
+                    },
+                    () => { _net.Leave(); Show(_menu); },
                 };
                 foreach (LookPart part in System.Enum.GetValues<LookPart>())
                 {

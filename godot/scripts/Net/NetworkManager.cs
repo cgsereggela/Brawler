@@ -15,6 +15,13 @@ public partial class NetworkManager : Node
 {
     public const int DefaultPort = 24565;
 
+    /// <summary>The build version (project setting application/config/version). Players must match to share a lobby.</summary>
+    public static string Version => (string)ProjectSettings.GetSetting("application/config/version", "dev");
+
+    /// <summary>Router port forwarding for the host. Off for automated test runs.</summary>
+    public readonly PortOpener Ports = new();
+    public bool UseUpnp = true;
+
     public NetMode Mode { get; private set; } = NetMode.None;
     public LobbyState Lobby { get; private set; } = new();
     public bool InMatch { get; set; }
@@ -32,6 +39,7 @@ public partial class NetworkManager : Node
     public event Action<string> Status;       // status/error text for the menu
     public event Action<string> SessionEnded; // back to menu with a reason
     public event Action<long> PeerLeft;       // host: a client disconnected
+    public event Action PortsChanged;         // host: the UPnP attempt finished
 
     public override void _Ready()
     {
@@ -66,7 +74,8 @@ public partial class NetworkManager : Node
         Mode = NetMode.Host;
         Port = port;
         AddHumanLocal();
-        Log.Info($"hosting on {port}");
+        Log.Info($"hosting on {port} (version {Version})");
+        if (UseUpnp) Ports.Open(port, () => PortsChanged?.Invoke());
         return true;
     }
 
@@ -98,6 +107,7 @@ public partial class NetworkManager : Node
 
     private void Reset()
     {
+        Ports.Close();
         if (Multiplayer.MultiplayerPeer is ENetMultiplayerPeer enet) enet.Close();
         Multiplayer.MultiplayerPeer = new OfflineMultiplayerPeer();
         Mode = NetMode.None;
@@ -179,7 +189,7 @@ public partial class NetworkManager : Node
     private void OnConnectedToServer()
     {
         Status?.Invoke("Connected. Joining lobby...");
-        RpcId(1, MethodName.RequestJoin, LocalName, LocalColor, LocalLook.ToBytes());
+        RpcId(1, MethodName.RequestJoin, Version, LocalName, LocalColor, LocalLook.ToBytes());
     }
 
     private void OnPeerDisconnected(long id)
@@ -195,10 +205,15 @@ public partial class NetworkManager : Node
     // ---------- RPCs ----------
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestJoin(string name, int color, byte[] look)
+    private void RequestJoin(string version, string name, int color, byte[] look)
     {
         if (!IsHost) return;
         long sender = Multiplayer.GetRemoteSenderId();
+        if (version != Version)
+        {
+            RpcId(sender, MethodName.Rejected, $"Version mismatch: host has {Version}, you have {version}. Download the same release.");
+            return;
+        }
         if (InMatch || Lobby.FreeSlot() < 0)
         {
             RpcId(sender, MethodName.Rejected, InMatch ? "A match is already in progress." : "Lobby is full.");
@@ -251,4 +266,6 @@ public partial class NetworkManager : Node
             if (a.Contains('.') && !a.StartsWith("127.") && !a.StartsWith("169.254.")) list.Add(a);
         return list.ToArray();
     }
+
+    public override void _ExitTree() => Ports.CloseNow();
 }

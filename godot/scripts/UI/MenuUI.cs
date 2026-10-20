@@ -54,11 +54,11 @@ public partial class MenuUI : Control
         body.AddChild(NameEdit);
         body.AddChild(UiKit.Spacer(2));
         body.AddChild(UiKit.Primary("PLAY VS BOTS", () => PlayBots?.Invoke()));
-        body.AddChild(UiKit.Button("Host LAN Game", () => HostLan?.Invoke()));
+        body.AddChild(UiKit.Button("Host Game", () => HostLan?.Invoke()));
 
         body.AddChild(UiKit.Label("JOIN A FRIEND", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var joinRow = UiKit.HBox();
-        AddressEdit = new LineEdit { Text = "127.0.0.1", PlaceholderText = "host IP", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        AddressEdit = new LineEdit { Text = Profile.LastAddress() is { Length: > 0 } last ? last : "127.0.0.1", PlaceholderText = "host IP or IP:port", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         PortEdit = new LineEdit { Text = NetworkManager.DefaultPort.ToString(), CustomMinimumSize = new Vector2(66, 0) };
         joinRow.AddChild(AddressEdit);
         joinRow.AddChild(PortEdit);
@@ -82,6 +82,14 @@ public partial class MenuUI : Control
         hint.OffsetBottom = -8;
         hint.GrowHorizontal = GrowDirection.Both;
         AddChild(hint);
+
+        var version = UiKit.Label($"v{NetworkManager.Version}", UiKit.Tiny, Palette.TextDim with { A = 0.6f }, HorizontalAlignment.Right);
+        version.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomRight);
+        version.OffsetLeft = -120;
+        version.OffsetRight = -10;
+        version.OffsetTop = -26;
+        version.OffsetBottom = -8;
+        AddChild(version);
 
         VisibilityChanged += RefreshPreview;
     }
