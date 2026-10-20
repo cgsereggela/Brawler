@@ -103,6 +103,11 @@ public partial class Main : Node
         _game = new GameManager { Name = "Game", Net = _net, Sfx = _sfx };
         AddChild(_game);
 
+        // Lay the world (and the menu backdrop) on painted canvas; the UI above stays crisp.
+        var paint = new CanvasLayer { Name = "Paint", Layer = 5 };
+        AddChild(paint);
+        paint.AddChild(PaintShaders.ScreenPass());
+
         var ui = new CanvasLayer { Name = "UI", Layer = 10 };
         AddChild(ui);
         var root = new Control { Name = "Root", Theme = UiKit.BuildTheme() };
