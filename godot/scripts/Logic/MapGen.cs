@@ -85,10 +85,11 @@ public static class MapGenerator
     private const int Width = MapLayout.Width;
 
     // Reachability limits, derived from base movement (jump apex = v^2 / 2g ≈ 82 px at 144 px/s) with margin: a full
-    // jump carries ~145 px across on the level and ~110 px onto a ledge MaxRise up.
+    // jump carries ~144 px across on the level and ~108 px onto a ledge MaxRise up. Bots jump a few px before an edge
+    // and land with a body width to spare, so a level gap is planned at well under a full jump.
     public const int MaxRise = 60;
     public const int MaxGapRising = 72;
-    public const int MaxGapFalling = 150;
+    public const int MaxGapFalling = 130;
     public const int Headroom = 26;
     public const int MinSpawnDistance = 220;
     public const int TierSpacing = 50;

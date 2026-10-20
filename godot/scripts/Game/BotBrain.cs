@@ -84,6 +84,9 @@ public sealed class BotBrain : IInputSource
         int here = onFloor ? SurfaceAt(map, feet, 4) : -1;
         // On a ramp: plan from the surface at its nearer end.
         if (onFloor && here < 0) here = MapGenerator.SlopeSurface(map, feet.X, feet.Y);
+        // On a crate, barrel or mover: plan from the surface it stands on. Otherwise a bot on a crate stack kept the
+        // surface it jumped from and hopped on the stack forever, "climbing" to a ledge it was already above.
+        if (onFloor && here < 0) here = SurfaceUnder(map, feet);
         if (here >= 0 && here != _surface) { _surface = here; _navT = 0; }
         // Long in the air (wall-jumping, gliding, jetting) means the surface we last stood on says little about
         // where we are; plan from where we'd land instead, or stale plans can loop forever without touching down.
@@ -127,6 +130,10 @@ public sealed class BotBrain : IInputSource
                         bool left = leftFree && rightFree ? x - hop.X1 < hop.X2 - x : leftFree;
                         aimX = left ? hop.X1 - hw : hop.X2 + hw;
                     }
+                    // Beside it but not yet up to its top: wait just off its end. Steering into the side made a bot
+                    // that launched next to a ledge touch its end, wall-jump away from it and try again forever.
+                    else if (feet.Y > hop.Y - 1 && (x < hop.X1 || x > hop.X2))
+                        aimX = x < hop.X1 ? hop.X1 - hw : hop.X2 + hw;
                 }
                 else if (!MapGenerator.CanTraverse(cur, hop) && MapGenerator.PadTo(map, cur, hop) is JumpPad pad)
                     aimX = (pad.X1 + pad.X2) * 0.5f; // too high to jump: ride the pad (it launches us on contact)
@@ -209,7 +216,8 @@ public sealed class BotBrain : IInputSource
         f.MoveX = Mathf.Clamp(move, -1, 1);
         // Climbing: hold jump all the way up. Letting go early cuts the rise (the short-hop rule), which made bots
         // miss ledges and turned a jump pad's ~215 px launch into ~100, so pocketed bots never got out.
-        bool rising = climbing && !onFloor && self.Velocity.Y < 0;
+        // Same for a jump across a gap to a surface at our level: a short hop falls short of the far side.
+        bool rising = navigating && !descending && !onFloor && self.Velocity.Y < 0;
         f.JumpHeld = _jumpHold > 0 || glide || rising;
         f.JumpPresses = _jumps;
 
