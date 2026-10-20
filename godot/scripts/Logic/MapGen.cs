@@ -79,7 +79,12 @@ public static class MapGenerator
 {
     public const int Tile = 8;
     public const int Wall = 8;
-    public const int FloorY = Height - 16;
+    /// <summary>
+    /// Thickness of the floor: a solid band along the bottom of the arena, deep enough for the HUD's card strip
+    /// (HudUI) to sit inside it instead of over the playable space. The floor's top is <see cref="FloorY"/>.
+    /// </summary>
+    public const int FloorDepth = 32;
+    public const int FloorY = Height - FloorDepth;
     private const int Height = MapLayout.Height;
     private const int Width = MapLayout.Width;
 
