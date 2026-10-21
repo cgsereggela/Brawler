@@ -1,6 +1,5 @@
 issues to fix:
 - noses don't match the current art style
-- the reload icon on the crosshair is a bit distracting, can we make it a smaller circle that sits top right above the crosshair instead of surrounding it
 
 features to add:
 - add a pool of cards that enhance / modify the players ability to block, perhaps damage on block, more block, trading block for some other power, etc

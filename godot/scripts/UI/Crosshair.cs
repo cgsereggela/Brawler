@@ -22,8 +22,8 @@ public struct CrosshairState
 
 /// <summary>
 /// Replaces the OS mouse pointer during a match: a crosshair in the local player's color at the mouse, with the
-/// magazine as a ring of pips (one per bullet; a gauge plus a number for big magazines) and reload as an arc sweeping
-/// round the ring. Lives in its own CanvasLayer above the HUD, so it renders at the window's resolution and is redrawn
+/// magazine as a ring of pips (one per bullet; a gauge plus a number for big magazines) and reload as a small
+/// dial above and to the right of the ring. Lives in its own CanvasLayer above the HUD, so it renders at the window's resolution and is redrawn
 /// every frame. Every stroke sits on a dark under-stroke so it reads on any arena theme. Main decides when it is
 /// <see cref="Active"/> (in the arena, with no card pick, match-over screen or options overlay up); the OS cursor is
 /// hidden exactly while it is.
@@ -114,6 +114,9 @@ public partial class Crosshair : Node2D
     private static readonly Color Ink = new(0.04f, 0.02f, 0.09f, 0.72f);
     private static readonly Color Empty = new(1, 1, 1, 0.2f);
     private static readonly Color Low = new("#ff4d6a");
+    /// <summary>The small reload dial: its radius, and its center relative to the crosshair (top right, clear of the ring).</summary>
+    private const float ReloadDialR = 3.6f;
+    private static readonly Vector2 ReloadDialAt = new Vector2(1, -1).Normalized() * (Radius + RingW + ReloadDialR + 3.5f);
 
     private static void Arc(CanvasItem ci, Vector2 c, float r, float from, float to, Color col, float w)
     {
@@ -156,18 +159,14 @@ public partial class Crosshair : Node2D
         int mag = Math.Max(1, s.Mag);
         if (s.Reloading)
         {
-            // Reload: a dim track with a bright arc sweeping clockwise from the top, and a glowing head.
+            // Reload: a small dial up and to the right of the ring, filling clockwise from the top, so the crosshair
+            // itself stays calm (the ring below keeps showing the empty magazine).
+            const float dr = ReloadDialR;
+            var dial = at + ReloadDialAt;
             float frac = Mathf.Clamp(s.ReloadFrac, 0, 1);
-            InkedArc(ci, at, r, 0, Mathf.Tau, Empty with { A = 0.14f }, RingW);
-            if (frac > 0.002f)
-            {
-                float to = AmmoRing.Top + Mathf.Tau * frac;
-                Arc(ci, at, r, AmmoRing.Top, to, Shapes.Hdr(Palette.Accent, 1.15f), RingW);
-                var head = at + Vector2.Right.Rotated(to) * r;
-                ci.DrawCircle(head, RingW * 0.9f + Under / 2, Ink, true, -1, true);
-                ci.DrawCircle(head, RingW * 0.9f, Shapes.Hdr(Palette.Accent.Lightened(0.4f), 1.4f), true, -1, true);
-            }
-            return;
+            ci.DrawCircle(dial, dr + 1.6f, Ink, true, -1, true);
+            Arc(ci, dial, dr, 0, Mathf.Tau, Empty with { A = 0.16f }, 1.7f);
+            if (frac > 0.002f) Arc(ci, dial, dr, AmmoRing.Top, AmmoRing.Top + Mathf.Tau * frac, Shapes.Hdr(Palette.Accent, 1.15f), 1.7f);
         }
 
         // Ammo: one pip per bullet, or a gauge for big magazines. The last bullet (of 3+) turns red.
