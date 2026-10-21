@@ -40,7 +40,7 @@ public static class UiKit
         t.SetTypeVariation("Primary", "Button");
         var hot = Palette.Hot;
         var primary = Box(hot, hot.Lightened(0.25f), 10, 18, 9);
-        primary.ShadowColor = hot with { A = 0.45f };
+        primary.ShadowColor = hot with { A = 0.25f };
         primary.ShadowSize = 10;
         t.SetStylebox("normal", "Primary", primary);
         var primaryHover = (StyleBoxFlat)primary.Duplicate();
@@ -49,6 +49,9 @@ public static class UiKit
         t.SetStylebox("hover", "Primary", primaryHover);
         t.SetStylebox("pressed", "Primary", Box(hot.Darkened(0.15f), hot.Lightened(0.3f), 10, 18, 9));
         t.SetStylebox("disabled", "Primary", Box(hot with { A = 0.25f }, hot with { A = 0.3f }, 10, 18, 9));
+        // Dark ink on the pale button.
+        foreach (var state in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_focus_color" })
+            t.SetColor(state, "Primary", new Color("#1a1620"));
         t.SetFont("font", "Primary", Fonts.Heavy);
         t.SetFontSize("font_size", "Primary", 17);
 
@@ -66,7 +69,7 @@ public static class UiKit
         t.SetColor("selection_color", "LineEdit", Palette.Cool with { A = 0.35f });
 
         // Panels: dark glass with a soft shadow.
-        var panel = Box(new Color(0.08f, 0.05f, 0.17f, 0.82f), new Color(1, 1, 1, 0.12f), 18, 22, 18);
+        var panel = Box(new Color(0.05f, 0.05f, 0.07f, 0.86f), new Color(0.93f, 0.9f, 0.84f, 0.16f), 18, 22, 18);
         panel.ShadowColor = new Color(0, 0, 0, 0.45f);
         panel.ShadowSize = 28;
         panel.ShadowOffset = new Vector2(0, 8);

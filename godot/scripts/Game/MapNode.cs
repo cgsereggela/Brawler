@@ -27,6 +27,12 @@ public partial class MapNode : Node2D
     private DrawLayer _solids, _glow, _anim, _animGlow;
     private readonly List<(Vector2 P, float Size, int Kind, float Phase, bool Below)> _decos = new();
     private readonly HashSet<RectI> _groundDrawn = new();
+    // The ground and platforms, painted once per battle (TerrainPainter), and their glowing veins (or null).
+    private ImageTexture _ground, _groundGlow;
+    private System.Threading.Tasks.Task<(Raster Body, Raster Glow)> _bake;
+    private float _groundFade;
+    private List<Vector2[]> _groundPolys;
+    private List<Rect2> _borderRects;
 
     public override void _Ready()
     {
@@ -74,7 +80,9 @@ public partial class MapNode : Node2D
                     if (r.Y == MapGenerator.FloorY && r.X == g[0].X && r.Right == g[^1].X) _groundDrawn.Add(r);
             _padFlash = new float[layout.Pads.Count];
             BuildDecos();
+            PaintGround();
         }
+        else (_ground, _groundGlow, _groundPolys, _bake) = (null, null, null, null);
         _solids.QueueRedraw();
         _glow.QueueRedraw();
         _anim.QueueRedraw();
@@ -121,8 +129,9 @@ public partial class MapNode : Node2D
 
     public override void _Process(double delta)
     {
-        if (Layout == null || !IsVisibleInTree()) return;
         float dt = (float)delta;
+        TakeBake(dt);
+        if (Layout == null || !IsVisibleInTree()) return;
         _t += dt;
         for (int i = 0; i < _padFlash.Length; i++)
         {
@@ -143,34 +152,44 @@ public partial class MapNode : Node2D
         _animGlow.QueueRedraw();
     }
 
+    /// <summary>Swap in a finished ground painting and fade it in.</summary>
+    private void TakeBake(float dt)
+    {
+        if (_bake is { IsCompleted: true } done)
+        {
+            _bake = null;
+            if (done.IsCompletedSuccessfully)
+            {
+                var (body, glow) = done.Result;
+                (_ground, _groundGlow) = (body.ToTexture(), glow?.ToTexture());
+                _groundFade = 0;
+            }
+            else GD.PushError($"Painting the arena failed: {done.Exception?.GetBaseException().Message}");
+        }
+        if (_ground == null || _groundFade >= 1) return;
+        _groundFade = Mathf.Min(1, _groundFade + dt * 4);
+        _solids.QueueRedraw();
+        _glow.QueueRedraw();
+    }
+
     // ---------- drawing ----------
 
     private void DrawSolids(DrawLayer l)
     {
         if (Layout == null) return;
-        var t = Theme;
-        var top = t.Block.Lightened(0.22f);
-        var bottom = t.Block.Darkened(0.3f);
-
+        var full = new Rect2(0, 0, MapLayout.Width, MapLayout.Height);
+        // A soft shadow under floating platforms, then the painted ground itself.
         foreach (var r in Layout.Solids)
+            if (!IsBorder(r) && !_groundDrawn.Contains(r) && r.Y < MapGenerator.FloorY)
+                l.DrawTextureRect(GlowTex.Tex, new Rect2(r.X - 4, r.Bottom - 5, r.W + 8, 16), false, new Color(0, 0, 0, 0.35f));
+        if (_groundFade < 1 && _groundPolys != null)
         {
-            var rect = new Rect2(r.X, r.Y, r.W, r.H);
-            if (IsBorder(r))
-            {
-                l.DrawRect(rect, t.Block.Darkened(0.45f));
-                continue;
-            }
-            if (_groundDrawn.Contains(r)) continue;
-            l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(rect.Position + new Vector2(2, 4), rect.Size), 3), new Color(0, 0, 0, 0.28f));
-            var poly = Shapes.RoundRect(rect, Mathf.Min(4, r.H * 0.5f));
-            Shapes.Gradient(l, poly, top, bottom);
-            Shapes.DrawClosed(l, poly, t.Block.Darkened(0.55f), 1f);
-            // Subtle panel lines on thick blocks.
-            if (r.H >= 16)
-                for (float y = r.Y + 10; y < r.Bottom - 4; y += 10)
-                    l.DrawLine(new Vector2(r.X + 3, y), new Vector2(r.Right - 3, y), t.Block.Darkened(0.2f) with { A = 0.6f }, 1, true);
+            // Plain silhouettes while the painting is on its way (and under it as it fades in).
+            var flat = TerrainPainter.Ink(Theme).Lerp(Theme.Block, 0.45f);
+            foreach (var b in _borderRects) l.DrawRect(b, flat.Darkened(0.3f));
+            foreach (var poly in _groundPolys) l.DrawColoredPolygon(poly, flat);
         }
-        foreach (var g in Layout.Ground) DrawGround(l, g, top, bottom);
+        if (_ground != null) l.DrawTextureRect(_ground, full, false, new Color(1, 1, 1, _groundFade));
 
         if (!DecoAnimated)
             foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
@@ -197,18 +216,18 @@ public partial class MapNode : Node2D
     {
         if (Layout == null) return;
         var t = Theme;
-        // Abyss glow at the bottom, visible through pits.
+        // A faint light rising from the depths, visible through pits.
         float h = MapLayout.Height;
         l.DrawPolygon(new[] { new Vector2(0, h - 70), new Vector2(MapLayout.Width, h - 70), new Vector2(MapLayout.Width, h), new Vector2(0, h) },
-            new[] { t.Edge with { A = 0 }, t.Edge with { A = 0 }, t.Edge with { A = 0.35f }, t.Edge with { A = 0.35f } });
+            new[] { t.Edge with { A = 0 }, t.Edge with { A = 0 }, t.Edge with { A = 0.14f }, t.Edge with { A = 0.14f } });
 
-        foreach (var g in Layout.Ground) DrawGroundGlow(l, g);
+        // Glowing veins (magma), lifted into HDR so they bloom.
+        if (_groundGlow != null) l.DrawTextureRect(_groundGlow, new Rect2(0, 0, MapLayout.Width, h), false, new Color(1.6f, 1.6f, 1.6f, _groundFade));
+        // A gentle sheen of light just above each platform's top.
         foreach (var r in Layout.Solids)
         {
             if (IsBorder(r) || _groundDrawn.Contains(r)) continue;
-            // Neon top edge plus a soft bloom above it.
-            l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(r.X + 1, r.Y, r.W - 2, 2f), 1f), Shapes.Hdr(t.Edge, 1.25f));
-            l.DrawTextureRect(GlowTex.Tex, new Rect2(r.X - 6, r.Y - 9, r.W + 12, 18), false, t.Edge with { A = 0.22f });
+            l.DrawTextureRect(GlowTex.Tex, new Rect2(r.X - 4, r.Y - 6, r.W + 8, 10), false, t.Edge with { A = 0.07f });
         }
 
         if (!DecoAnimated)
@@ -242,29 +261,6 @@ public partial class MapNode : Node2D
         }
     }
 
-    /// <summary>
-    /// A floor segment with terrain: one block whose top follows the hills, filled column by column so the gradient
-    /// runs from the local top down (the flat parts match plain floor blocks), with strata lines following the slope.
-    /// </summary>
-    private void DrawGround(DrawLayer l, GroundPoint[] g, Color top, Color bottom)
-    {
-        var t = Theme;
-        float h = MapLayout.Height;
-        var outline = GroundOutline(g);
-        l.DrawColoredPolygon(Shapes.Offset(outline, new Vector2(2, 4)), new Color(0, 0, 0, 0.28f));
-        for (int i = 0; i + 1 < g.Length; i++)
-        {
-            if (g[i].X == g[i + 1].X) continue; // a cliff
-            Vector2 a = new(g[i].X, g[i].Y), b = new(g[i + 1].X, g[i + 1].Y);
-            l.DrawPolygon(new[] { a, b, new Vector2(b.X, h), new Vector2(a.X, h) }, new[] { top, top, bottom, bottom });
-        }
-        Shapes.DrawClosed(l, outline, t.Block.Darkened(0.55f), 1f);
-        var line = t.Block.Darkened(0.2f) with { A = 0.6f };
-        for (int off = 10; off < 60; off += 10)
-            foreach (var run in Strata(g, off, h - 4))
-                l.DrawPolyline(run, line, 1, true);
-    }
-
     private static Vector2[] GroundOutline(GroundPoint[] g)
     {
         var pts = new List<Vector2>();
@@ -282,53 +278,47 @@ public partial class MapNode : Node2D
         return pts.ToArray();
     }
 
-    /// <summary>The top outline pushed down by <paramref name="off"/> and inset 3 px, cut into runs above <paramref name="maxY"/>.</summary>
-    private static List<Vector2[]> Strata(GroundPoint[] g, float off, float maxY)
+    /// <summary>
+    /// Craggy rock hanging up to 4 px below a floating platform (cosmetic; collision stays the box), tapering to the
+    /// corners so the sides stay straight.
+    /// </summary>
+    private Vector2[] Underside(RectI r)
     {
-        var runs = new List<Vector2[]>();
-        var cur = new List<Vector2>();
-        void Flush() { if (cur.Count >= 2) runs.Add(cur.ToArray()); cur = new List<Vector2>(); }
-        float x0 = g[0].X + 3, x1 = g[^1].X - 3;
-        for (int i = 0; i + 1 < g.Length; i++)
+        var pts = new List<Vector2> { new(r.Right - 2, r.Bottom - 2) };
+        for (float x = r.Right - 3; x > r.X + 3; x -= 3)
         {
-            if (g[i].X == g[i + 1].X) { Flush(); continue; } // cliffs break the line
-            Vector2 a = new(Mathf.Max(g[i].X, x0), 0), b = new(Mathf.Min(g[i + 1].X, x1), 0);
-            if (b.X <= a.X) continue;
-            float Y(float x) => Mathf.Lerp(g[i].Y, g[i + 1].Y, (x - g[i].X) / (g[i + 1].X - g[i].X)) + off;
-            a.Y = Y(a.X);
-            b.Y = Y(b.X);
-            bool aIn = a.Y <= maxY, bIn = b.Y <= maxY;
-            if (!aIn && !bIn) { Flush(); continue; }
-            Vector2 cut(Vector2 p, Vector2 q) => p.Lerp(q, (maxY - p.Y) / (q.Y - p.Y));
-            if (aIn && bIn) { if (cur.Count == 0) cur.Add(a); cur.Add(b); }
-            else if (aIn) { if (cur.Count == 0) cur.Add(a); cur.Add(cut(a, b)); Flush(); }
-            else { Flush(); cur.Add(cut(a, b)); cur.Add(b); }
+            float edge = Mathf.Min(x - r.X, r.Right - x);
+            float drop = Mathf.Min(1, edge / 10f) * (1 + 3 * NoiseTile.Hash((int)x, r.Y, Layout.Seed));
+            pts.Add(new Vector2(x, r.Bottom + drop));
         }
-        Flush();
-        return runs;
+        pts.Add(new Vector2(r.X + 2, r.Bottom - 2));
+        return pts.ToArray();
     }
 
-    /// <summary>The neon edge and bloom along a terrain segment's top, slopes included.</summary>
-    private void DrawGroundGlow(DrawLayer l, GroundPoint[] g)
+    private void PaintGround()
     {
-        var t = Theme;
-        var edge = new List<Vector2>();
-        void Flush() { if (edge.Count >= 2) l.DrawPolyline(edge.ToArray(), Shapes.Hdr(t.Edge, 1.25f), 2f, true); edge.Clear(); }
-        for (int i = 0; i + 1 < g.Length; i++)
+        var ground = new List<Vector2[]>();
+        var border = new List<Rect2>();
+        foreach (var r in Layout.Solids)
         {
-            if (g[i].X == g[i + 1].X) { Flush(); continue; }
-            Vector2 a = new(g[i].X + (i == 0 ? 1 : 0), g[i].Y + 1), b = new(g[i + 1].X - (i + 2 == g.Length ? 1 : 0), g[i + 1].Y + 1);
-            if (edge.Count == 0) edge.Add(a);
-            edge.Add(b);
-            // Bloom: the same soft strip as a block's, turned to lie along this piece.
-            var d = b - a;
-            float len = d.Length();
-            l.DrawSetTransform((a + b) * 0.5f - new Vector2(0, 1), d.Angle());
-            float ext = (i == 0 || i + 2 == g.Length) ? 6 : 2;
-            l.DrawTextureRect(GlowTex.Tex, new Rect2(-len * 0.5f - ext, -9, len + ext * 2, 18), false, t.Edge with { A = 0.22f });
-            l.DrawSetTransform(Vector2.Zero, 0);
+            if (IsBorder(r)) border.Add(new Rect2(r.X, r.Y, r.W, r.H));
+            else if (!_groundDrawn.Contains(r))
+            {
+                ground.Add(Shapes.RoundRect(new Rect2(r.X, r.Y, r.W, r.H), Mathf.Min(3, r.H * 0.5f)));
+                if (r.Y < MapGenerator.FloorY) ground.Add(Underside(r));
+            }
         }
-        Flush();
+        foreach (var g in Layout.Ground) ground.Add(GroundOutline(g));
+        _groundPolys = ground;
+        _borderRects = border;
+        (_ground, _groundGlow) = (null, null);
+        // Paint on a worker thread so starting a battle doesn't stall a frame; the plain silhouettes stand in until
+        // it lands (Process), then the painting fades in over them.
+        PaintNoise.Warm();
+        var shapes = new TerrainPainter.GroundShapes(ground, border);
+        var theme = Theme;
+        int seed = Layout.Seed;
+        _bake = System.Threading.Tasks.Task.Run(() => TerrainPainter.Bake(shapes, theme, seed));
     }
 
     private void DrawDeco(DrawLayer l, Vector2 p, float size, int kind, float phase, bool below, bool glowPass)
@@ -346,7 +336,7 @@ public partial class MapNode : Node2D
                 break;
             case Deco.Grass:
                 if (below || glowPass) return;
-                var grass = t.Edge.Lerp(new Color("#62d26f"), 0.65f);
+                var grass = t.Block.Lerp(new Color("#8fa860"), 0.6f);
                 for (int i = -1; i <= 1; i++)
                 {
                     float sway = Mathf.Sin(_t * 2 + phase + i) * 1.2f;

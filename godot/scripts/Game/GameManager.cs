@@ -82,6 +82,7 @@ public partial class GameManager : Node2D
         _cam = new Camera2D { Name = "Camera", Position = new Vector2(MapLayout.Width, MapLayout.Height) / 2 };
         AddChild(MapNode);
         Arena = new Arena { Name = "Arena", Game = this };
+        Arena.Material = PaintShaders.Grain;
         AddChild(Arena);
         AddChild(_avatars);
         AddChild(Bullets);
@@ -899,6 +900,7 @@ public partial class GameManager : Node2D
             var p = active[i];
             var sp = layout.Spawns[order[i % order.Count]];
             var av = new Avatar();
+            av.Material = PaintShaders.Grain;
             av.Setup(p, this, Vector2.Zero);
             av.Position = new Vector2(sp.X, sp.Y - av.HalfSize.Y - 1);
             _avatars.AddChild(av);

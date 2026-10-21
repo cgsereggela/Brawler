@@ -27,9 +27,9 @@ public sealed class Appearance
     /// <summary>Hair and hat dyes. Game code turns the hex into colors.</summary>
     public static readonly (string Name, string Hex)[] Dyes =
     {
-        ("Black", "#2a2430"), ("Brown", "#6b4226"), ("Blonde", "#f2d16b"), ("Ginger", "#e0712d"),
-        ("Grey", "#a9a9bb"), ("White", "#f4f4f8"), ("Blue", "#3d6bff"), ("Pink", "#ff6fb0"),
-        ("Green", "#3fbf5f"), ("Purple", "#8e4dff"), ("Red", "#d63a3a"),
+        ("Black", "#2a2430"), ("Brown", "#6b4a36"), ("Blonde", "#d9c48a"), ("Ginger", "#b8693a"),
+        ("Grey", "#9a98a3"), ("White", "#ece6d8"), ("Blue", "#4f6fa8"), ("Pink", "#c27a98"),
+        ("Green", "#5f9a68"), ("Purple", "#7a5fa8"), ("Red", "#a84444"),
     };
 
     private static readonly string[] DyeNames = Dyes.Select(d => d.Name).ToArray();

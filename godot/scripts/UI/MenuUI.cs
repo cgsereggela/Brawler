@@ -30,8 +30,8 @@ public partial class MenuUI : Control
         // Left: the title and your character.
         var left = UiKit.VBox(2);
         left.Alignment = BoxContainer.AlignmentMode.Center;
-        left.AddChild(new TitleText("BRAWLER", 64, 3f, Palette.Players[0], Palette.Players[3], Palette.Players[2], Palette.Players[6],
-            Palette.Players[1], Palette.Players[4], Palette.Players[7]));
+        left.AddChild(new TitleText("BRAWLER", 64, 3f, new Color("#f2ede2"), new Color("#d9d2c2"), new Color("#f2ede2"), new Color("#c9c1b0"),
+            new Color("#f2ede2"), new Color("#d9d2c2"), new Color("#f2ede2")));
         left.AddChild(UiKit.Label("lose a battle, pick a card, come back stronger", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center));
         _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 5.5f, alive: true) { Pedestal = true };
         var previewBox = new CenterContainer();

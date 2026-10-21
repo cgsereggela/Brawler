@@ -24,6 +24,7 @@ public partial class AvatarPreview : Control
         ColorIdx = colorIdx;
         Zoom = zoom;
         Alive = alive;
+        Material = PaintShaders.Grain;
         // Room for the tallest hat above the head and the gun in front.
         CustomMinimumSize = new Vector2(32, 36) * zoom;
         MouseFilter = MouseFilterEnum.Ignore;

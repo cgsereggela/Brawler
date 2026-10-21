@@ -16,22 +16,23 @@ public sealed record ArenaTheme(
     Color MoteA, Color MoteB)
 {
     // Same order as Logic.ThemeId and ThemeRules.Names (the tests check the names line up).
+    // Muted, painterly palettes: dusky skies, stone that sits close to the sky in hue, and one soft light color.
     public static readonly ArenaTheme[] All =
     {
-        new("Neon Night", new("#0e0a2e"), new("#3a1470"), new("#c2307a"), new("#3b2b85"), new("#36f3ff"),
-            Skyline.City, Motes.Bokeh, Deco.Neon, new("#ff4fd8"), new("#36f3ff")),
-        new("Sunset Peaks", new("#2b1a5c"), new("#b8457a"), new("#ffa45e"), new("#5e2c63"), new("#ffd166"),
-            Skyline.Mountains, Motes.Bokeh, Deco.Grass, new("#ffd166"), new("#ff7a59")),
-        new("Deep Reef", new("#03182e"), new("#0b4a78"), new("#1cc0cf"), new("#17587a"), new("#6dffd2"),
-            Skyline.Hills, Motes.Bubbles, Deco.Weeds, new("#bff9ff"), new("#6dffd2")),
-        new("Toxic Grove", new("#06170f"), new("#174a2c"), new("#7bd94a"), new("#22603b"), new("#d4ff3d"),
-            Skyline.Spires, Motes.Fireflies, Deco.Mushrooms, new("#e8ff6b"), new("#6bffb0")),
-        new("Magma Core", new("#140405"), new("#55100f"), new("#f0552a"), new("#5a2219"), new("#ffb13b"),
-            Skyline.Mountains, Motes.Embers, Deco.Cracks, new("#ffb13b"), new("#ff5a2a")),
-        new("Frost Bite", new("#0b1538"), new("#2f57a8"), new("#9be0ff"), new("#3d64b0"), new("#eafaff"),
-            Skyline.Spires, Motes.Snow, Deco.Icicles, new("#ffffff"), new("#bfe8ff")),
-        new("Candy Clouds", new("#3a1878"), new("#a63fc4"), new("#ff86bd"), new("#7442c4"), new("#fff27a"),
-            Skyline.Hills, Motes.Bokeh, Deco.Sprinkles, new("#fff27a"), new("#7af7ff")),
+        new("Neon Night", new("#0a0f1e"), new("#1f2e4c"), new("#5d7ea3"), new("#26324a"), new("#9fd6f2"),
+            Skyline.City, Motes.Bokeh, Deco.Neon, new("#b6e2ff"), new("#e8d7a6")),
+        new("Sunset Peaks", new("#221827"), new("#5e3a46"), new("#c99068"), new("#3e2b30"), new("#f0c58c"),
+            Skyline.Mountains, Motes.Bokeh, Deco.Grass, new("#ffd9a3"), new("#f0a274")),
+        new("Deep Reef", new("#061820"), new("#14404c"), new("#4f9a9a"), new("#1b3d45"), new("#a6eedb"),
+            Skyline.Hills, Motes.Bubbles, Deco.Weeds, new("#d2fff4"), new("#94e6d1")),
+        new("Toxic Grove", new("#09170f"), new("#1f3f27"), new("#6f9a58"), new("#223b27"), new("#cbea80"),
+            Skyline.Spires, Motes.Fireflies, Deco.Mushrooms, new("#e6ff9c"), new("#a6f0b6")),
+        new("Magma Core", new("#120a0a"), new("#3a1a16"), new("#a14a2c"), new("#2e1e1c"), new("#ffad5c"),
+            Skyline.Mountains, Motes.Embers, Deco.Cracks, new("#ffc275"), new("#ff7a45")),
+        new("Frost Bite", new("#0e1628"), new("#2d4870"), new("#9ab9d6"), new("#2e4262"), new("#e6f3ff"),
+            Skyline.Spires, Motes.Snow, Deco.Icicles, new("#ffffff"), new("#cfe6ff")),
+        new("Candy Clouds", new("#21152f"), new("#5e3a6e"), new("#d197b3"), new("#4a3158"), new("#fff0b8"),
+            Skyline.Hills, Motes.Bokeh, Deco.Sprinkles, new("#fff2b0"), new("#b8f0ff")),
     };
 
     /// <summary>The look for a theme id; All is in ThemeId order.</summary>

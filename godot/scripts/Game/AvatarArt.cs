@@ -44,15 +44,15 @@ public struct AvatarPose
 public static class AvatarArt
 {
     private static readonly Color Ink = new("#17141f");
-    private static readonly Color White = new("#f7f7fb"), OffWhite = new("#dcdcea");
-    private static readonly Color Red = new("#ef4256"), DarkRed = new("#a3213a");
-    private static readonly Color Pink = new("#ff8fb8"), DarkPink = new("#d9608a");
-    private static readonly Color Orange = new("#ffa033"), DarkOrange = new("#c4620f");
-    private static readonly Color Gold = new("#ffd23d"), DarkGold = new("#c98f12"), PaleYellow = new("#fff3a0");
-    private static readonly Color Blue = new("#3d9bff"), Metal = new("#aab2cc"), DarkMetal = new("#646c8c");
-    private static readonly Color Bone = new("#f1e6c8"), HatBlack = new("#262433"), HatGrey = new("#4a4862");
+    private static readonly Color White = new("#ece6d8"), OffWhite = new("#c9c2b4");
+    private static readonly Color Red = new("#9a3f42"), DarkRed = new("#5e2428");
+    private static readonly Color Pink = new("#c08495"), DarkPink = new("#7d4d5c");
+    private static readonly Color Orange = new("#c27e45"), DarkOrange = new("#7d4a22");
+    private static readonly Color Gold = new("#c2a35c"), DarkGold = new("#7f6630"), PaleYellow = new("#e3d6a6");
+    private static readonly Color Blue = new("#4d6d9a"), Metal = new("#8b8f99"), DarkMetal = new("#4e525e");
+    private static readonly Color Bone = new("#f1e6c8"), HatBlack = new("#1e1c24"), HatGrey = new("#45424e");
     private static readonly Color Visor = new("#3de6e0");
-    private static readonly Color GunLight = new("#9aa3c2"), GunMid = new("#5a6182"), GunDark = new("#353a52");
+    private static readonly Color GunLight = new("#8f8b85"), GunMid = new("#55525a"), GunDark = new("#2c2a31");
 
     // Top of each hair style and hat in sprite space, for placing the HP bar.
     private static readonly float[] HairTop = { -9.5f, -11.3f, -16.2f, -16.4f, -11.5f, -11.8f, -11.3f, -18.8f };
@@ -103,6 +103,7 @@ public static class AvatarArt
         public CanvasItem Ci;
         public AvatarPose P;
         public Color Body, Hair, Hat;
+        public Color Mask, MaskShade; // the bone mask, tinted toward the player's color
         public Color H(Color c) => P.Hurt ? Colors.White : c;
     }
 
@@ -119,6 +120,9 @@ public static class AvatarArt
         c.Body = p.Hurt ? Colors.White : p.Body;
         c.Hair = Palette.Dye(look.HairColor);
         c.Hat = Palette.Dye(look.HatColor);
+        // A wash of the player's color over the bone, so masks tell players apart as well as cloaks.
+        c.Mask = MaskBone.Lerp(p.Body, 0.15f);
+        c.MaskShade = MaskShade.Lerp(p.Body, 0.1f);
 
         var rig = Solve(p, facing);
         var scale = new Vector2(facing * s, s);
@@ -133,7 +137,7 @@ public static class AvatarArt
         DrawBody(c, rig.Breathe);
         DrawEyes(c, look.Eyes, facing);
         DrawNose(c, look.Nose);
-        DrawMouth(c, look.Mouth);
+        DrawMouth(c, look.Mouth, bodyOrigin, scale);
         DrawHair(c, look.Hair);
         DrawHat(c, look.Hat);
 
@@ -259,10 +263,11 @@ public static class AvatarArt
 
     private static void DrawLegs(Ctx c, Rig rig)
     {
-        var b = c.P.Body;
-        var line = c.P.Hurt ? Colors.White : b.Darkened(0.68f);
-        Leg(c, rig, -HipX, rig.Back, rig.BackTilt, rig.BackToe, c.H(b.Darkened(0.3f)), c.H(b.Darkened(0.55f)), line);
-        Leg(c, rig, HipX, rig.Front, rig.FrontTilt, rig.FrontToe, c.H(b.Darkened(0.16f)), c.H(b.Darkened(0.45f)), line);
+        // Thin dark legs under the cloak, and darker boots.
+        var cloak = Cloak(c.P.Body);
+        var boot = Hollow.Lerp(cloak, 0.3f);
+        Leg(c, rig, -HipX, rig.Back, rig.BackTilt, rig.BackToe, c.H(cloak.Darkened(0.45f)), c.H(boot), Ink);
+        Leg(c, rig, HipX, rig.Front, rig.FrontTilt, rig.FrontToe, c.H(cloak.Darkened(0.3f)), c.H(boot.Lightened(0.06f)), Ink);
     }
 
     private static void Leg(Ctx c, Rig rig, float hipX, Vector2 foot, float tilt, float toe, Color leg, Color shoe, Color line)
@@ -297,149 +302,203 @@ public static class AvatarArt
         ci.DrawLine(foot + rot * (toe * -0.6f) + up * 0.75f, foot + rot * (toe * 1.6f) + up * 0.75f, new Color(1, 1, 1, 0.25f), 0.4f, true);
     }
 
+    // A pale bone mask over a dark cloak, in the manner of a hollow little bug knight. The cloak takes a dark shade of
+    // the player's color and a collar in the full color, so players stay easy to tell apart; the mask is the same for
+    // everyone and carries the face. The mask spans y -9.5..MaskBottom, the cloak hangs from under it to a ragged hem.
+    private const float MaskBottom = 1.35f;
+    private static readonly Color MaskBone = new("#ece6d8"), MaskShade = new("#aaa396"), MaskDeep = new("#7d776d");
+    private static readonly Color Hollow = new("#0c0a10");
+
+    /// <summary>The cloak's color for a player color: darker and a little greyer, like dyed cloth in shadow.</summary>
+    private static Color Cloak(Color body) => body.Lerp(new Color("#4a4652"), 0.15f).Darkened(0.3f);
+
+    private static readonly Vector2[] MaskOutline = BuildMask();
+
+    /// <summary>A wide dome tapering to a short, narrower jaw.</summary>
+    private static Vector2[] BuildMask()
+    {
+        const float cy = -3.3f, rx = 6.7f, ry = 6.2f;
+        var pts = new Vector2[32];
+        for (int i = 0; i < pts.Length; i++)
+        {
+            var u = Vector2.FromAngle(i * Mathf.Tau / pts.Length);
+            float y = u.Y * ry, x = u.X * rx;
+            if (y > 0)
+            {
+                float t = y / ry;
+                y *= (MaskBottom - cy) / ry;
+                x *= 1 - 0.2f * t * t;
+            }
+            pts[i] = new Vector2(x, cy + y);
+        }
+        return pts;
+    }
+
+    private static readonly Vector2[] CloakOutline =
+    {
+        new(-4.6f, -1.6f), new(4.8f, -1.6f), new(6.6f, 1.8f), new(7.3f, 4.1f), new(5.3f, 3.3f), new(3.5f, 4.4f),
+        new(1.3f, 3.5f), new(-1.1f, 4.5f), new(-3.3f, 3.4f), new(-5.4f, 4.3f), new(-7.2f, 3.7f), new(-6.6f, 1.4f),
+    };
+
     private static void DrawBody(Ctx c, float breathe)
     {
-        var body = Shapes.RoundRect(new Rect2(-7f - breathe * 0.4f, BodyTop, 14f + breathe * 0.8f, BodyBottom - BodyTop), 6.2f, 6);
-        Shapes.Fill(c.Ci, body, c.Body, c.P.Hurt ? Colors.White : c.P.Body.Darkened(0.6f), 0.9f);
-        Shapes.Gradient(c.Ci, body, c.H(c.P.Body.Lightened(0.16f)), c.H(c.P.Body.Darkened(0.24f)));
-        // Glossy highlight and a soft belly shade.
-        c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-3.4f, -6.4f), 2.4f, 1.3f, 14), new Color(1, 1, 1, 0.38f));
-        c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-4.6f, -4.6f), 0.7f, 0.6f, 10), new Color(1, 1, 1, 0.45f));
-        c.Ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(0.6f, BodyBottom - 1.6f), 5f, 1.4f, 18), new Color(0, 0, 0, 0.08f));
+        var ci = c.Ci;
+        var p = c.P;
+        var cloak = Cloak(p.Body);
+        // Breathing swells the cloak a little at the sides.
+        var cl = new Vector2[CloakOutline.Length];
+        for (int i = 0; i < cl.Length; i++) cl[i] = CloakOutline[i] * new Vector2(1 + breathe * 0.06f, 1);
+        Shapes.Fill(ci, cl, c.H(cloak), Ink, 0.9f);
+        Shapes.Gradient(ci, cl, c.H(cloak.Lightened(0.14f)), c.H(cloak.Darkened(0.3f)));
+        // A couple of folds.
+        var fold = Ink with { A = 0.35f };
+        ci.DrawLine(new Vector2(-2.4f, 0.6f), new Vector2(-3.1f, 3.6f), fold, 0.4f, true);
+        ci.DrawLine(new Vector2(2.6f, 0.8f), new Vector2(3.3f, 3.9f), fold, 0.4f, true);
+        // The collar in the player's own color.
+        var collar = Shapes.RoundRect(new Rect2(-6.2f, -1.2f, 12.6f, 2.4f), 1.2f);
+        Shapes.Fill(ci, collar, c.H(p.Body.Lerp(c.MaskShade, 0.12f)), Ink, 0.55f);
+        ci.DrawLine(new Vector2(-5f, -0.6f), new Vector2(5.2f, -0.6f), c.H(p.Body.Lightened(0.35f)) with { A = 0.55f }, 0.35f, true);
+
+        // The mask: bone white, shaded toward the jaw and the back, with a soft sheen on the brow.
+        Shapes.Fill(ci, MaskOutline, c.H(c.Mask), Ink, 1.0f);
+        Shapes.Gradient(ci, MaskOutline, c.H(c.Mask.Lightened(0.06f)), c.H(c.MaskShade));
+        ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(c.MaskShade) with { A = 0.3f });
+        ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-1.2f, -7.8f), 3.4f, 1f, 16), new Color(1, 1, 1, 0.3f));
     }
 
     // ---------- eyes ----------
+    // Hollow black eye holes in the mask. They lean a little toward the aim, so you can see where someone looks.
 
     private static void DrawEyes(Ctx c, int style, int facing)
     {
         var ci = c.Ci;
         var p = c.P;
         float ax = Mathf.Clamp(p.Aim.X * facing, -1, 1), ay = Mathf.Clamp(p.Aim.Y, -1, 1);
-        var look = new Vector2(ax * 0.55f, ay * 0.6f);
-        var white = c.H(White);
-        Vector2 l = new(-1.9f, -4.4f), r = new(3.1f, -4.4f);
+        var look = new Vector2(ax * 0.35f, ay * 0.35f);
+        var hole = c.H(Hollow);
+        Vector2 l = new(-2.1f, -4.3f), r = new(2.8f, -4.3f);
 
-        void Eye(Vector2 at, float rx, float ry, float pupil)
+        // A hollow: a tall oval, optionally tilted, squashed shut on a blink.
+        void Eye(Vector2 at, float rx, float ry, float tilt = 0)
         {
-            if (p.Blink)
-            {
-                ci.DrawArc(at + new Vector2(0, -1.2f), rx * 0.95f, 0.35f, Mathf.Pi - 0.35f, 10, Ink, 0.8f, true);
-                return;
-            }
-            ci.DrawColoredPolygon(Shapes.Ellipse(at, rx + 0.45f, ry + 0.45f, 18), Ink);
-            ci.DrawColoredPolygon(Shapes.Ellipse(at, rx, ry, 18), white);
-            var pp = at + look * new Vector2(rx - pupil * 0.7f, ry - pupil * 0.7f);
-            ci.DrawCircle(pp, pupil, Ink, true, -1, true);
-            ci.DrawCircle(pp + new Vector2(-pupil * 0.35f, -pupil * 0.4f), pupil * 0.36f, White, true, -1, true);
+            if (p.Blink) ry = Mathf.Min(ry, 0.35f);
+            var pts = Shapes.Ellipse(Vector2.Zero, rx, ry, 18);
+            var rot = Vector2.FromAngle(tilt);
+            for (int i = 0; i < pts.Length; i++)
+                pts[i] = at + look + new Vector2(pts[i].X * rot.X - pts[i].Y * rot.Y, pts[i].X * rot.Y + pts[i].Y * rot.X);
+            ci.DrawColoredPolygon(pts, hole);
+        }
+
+        // Covers the top of a hollow with mask (a lid, a scowl), and carves its edge.
+        void Lid(Vector2 a, Vector2 b, float above)
+        {
+            ci.DrawColoredPolygon(new[] { a, b, b + new Vector2(0, -above), a + new Vector2(0, -above) }, c.H(c.Mask.Darkened(0.04f)));
+            ci.DrawLine(a, b, Ink, 0.6f, true);
         }
 
         switch (style)
         {
             case 0: // Round
-                Eye(l, 1.75f, 2.1f, 1.05f);
-                Eye(r, 1.75f, 2.1f, 1.05f);
+                Eye(l, 1.5f, 2.3f);
+                Eye(r, 1.5f, 2.3f);
                 break;
             case 1: // Big
-                Eye(l + new Vector2(-0.4f, -0.2f), 2.25f, 2.7f, 1.4f);
-                Eye(r + new Vector2(0.3f, -0.2f), 2.25f, 2.7f, 1.4f);
+                Eye(l + new Vector2(-0.3f, -0.2f), 1.95f, 2.85f);
+                Eye(r + new Vector2(0.2f, -0.2f), 1.95f, 2.85f);
                 break;
             case 2: // Dots
-                foreach (var e in new[] { l + new Vector2(0.2f, 0.3f), r + new Vector2(0, 0.3f) })
-                {
-                    if (p.Blink) { ci.DrawLine(e + new Vector2(-1, 0.4f), e + new Vector2(1, 0.4f), Ink, 0.8f, true); continue; }
-                    ci.DrawColoredPolygon(Shapes.Ellipse(e + look * 0.6f, 0.95f, 1.2f, 12), Ink);
-                    ci.DrawCircle(e + look * 0.6f + new Vector2(-0.3f, -0.45f), 0.32f, White, true, -1, true);
-                }
+                Eye(l + new Vector2(0.2f, 0.3f), 0.85f, 1.2f);
+                Eye(r + new Vector2(0, 0.3f), 0.85f, 1.2f);
                 break;
             case 3: // Sleepy
-                foreach (var e in new[] { l + new Vector2(0, 0.5f), r + new Vector2(0, 0.5f) })
+                foreach (var e in new[] { l + new Vector2(0, 0.4f), r + new Vector2(0, 0.4f) })
                 {
-                    if (p.Blink) { ci.DrawArc(e + new Vector2(0, -0.9f), 1.7f, 0.3f, Mathf.Pi - 0.3f, 10, Ink, 0.8f, true); continue; }
-                    ci.DrawColoredPolygon(Shapes.Ellipse(e, 2.2f, 1.95f, 18), Ink);
-                    ci.DrawColoredPolygon(Shapes.Ellipse(e, 1.8f, 1.55f, 18), white);
-                    ci.DrawCircle(e + new Vector2(look.X * 0.9f, 0.4f), 0.95f, Ink, true, -1, true);
-                    // Heavy lid over the top half.
-                    ci.DrawColoredPolygon(new[] { e + new Vector2(-2.4f, 0.05f), e + new Vector2(-2.4f, -2.3f), e + new Vector2(2.4f, -2.3f), e + new Vector2(2.4f, 0.05f) },
-                        c.H(p.Body.Darkened(0.12f)));
-                    ci.DrawLine(e + new Vector2(-2.2f, 0.05f), e + new Vector2(2.2f, 0.05f), Ink, 0.75f, true);
+                    Eye(e, 1.7f, 2f);
+                    if (!p.Blink) Lid(e + look + new Vector2(-2.1f, -0.2f), e + look + new Vector2(2.1f, -0.2f), 2.4f);
                 }
                 break;
-            case 4: // Angry
-                Eye(l, 1.75f, 2.0f, 1.0f);
-                Eye(r, 1.75f, 2.0f, 1.0f);
-                ci.DrawColoredPolygon(Shapes.Capsule(new Vector2(-4.0f, -7.4f), new Vector2(-0.6f, -6.2f), 0.55f), Ink);
-                ci.DrawColoredPolygon(Shapes.Capsule(new Vector2(1.8f, -6.2f), new Vector2(5.0f, -7.5f), 0.55f), Ink);
+            case 4: // Angry: hollows tilted in under a carved scowl.
+                Eye(l, 1.5f, 2.2f, -0.3f);
+                Eye(r, 1.5f, 2.2f, 0.3f);
+                if (!p.Blink)
+                {
+                    Lid(l + look + new Vector2(-1.9f, -2.4f), l + look + new Vector2(1.7f, -0.9f), 1.6f);
+                    Lid(r + look + new Vector2(-1.7f, -0.9f), r + look + new Vector2(1.9f, -2.4f), 1.6f);
+                }
                 break;
-            case 5: // Visor
+            case 5: // Visor: one dark slit with two pale lights drifting along it.
             {
-                ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(-5f, -6.6f, 12.4f, 4.4f), 2.2f), Ink);
-                ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(-4.2f, -5.9f, 10.8f, 3f), 1.5f), p.Hurt ? Colors.White : Shapes.Hdr(Visor, 1.25f));
-                float u = Mathf.PingPong(p.Time * 1.4f, 1f);
-                ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(-3.8f + u * 8.2f, -5.6f, 1.8f, 2.4f), 0.9f), Shapes.Hdr(new Color("#d8fffd"), 1.6f));
-                ci.DrawLine(new Vector2(-3.4f, -5.3f), new Vector2(1f, -5.3f), new Color(1, 1, 1, 0.45f), 0.4f, true);
+                ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(-4.8f, -5.6f, 11f, p.Blink ? 0.8f : 2.6f), 1.2f), hole);
+                if (p.Blink) break;
+                float u = Mathf.PingPong(p.Time * 0.9f, 1f) * 1.6f;
+                foreach (float x in new[] { -2.2f, 2.8f })
+                {
+                    var at = new Vector2(x + u + look.X, -4.3f);
+                    GlowTex.Draw(ci, at, 2.2f, new Color("#bfe3ff") with { A = 0.5f });
+                    ci.DrawCircle(at, 0.55f, p.Hurt ? Colors.White : Shapes.Hdr(new Color("#d8efff"), 1.4f), true, -1, true);
+                }
                 break;
             }
             case 6: // Cyclops
-                Eye(new Vector2(0.9f, -4.6f), 3f, 3.1f, 1.6f);
+                Eye(new Vector2(0.6f, -4.5f), 2.3f, 3.1f);
                 break;
-            case 7: // Shades
+            case 7: // Shades: a dark band across the mask.
             {
-                ci.DrawLine(new Vector2(-4.5f, -5.4f), new Vector2(-7.3f, -5.8f), Ink, 0.7f, true);
-                ci.DrawLine(new Vector2(0.2f, -5.3f), new Vector2(1.4f, -5.3f), Ink, 0.8f, true);
-                foreach (float x in new[] { -4.5f, 1.3f })
-                {
-                    var lens = Shapes.RoundRect(new Rect2(x, -6.1f, 4.8f, 3.3f), 1.3f);
-                    Shapes.Fill(ci, lens, HatBlack, Ink, 0.5f);
-                    Shapes.Gradient(ci, lens, new Color("#3d3b58"), new Color("#141220"));
-                    ci.DrawLine(new Vector2(x + 1.1f, -3.4f), new Vector2(x + 2.6f, -5.6f), new Color(1, 1, 1, 0.5f), 0.5f, true);
-                }
+                var band = Shapes.RoundRect(new Rect2(-5.4f, -6.0f, 11.6f, 3.2f), 1f);
+                ci.DrawColoredPolygon(band, hole);
+                ci.DrawLine(new Vector2(-4.4f, -5.2f), new Vector2(-1.8f, -5.2f), new Color(1, 1, 1, 0.25f), 0.5f, true);
+                ci.DrawLine(new Vector2(-7.3f, -5.6f), new Vector2(-5.3f, -5.2f), Ink, 0.7f, true);
                 break;
             }
-            case 8: // Happy
-                ci.DrawArc(l + new Vector2(0, 0.6f), 1.5f, Mathf.Pi + 0.2f, Mathf.Tau - 0.2f, 12, Ink, 0.9f, true);
-                ci.DrawArc(r + new Vector2(0, 0.6f), 1.5f, Mathf.Pi + 0.2f, Mathf.Tau - 0.2f, 12, Ink, 0.9f, true);
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(-4.2f, -1.4f), 1.4f, 0.8f, 12), Pink with { A = 0.6f });
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(5.4f, -1.4f), 1.2f, 0.8f, 12), Pink with { A = 0.6f });
+            case 8: // Happy: crescents curving up.
+                foreach (var e in new[] { l + new Vector2(0, 0.4f), r + new Vector2(0, 0.4f) })
+                {
+                    var pts = new List<Vector2>();
+                    for (int i = 0; i <= 10; i++) pts.Add(e + look + Vector2.FromAngle(Mathf.Pi + 0.25f + i * (Mathf.Pi - 0.5f) / 10) * 1.9f);
+                    for (int i = 10; i >= 0; i--) pts.Add(e + look + new Vector2(0, 0.5f) + Vector2.FromAngle(Mathf.Pi + 0.45f + i * (Mathf.Pi - 0.9f) / 10) * 1.3f);
+                    ci.DrawColoredPolygon(pts.ToArray(), hole);
+                }
                 break;
         }
     }
 
     // ---------- nose ----------
+    // Carved into the mask or shaped from the same bone, never a splash of color (the clown's is a dull red).
 
     private static void DrawNose(Ctx c, int style)
     {
         var ci = c.Ci;
-        var b = c.P.Body;
+        var bone = c.H(c.Mask);
         switch (style)
         {
             case 1: // Dot
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(3.8f, -1.7f), 0.75f, 0.55f, 10), c.H(b.Darkened(0.38f)));
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(3.8f, -1.7f), 0.6f, 0.45f, 10), c.H(MaskDeep));
                 break;
             case 2: // Button
-                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.7f, -1.6f), 1.3f, 1.15f, 14), c.H(b.Lightened(0.14f)), b.Darkened(0.4f), 0.45f);
-                ci.DrawCircle(new Vector2(3.3f, -2f), 0.35f, new Color(1, 1, 1, 0.6f), true, -1, true);
+                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.7f, -1.6f), 1.25f, 1.1f, 14), bone, MaskDeep, 0.4f);
+                ci.DrawCircle(new Vector2(3.3f, -2f), 0.35f, new Color(1, 1, 1, 0.5f), true, -1, true);
                 break;
-            case 3: // Long
-                Shapes.Fill(ci, Shapes.Capsule(new Vector2(3f, -2f), new Vector2(8.6f, -1.3f), 1.1f), c.H(b.Lightened(0.1f)), b.Darkened(0.45f), 0.45f);
-                ci.DrawCircle(new Vector2(7.6f, -0.9f), 0.35f, b.Darkened(0.5f), true, -1, true);
+            case 3: // Long: a bone snout.
+                Shapes.Fill(ci, Shapes.Capsule(new Vector2(3f, -2f), new Vector2(8.6f, -1.3f), 1.05f), bone, Ink, 0.5f);
+                ci.DrawLine(new Vector2(4f, -1.1f), new Vector2(8.2f, -0.7f), c.H(c.MaskShade), 0.5f, true);
                 break;
-            case 4: // Pig
-                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.4f, -1.4f), 2.1f, 1.5f, 16), c.H(Pink), DarkPink, 0.45f);
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(2.6f, -1.4f), 0.45f, 0.65f, 8), c.H(DarkPink.Darkened(0.2f)));
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(4.2f, -1.4f), 0.45f, 0.65f, 8), c.H(DarkPink.Darkened(0.2f)));
+            case 4: // Pig: two nostril slits.
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(2.7f, -1.5f), 0.4f, 0.7f, 8), c.H(Hollow));
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(4.2f, -1.5f), 0.4f, 0.7f, 8), c.H(Hollow));
                 break;
-            case 5: // Beak
-                Shapes.Fill(ci, new[] { new Vector2(3.2f, -3.1f), new Vector2(9.4f, -1.6f), new Vector2(3.2f, -0.1f) }, c.H(Orange), DarkOrange.Darkened(0.2f), 0.45f);
-                ci.DrawColoredPolygon(new[] { new Vector2(3.2f, -1.6f), new Vector2(9.4f, -1.6f), new Vector2(3.2f, -0.1f) }, c.H(DarkOrange));
+            case 5: // Beak: bone, shaded below.
+                Shapes.Fill(ci, new[] { new Vector2(3.2f, -3.1f), new Vector2(9.4f, -1.6f), new Vector2(3.2f, -0.1f) }, bone, Ink, 0.5f);
+                ci.DrawColoredPolygon(new[] { new Vector2(3.4f, -1.6f), new Vector2(9.0f, -1.6f), new Vector2(3.4f, -0.3f) }, c.H(c.MaskShade));
                 break;
             case 6: // Clown
-                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.9f, -1.6f), 1.8f, 1.8f, 16), c.H(Red), DarkRed, 0.45f);
-                ci.DrawCircle(new Vector2(3.3f, -2.3f), 0.55f, new Color(1, 1, 1, 0.7f), true, -1, true);
+                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.9f, -1.6f), 1.7f, 1.7f, 16), c.H(new Color("#8e3a3c")), Ink, 0.5f);
+                ci.DrawCircle(new Vector2(3.4f, -2.2f), 0.45f, new Color(1, 1, 1, 0.4f), true, -1, true);
                 break;
         }
     }
 
     // ---------- mouth ----------
+    // Thin carved lines on the mask, drawn 1.4 px higher than the old cartoon mouths so they sit above the collar.
 
     private static readonly Vector2[] GrinShape = BuildGrin();
 
@@ -449,7 +508,7 @@ public static class AvatarArt
         for (int i = 0; i <= 12; i++)
         {
             float a = i * Mathf.Pi / 12;
-            pts.Add(new Vector2(1.5f + Mathf.Cos(a) * 2.8f, Mathf.Sin(a) * 2.4f));
+            pts.Add(new Vector2(1.5f + Mathf.Cos(a) * 2.5f, Mathf.Sin(a) * 1.9f));
         }
         return pts.ToArray();
     }
@@ -460,48 +519,49 @@ public static class AvatarArt
         new(0.2f, 0.5f), new(-1.8f, 0.2f), new(-3.3f, 0.9f), new(-2.5f, -0.4f), new(-0.6f, -1.3f),
     };
 
-    private static void DrawMouth(Ctx c, int style)
+    private static void DrawMouth(Ctx c, int style, Vector2 bodyOrigin, Vector2 scale)
     {
         var ci = c.Ci;
+        ci.DrawSetTransform(bodyOrigin + new Vector2(0, -1.4f * scale.Y), 0, scale);
+        var ink = Ink with { A = 0.85f };
         switch (style)
         {
             case 0: // Smile
-                ci.DrawArc(new Vector2(1.4f, -0.6f), 2.4f, 0.5f, Mathf.Pi - 0.5f, 14, Ink, 0.85f, true);
+                ci.DrawArc(new Vector2(1.4f, -0.6f), 2.2f, 0.55f, Mathf.Pi - 0.55f, 14, ink, 0.6f, true);
                 break;
             case 1: // Flat
-                ci.DrawLine(new Vector2(-0.3f, 1.3f), new Vector2(3.2f, 1.3f), Ink, 0.85f, true);
+                ci.DrawLine(new Vector2(0f, 1.1f), new Vector2(3f, 1.1f), ink, 0.6f, true);
                 break;
             case 2: // Open
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(1.4f, 1.1f), 1.4f, 1.7f, 16), Ink);
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(1.4f, 2.05f), 0.95f, 0.6f, 12), c.H(Red));
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(1.4f, 1f), 1.1f, 1.25f, 16), c.H(Hollow));
                 break;
-            case 3: // Grin
-                Shapes.Fill(ci, GrinShape, c.H(White), Ink, 0.5f);
-                ci.DrawLine(new Vector2(-1f, 0.9f), new Vector2(4f, 0.9f), Ink with { A = 0.6f }, 0.35f, true);
-                ci.DrawLine(new Vector2(1.5f, 0f), new Vector2(1.5f, 2.3f), Ink with { A = 0.4f }, 0.3f, true);
+            case 3: // Grin: a dark crescent with bone teeth.
+                ci.DrawColoredPolygon(GrinShape, c.H(Hollow));
+                for (float x = -0.4f; x <= 3.4f; x += 1.25f)
+                    ci.DrawColoredPolygon(new[] { new Vector2(x, 0), new Vector2(x + 0.9f, 0), new Vector2(x + 0.45f, 0.8f) }, c.H(c.Mask));
                 break;
             case 4: // Frown
-                ci.DrawArc(new Vector2(1.4f, 3.1f), 2.3f, Mathf.Pi + 0.55f, Mathf.Tau - 0.55f, 14, Ink, 0.85f, true);
+                ci.DrawArc(new Vector2(1.4f, 2.9f), 2.1f, Mathf.Pi + 0.6f, Mathf.Tau - 0.6f, 14, ink, 0.6f, true);
                 break;
             case 5: // Fangs
-                ci.DrawArc(new Vector2(1.4f, -3f), 3.8f, 1.05f, Mathf.Pi - 1.05f, 14, Ink, 0.85f, true);
-                foreach (float fx in new[] { 0.1f, 2.7f })
-                    Shapes.Fill(ci, new[] { new Vector2(fx - 0.6f, 0.45f), new Vector2(fx + 0.6f, 0.45f), new Vector2(fx, 2.1f) }, c.H(White), Ink, 0.3f);
+                ci.DrawArc(new Vector2(1.4f, -3f), 3.6f, 1.1f, Mathf.Pi - 1.1f, 14, ink, 0.6f, true);
+                foreach (float fx in new[] { 0.2f, 2.6f })
+                    Shapes.Fill(ci, new[] { new Vector2(fx - 0.55f, 0.4f), new Vector2(fx + 0.55f, 0.4f), new Vector2(fx, 1.9f) }, c.H(c.Mask), Ink, 0.3f);
                 break;
             case 6: // Tongue
-                ci.DrawArc(new Vector2(1.4f, -0.6f), 2.4f, 0.5f, Mathf.Pi - 0.5f, 14, Ink, 0.85f, true);
-                Shapes.Fill(ci, Shapes.Capsule(new Vector2(2.4f, 1.4f), new Vector2(2.5f, 2.6f), 0.95f), c.H(Pink), DarkPink, 0.35f);
-                ci.DrawLine(new Vector2(2.45f, 1.6f), new Vector2(2.5f, 2.6f), DarkPink, 0.3f, true);
+                ci.DrawArc(new Vector2(1.4f, -0.6f), 2.2f, 0.55f, Mathf.Pi - 0.55f, 14, ink, 0.6f, true);
+                Shapes.Fill(ci, Shapes.Capsule(new Vector2(2.4f, 1.4f), new Vector2(2.5f, 2.4f), 0.85f), c.H(new Color("#a86a76")), Ink, 0.35f);
                 break;
-            case 7: // Mustache
-                ci.DrawLine(new Vector2(0.6f, 1.9f), new Vector2(2.3f, 1.9f), Ink, 0.7f, true);
-                Shapes.Fill(ci, MustacheShape, c.H(c.Hair), c.Hair.Darkened(0.45f), 0.45f);
+            case 7: // Mustache (hair dye), a little higher still so it sits under the nose.
+                ci.DrawLine(new Vector2(0.6f, 1.5f), new Vector2(2.3f, 1.5f), ink, 0.5f, true);
+                Shapes.Fill(ci, Shapes.Offset(MustacheShape, new Vector2(0, 0.4f)), c.H(c.Hair), Ink, 0.45f);
                 break;
             case 8: // Cat
-                ci.DrawArc(new Vector2(0.4f, 0.4f), 1.05f, 0.15f, Mathf.Pi - 0.15f, 10, Ink, 0.8f, true);
-                ci.DrawArc(new Vector2(2.5f, 0.4f), 1.05f, 0.15f, Mathf.Pi - 0.15f, 10, Ink, 0.8f, true);
+                ci.DrawArc(new Vector2(0.4f, 0.3f), 1f, 0.2f, Mathf.Pi - 0.2f, 10, ink, 0.6f, true);
+                ci.DrawArc(new Vector2(2.4f, 0.3f), 1f, 0.2f, Mathf.Pi - 0.2f, 10, ink, 0.6f, true);
                 break;
         }
+        ci.DrawSetTransform(bodyOrigin, 0, scale);
     }
 
     // ---------- hair (color = hair dye) ----------
@@ -755,7 +815,7 @@ public static class AvatarArt
     }
 
     // ---------- arm ----------
-    // One stubby arm in the body color, from the shoulder (GunRig.Shoulder, sprite space) to the hand on the grip.
+    // One stubby arm in the cloak color, from the shoulder (GunRig.Shoulder, sprite space) to the hand on the grip.
     // Drawn before the body, so the body hides its root and it can never cover the face; only the part reaching out
     // past the body shows (over the head when aiming up).
 
@@ -766,8 +826,7 @@ public static class AvatarArt
         var p = c.P;
         var (hand, angle) = GunRig.Pose(SpriteGunAim(p, facing), p.Kick);
         var grip = G(GunRig.ToSprite(new System.Numerics.Vector2(0.6f, 0.2f), hand, angle));
-        var line = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
-        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.Shoulder), grip, ArmRadius), c.H(p.Body.Darkened(0.08f)), line, ArmOutline);
+        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.Shoulder), grip, ArmRadius), c.H(Cloak(p.Body).Darkened(0.1f)), Ink, ArmOutline);
     }
 
     // ---------- gun ----------
@@ -801,10 +860,8 @@ public static class AvatarArt
             ci.DrawCircle(new Vector2(g.Receiver - 0.8f, -4.55f), 0.55f, c.H(Shapes.Hdr(Visor, 1.3f)), true, -1, true);
         }
 
-        // The hand on the grip, in the body color (the arm behind the body reaches it).
-        var handLine = p.Hurt ? Colors.White : p.Body.Darkened(0.6f);
-        Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.Body, handLine, 0.5f);
-        ci.DrawCircle(new Vector2(0.2f, -0.5f), 0.5f, new Color(1, 1, 1, 0.4f), true, -1, true);
+        // The hand on the grip, in the cloak color (the arm behind the body reaches it).
+        Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.H(Cloak(p.Body).Lightened(0.06f)), Ink, 0.5f);
 
         if (p.Flash > 0)
         {
