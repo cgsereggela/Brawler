@@ -18,6 +18,21 @@ public enum PKind
     Smoke,    // soft puff that grows and fades
 }
 
+/// <summary>One effect call, kept by <see cref="FxLayer.Record"/> to start again later.</summary>
+public struct FxCall
+{
+    public enum What : byte { Emit, Homing, Ring, Rays, Flash, Screen, Popup, Bolt }
+    public What Kind;
+    public float T;
+    public Vector2 A, B;
+    public Color Color;
+    public PKind P;
+    public int N;
+    public bool HasDir;
+    public float F0, F1, F2, F3, F4, F5;
+    public string Text;
+}
+
 /// <summary>
 /// All transient effects: particles, shockwave rings, light rays, glow flashes, screen flashes and popup text.
 /// Glowing things go to an additive layer (and push HDR colors into the bloom); solid debris and text go to normal
@@ -31,6 +46,34 @@ public partial class FxLayer : Node2D
     public static bool Culling = true;
 
     public readonly FxBudget Budget = new(MaxParticles, 300);
+    /// <summary>While set, every effect started is added here, stamped with <see cref="RecordTime"/> (the kill cam plays
+    /// them again). Pings are left out: they're chat.</summary>
+    public List<FxCall> Record;
+    public float RecordTime;
+    private bool _pinging;
+
+    private void Note(FxCall c)
+    {
+        if (Record == null || _pinging) return;
+        c.T = RecordTime;
+        Record.Add(c);
+    }
+
+    /// <summary>Starts a recorded effect again.</summary>
+    public void Replay(in FxCall c)
+    {
+        switch (c.Kind)
+        {
+            case FxCall.What.Emit: Emit(c.A, c.P, c.Color, c.N, c.F0, c.F1, c.F2, c.F3, c.HasDir ? c.B : null, c.F4, c.F5); break;
+            case FxCall.What.Homing: EmitHoming(c.A, c.B, c.Color, c.N, c.F0, c.F1, c.F2); break;
+            case FxCall.What.Ring: RingFx(c.A, c.F0, c.F1, c.Color, c.F2, c.F3, c.F4); break;
+            case FxCall.What.Rays: RaysFx(c.A, c.Color, c.N, c.F0, c.F1); break;
+            case FxCall.What.Flash: Flash(c.A, c.F0, c.Color, c.F1); break;
+            case FxCall.What.Screen: ScreenFlash(c.Color, c.F0); break;
+            case FxCall.What.Popup: Popup(c.A, c.Text, c.Color, c.F0, c.F1); break;
+            case FxCall.What.Bolt: Bolt(c.A, c.B, c.Color, c.F0); break;
+        }
+    }
     private ulong _lastUsec;
 
     private struct Particle
@@ -105,6 +148,7 @@ public partial class FxLayer : Node2D
     public void Emit(Vector2 pos, PKind kind, Color color, int count, float speed, float life, float size,
         float gravity = 0, Vector2? dir = null, float spread = Mathf.Tau, float drag = 2.5f)
     {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Emit, A = pos, P = kind, Color = color, N = count, F0 = speed, F1 = life, F2 = size, F3 = gravity, HasDir = dir.HasValue, B = dir ?? default, F4 = spread, F5 = drag });
         if (Culling) count = Budget.Scale(count);
         for (int i = 0; i < count && _parts.Count < Limit; i++)
         {
@@ -122,6 +166,7 @@ public partial class FxLayer : Node2D
     /// <summary>Particles that burst out, then get pulled toward <paramref name="home"/> (life-steal motes).</summary>
     public void EmitHoming(Vector2 pos, Vector2 home, Color color, int count, float speed, float life, float size)
     {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Homing, A = pos, B = home, Color = color, N = count, F0 = speed, F1 = life, F2 = size });
         if (Culling) count = Budget.Scale(count);
         for (int i = 0; i < count && _parts.Count < Limit; i++)
         {
@@ -141,30 +186,45 @@ public partial class FxLayer : Node2D
     public void Spark(Vector2 pos, Color color, int count) => Emit(pos, PKind.Streak, color, count, 140, 0.22f, 0.9f);
 
     public void RingFx(Vector2 pos, float r0, float r1, Color color, float life = 0.3f, float width = 2f, float delay = 0)
-        => _rings.Add(new Ring { Pos = pos, R0 = r0, R1 = r1, Life = life, MaxLife = life, Color = color, Width = width, Delay = delay });
+    {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Ring, A = pos, F0 = r0, F1 = r1, Color = color, F2 = life, F3 = width, F4 = delay });
+        _rings.Add(new Ring { Pos = pos, R0 = r0, R1 = r1, Life = life, MaxLife = life, Color = color, Width = width, Delay = delay });
+    }
 
     public void RaysFx(Vector2 pos, Color color, int count, float length, float life = 0.4f)
-        => _rays.Add(new Rays { Pos = pos, Color = color, Count = count, Length = length, Life = life, MaxLife = life, Rot = _rng.RandfRange(0, Mathf.Tau) });
+    {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Rays, A = pos, Color = color, N = count, F0 = length, F1 = life });
+        _rays.Add(new Rays { Pos = pos, Color = color, Count = count, Length = length, Life = life, MaxLife = life, Rot = _rng.RandfRange(0, Mathf.Tau) });
+    }
 
     public void Flash(Vector2 pos, float radius, Color color, float life = 0.2f)
-        => _glows.Add(new Glow { Pos = pos, Radius = radius, Color = color, Life = life, MaxLife = life });
+    {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Flash, A = pos, F0 = radius, Color = color, F1 = life });
+        _glows.Add(new Glow { Pos = pos, Radius = radius, Color = color, Life = life, MaxLife = life });
+    }
 
     public void ScreenFlash(Color color, float life = 0.12f)
     {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Screen, Color = color, F0 = life });
         if (Accessibility.ReduceFlashes) return;
         _screenColor = color;
         _screenLife = _screenMax = life;
     }
 
     public void Popup(Vector2 pos, string text, Color color, float size = 13, float life = 0.8f)
-        => _texts.Add(new Text { Pos = pos, Value = text, Life = life, MaxLife = life, Color = color, Size = size });
+    {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Popup, A = pos, Text = text, Color = color, F0 = size, F1 = life });
+        _texts.Add(new Text { Pos = pos, Value = text, Life = life, MaxLife = life, Color = color, Size = size });
+    }
 
     /// <summary>A ping: a marker that bobs over a spot for a few seconds, with rings pulsing out from it and the pinger's name.</summary>
     public void Ping(Vector2 pos, Color color, string name, float life)
     {
         _pings.Add(new Text { Pos = pos, Value = name, Life = life, MaxLife = life, Color = color });
+        _pinging = true;
         for (float d = 0; d < life - 0.4f; d += 0.6f) RingFx(pos, 2, 18, Shapes.Hdr(color, 1.4f), 0.55f, 1.6f, d);
         Flash(pos, 14, color with { A = 0.5f }, 0.25f);
+        _pinging = false;
     }
 
     public void Clear()
@@ -298,6 +358,7 @@ public partial class FxLayer : Node2D
     /// <summary>A jagged lightning bolt between two points.</summary>
     public void Bolt(Vector2 from, Vector2 to, Color color, float life = 0.25f)
     {
+        if (Record != null) Note(new FxCall { Kind = FxCall.What.Bolt, A = from, B = to, Color = color, F0 = life });
         int n = Mathf.Clamp((int)(from.DistanceTo(to) / 10), 3, 24);
         var normal = (to - from).Normalized().Orthogonal();
         var pts = new Vector2[n + 1];

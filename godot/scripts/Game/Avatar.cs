@@ -571,6 +571,11 @@ public partial class Avatar : CharacterBody2D
         _animT += dt;
         _emoteT = Mathf.Max(0, _emoteT - dt);
         if (Mathf.Abs(Velocity.X) > 8) _facing = Velocity.X < 0 ? -1 : 1;
+        UpdateGhostArt();
+    }
+
+    private void UpdateGhostArt()
+    {
         if (_ghostArt == null)
         {
             // Its own node so the whole figure fades as one, drawn under this node's emote bubble.
@@ -636,6 +641,66 @@ public partial class Avatar : CharacterBody2D
         DrawColoredPolygon(new[] { new Vector2(-2.2f, -3.2f), new Vector2(2.2f, -3.2f), new Vector2(0, -0.6f) }, paper);
         DrawString(font, new Vector2(-w / 2, -6.5f), text, HorizontalAlignment.Center, w, size, new Color("#17141f") with { A = alpha });
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+    }
+
+    // ---------- kill cam ----------
+
+    /// <summary>Everything this avatar draws from, at one tick (see <see cref="KillCam"/>).</summary>
+    public struct Frame
+    {
+        public Vector2 Pos, Vel, Aim, ArmSway;
+        public float Hp, HpGhost, BlockActive, BlockCd, ReloadFrac, AnimT, WalkPhase, BlinkT, Kick, Flash, HurtFlash;
+        public float Walk, Air, Wall, Land, GroundDrop, GroundSlope, DeadT, EmoteT;
+        public int Facing, MoveDir, WallSide, Emote;
+        public bool Alive, Reloading, Jetting, EmoteAsGhost;
+    }
+
+    public Frame Capture() => new()
+    {
+        Pos = GlobalPosition, Vel = Velocity, Aim = AimDir, ArmSway = _armSway,
+        Hp = Hp, HpGhost = _hpGhost, BlockActive = BlockActive, BlockCd = BlockCd, ReloadFrac = ReloadFrac,
+        AnimT = _animT, WalkPhase = _walkPhase, BlinkT = _blinkT, Kick = _kick, Flash = _flash, HurtFlash = _hurtFlash,
+        Walk = _walk, Air = _air, Wall = _wall, Land = _land, GroundDrop = _groundDrop, GroundSlope = _groundSlope,
+        DeadT = _deadT, EmoteT = _emoteT, Facing = _facing, MoveDir = _moveDir, WallSide = _wallSide, Emote = _emote,
+        Alive = Alive, Reloading = Reloading, Jetting = _jetting, EmoteAsGhost = _emoteAsGhost,
+    };
+
+    /// <summary>Kill cam: shows the avatar as it was, <paramref name="k"/> of the way from tick <paramref name="a"/> to the next.</summary>
+    public void Show(in Frame a, in Frame b, float k)
+    {
+        GlobalPosition = a.Pos.DistanceSquaredTo(b.Pos) < 60 * 60 ? a.Pos.Lerp(b.Pos, k) : a.Pos; // no sliding across teleports
+        Velocity = a.Vel.Lerp(b.Vel, k);
+        AimDir = a.Aim.Slerp(b.Aim, k);
+        _armSway = a.ArmSway.Lerp(b.ArmSway, k);
+        _animT = Mathf.Lerp(a.AnimT, b.AnimT, k);
+        _walkPhase = Mathf.Abs(b.WalkPhase - a.WalkPhase) < 3 ? Mathf.Lerp(a.WalkPhase, b.WalkPhase, k) : a.WalkPhase;
+        _kick = Mathf.Lerp(a.Kick, b.Kick, k);
+        _flash = Mathf.Lerp(a.Flash, b.Flash, k);
+        _deadT = Mathf.Lerp(a.DeadT, b.DeadT, k);
+        Hp = a.Hp;
+        _hpGhost = a.HpGhost;
+        BlockActive = a.BlockActive;
+        BlockCd = a.BlockCd;
+        ReloadFrac = a.ReloadFrac;
+        _blinkT = a.BlinkT;
+        _hurtFlash = a.HurtFlash;
+        _walk = a.Walk;
+        _air = a.Air;
+        _wall = a.Wall;
+        _land = a.Land;
+        _groundDrop = a.GroundDrop;
+        _groundSlope = a.GroundSlope;
+        _emoteT = a.EmoteT;
+        _facing = a.Facing;
+        _moveDir = a.MoveDir;
+        _wallSide = a.WallSide;
+        _emote = a.Emote;
+        Alive = a.Alive;
+        Reloading = a.Reloading;
+        _jetting = a.Jetting;
+        _emoteAsGhost = a.EmoteAsGhost;
+        if (!Alive || _ghostArt != null) UpdateGhostArt();
+        QueueRedraw();
     }
 
     // ---------- animation and drawing ----------

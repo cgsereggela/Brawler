@@ -26,6 +26,22 @@ public sealed class Bullet
     public readonly Vector2[] Trail = new Vector2[TrailMax];
     public const int TrailMax = 14;
 
+    /// <summary>Copies what drawing a bullet reads (the kill cam keeps these copies of past ticks).</summary>
+    public void CopyLook(Bullet to)
+    {
+        to.Id = Id;
+        to.Owner = Owner;
+        to.Pos = Pos;
+        to.Vel = Vel;
+        to.Radius = Radius;
+        to.Life = Life;
+        to.Age = Age;
+        to.Dead = Dead;
+        to.Phase = Phase;
+        to.Stuck = Stuck;
+        System.Array.Copy(Trail, to.Trail, TrailMax);
+    }
+
     public byte[] Serialize()
     {
         var w = new Wire();

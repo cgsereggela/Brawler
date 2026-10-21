@@ -23,6 +23,7 @@ namespace Brawler;
 ///                         take the top of it as their player count (default 4)
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
+///   --killcamskip         (with --autotest/--autohost/--autojoin) ask to skip each kill cam half a second in
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
@@ -142,7 +143,7 @@ public partial class Main : Node
         _crosshair = new Crosshair(_game)
         {
             Name = "Crosshair",
-            ShouldShow = () => _hud.Visible && !_pick.Visible && !_over.Visible && !_options.Visible,
+            ShouldShow = () => _hud.Visible && !_pick.Visible && !_over.Visible && !_options.Visible && !_game.KillCam.Playing,
         };
         aimLayer.AddChild(_crosshair);
 
@@ -341,6 +342,7 @@ public partial class Main : Node
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
             else if (a == "--overlaycheck") _overlayCheck = true;
+            else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
             else if (a == "--nobots") _noBots = true;
             else if (a == "--nofxcull") Fx.FxLayer.Culling = false;
@@ -363,6 +365,12 @@ public partial class Main : Node
         {
             _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
             _game.MatchEnded += _ => GetTree().CreateTimer(0.3, true, false, true).Timeout += SaveShot;
+            // The kill cam's build-up, its slow-motion kill and the aftermath (real seconds: it slows game time).
+            _game.KillCamStarted += () =>
+            {
+                foreach (double at in new[] { 0.7, 1.9, 2.8 })
+                    GetTree().CreateTimer(at, true, false, true).Timeout += () => { if (_game.KillCam.Playing) SaveShot(); };
+            };
         }
 
         foreach (var a in args)
@@ -1013,6 +1021,7 @@ public partial class Main : Node
         _net.StartOffline();
         for (int i = 1; i < players; i++) _net.AddBot();
         _net.SetSettings(new MatchSettings()); // the lobby defaults: what people actually play
+        _game.DisableKillCam = true;
         _frames = 0;
         _matchFinished = false;
         _game.HostStartMatch();

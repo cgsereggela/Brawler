@@ -203,17 +203,90 @@ public partial class HudUI : Control
     {
         var vs = GetViewportRect().Size;
 
-        // The chip heads breathe and blink, so they're drawn every frame, over the cached chips.
-        foreach (var (chip, p) in _chips)
-            AvatarArt.Draw(this, chip.Position + (_compact ? new Vector2(17, 25) : new Vector2(19, 27)), new AvatarPose
-            {
-                Body = ChipColor(p), Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = _compact ? 1f : 1.15f, Time = _t,
-                Grounded = true,
-            });
+        // The chip heads breathe and blink, so they're drawn every frame, over the cached chips. The chips fade out
+        // under the kill cam's letterbox bars.
+        _base.Modulate = Colors.White with { A = 1 - _camShow };
+        if (_camShow < 0.5f)
+            foreach (var (chip, p) in _chips)
+                AvatarArt.Draw(this, chip.Position + (_compact ? new Vector2(17, 25) : new Vector2(19, 27)), new AvatarPose
+                {
+                    Body = ChipColor(p), Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = _compact ? 1f : 1.15f, Time = _t,
+                    Grounded = true,
+                });
 
         DrawBanner(vs);
         DrawGhostHint(vs);
         DrawHoverCard(vs);
+        DrawKillCam(vs);
+    }
+
+    private float _camShow, _camRealT; // kill cam bars: 0..1 slid in; real seconds since it began
+
+    private void Box(Rect2 r, Color c) =>
+        _batch.Polygon(new[] { r.Position, new Vector2(r.End.X, r.Position.Y), r.End, new Vector2(r.Position.X, r.End.Y) }, c);
+
+    /// <summary>Kill cam: letterbox bars with who killed whom, the slow-motion speed and how to skip.</summary>
+    private void DrawKillCam(Vector2 vs)
+    {
+        var cam = _game.KillCam;
+        float real = (float)GetProcessDeltaTime() / Mathf.Max(0.05f, (float)Engine.TimeScale);
+        _camShow = Mathf.MoveToward(_camShow, cam.Playing ? 1 : 0, real * 5);
+        _camRealT = cam.Playing ? _camRealT + real : 0;
+        if (_camShow <= 0) return;
+        float e = _camShow * _camShow * (3 - 2 * _camShow);
+        float barH = Mathf.Round(vs.Y * 0.09f);
+        float top = -barH + barH * e, bottom = vs.Y - barH * e;
+        var ink = new Color(0.03f, 0.015f, 0.06f, 0.97f);
+        var red = new Color("#ff3355");
+        BeginBatch(this);
+        Box(new Rect2(0, top, vs.X, barH), ink);
+        Box(new Rect2(0, bottom, vs.X, barH), ink);
+        // Progress along the top bar's lower edge.
+        Box(new Rect2(0, top + barH - 2, vs.X, 2), new Color(1, 1, 1, 0.1f));
+        Box(new Rect2(0, top + barH - 2, vs.X * cam.Progress, 2), red with { A = 0.85f });
+        bool blink = cam.Playing && _camRealT % 1f < 0.6f;
+        if (blink) Dot(new Vector2(26, top + barH / 2), 5, Shapes.Hdr(red, 1.4f));
+        _batch.Flush();
+
+        var heavy = Fonts.Heavy;
+        var bold = Fonts.Bold;
+        float mid = top + barH / 2;
+        DrawString(heavy, new Vector2(40, mid + 8), "KILL CAM", HorizontalAlignment.Left, -1, 22, Palette.Text);
+        float speed = Logic.KillCamTiming.Speed(cam.FromKill);
+        DrawString(bold, new Vector2(vs.X - 220, mid + 6), $"{speed:0.0}x", HorizontalAlignment.Right, 200, 16, speed < 0.9f ? red.Lightened(0.3f) : Palette.TextDim);
+
+        // Who got whom, in their colors.
+        float y = bottom + barH / 2 + 8;
+        string victim = _game.NameOf(cam.Victim);
+        var vCol = Palette.Player(_game.ColorOf(cam.Victim)).Lightened(0.2f);
+        if (cam.Killer >= 0 && cam.Killer != cam.Victim)
+        {
+            string killer = _game.NameOf(cam.Killer);
+            const string arrow = "  ELIMINATED  ";
+            float wk = heavy.GetStringSize(killer, HorizontalAlignment.Left, -1, 22).X;
+            float wa = bold.GetStringSize(arrow, HorizontalAlignment.Left, -1, 13).X;
+            float wv = heavy.GetStringSize(victim, HorizontalAlignment.Left, -1, 22).X;
+            float x = (vs.X - wk - wa - wv) / 2;
+            DrawString(heavy, new Vector2(x, y), killer, HorizontalAlignment.Left, -1, 22, Palette.Player(_game.ColorOf(cam.Killer)).Lightened(0.2f));
+            DrawString(bold, new Vector2(x + wk, y - 2), arrow, HorizontalAlignment.Left, -1, 13, Palette.TextDim);
+            DrawString(heavy, new Vector2(x + wk + wa, y), victim, HorizontalAlignment.Left, -1, 22, vCol);
+        }
+        else
+        {
+            string text = $"{victim} IS OUT";
+            float w = heavy.GetStringSize(text, HorizontalAlignment.Left, -1, 22).X;
+            DrawString(heavy, new Vector2((vs.X - w) / 2, y), text, HorizontalAlignment.Left, -1, 22, vCol);
+        }
+
+        // Skipping needs every human; show how many are in.
+        if (_game.LocalMatchPlayer != null && cam.Playing)
+        {
+            int voters = _game.KillCamVoters, votes = _game.KillCamSkipVotes;
+            string skip = _game.SkipAsked
+                ? (voters > 1 ? $"Skipping... {votes}/{voters}" : "Skipping...")
+                : $"Skip: {Keybinds.Hint("shoot")} / {Keybinds.Hint("jump")}{(voters > 1 && votes > 0 ? $"  {votes}/{voters}" : "")}";
+            DrawString(bold, new Vector2(vs.X - 320, bottom + barH / 2 + 5), skip, HorizontalAlignment.Right, 300, 12, Palette.TextDim);
+        }
     }
 
     private const float CompactName = 50; // compact chips clip names to this width

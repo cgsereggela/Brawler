@@ -125,6 +125,13 @@ public partial class Arena : Node2D
     // ---------- simulation (every peer) ----------
 
     /// <summary>Advances the clock and moves platforms; runs before avatars move so riders are carried.</summary>
+    /// <summary>Kill cam: puts the movers (and saws, lava) back where they were at <paramref name="clock"/>.</summary>
+    public void ShowClock(float clock)
+    {
+        Clock = clock;
+        Advance(0);
+    }
+
     public void Advance(float dt)
     {
         if (_map == null) return;
@@ -425,7 +432,8 @@ public partial class Arena : Node2D
         // Ambient: embers off magma, bubbles off poison.
         foreach (var h in _map.Hazards)
         {
-            if (GD.Randf() > (h.X2 - h.X1) * dt * 0.08f) continue;
+            if (Game.KillCam.Playing) break; // the replay brings back the embers it recorded
+            if (GD.Randf() >(h.X2 - h.X1) * dt * 0.08f) continue;
             var at = new Vector2((float)GD.RandRange(h.X1 + 2, h.X2 - 2), h.Y - 2);
             if (h.Kind == HazardKind.Magma) Game.Fx.Emit(at, PKind.Ember, new Color("#ffb13b"), 1, 25, 0.8f, 1f, -50, Vector2.Up, 0.8f);
             else Game.Fx.Emit(at, PKind.Dot, new Color("#9dff4a"), 1, 14, 0.9f, 1.1f, -30, Vector2.Up, 0.6f);

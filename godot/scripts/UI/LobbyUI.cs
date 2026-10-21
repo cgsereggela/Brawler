@@ -19,7 +19,7 @@ public partial class LobbyUI : Control
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava, _rare, _deals;
+    private Button _lava, _rare, _deals, _killCam;
 
     public LobbyUI(NetworkManager net) => _net = net;
     public LobbyUI() { }
@@ -73,6 +73,13 @@ public partial class LobbyUI : Control
         grid.AddChild(rareLabel);
         _rare = UiKit.Button("", CycleRare, 70, "Small");
         grid.AddChild(_rare);
+        var camLabel = UiKit.Label("Kill cam", UiKit.Small, Palette.Text);
+        camLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        camLabel.TooltipText = "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.";
+        camLabel.MouseFilter = MouseFilterEnum.Pass;
+        grid.AddChild(camLabel);
+        _killCam = UiKit.Button("", ToggleKillCam, 70, "Small");
+        grid.AddChild(_killCam);
         body.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
@@ -205,6 +212,7 @@ public partial class LobbyUI : Control
             LavaAfter = _net.Lobby.Settings.LavaAfter,
             RareChance = _net.Lobby.Settings.RareChance,
             CursedDeals = _net.Lobby.Settings.CursedDeals,
+            KillCam = _net.Lobby.Settings.KillCam,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
     }
@@ -239,6 +247,13 @@ public partial class LobbyUI : Control
     {
         if (!_net.IsHost) return;
         _net.Lobby.Settings.CursedDeals = !_net.Lobby.Settings.CursedDeals;
+        PushSettings();
+    }
+
+    private void ToggleKillCam()
+    {
+        if (!_net.IsHost) return;
+        _net.Lobby.Settings.KillCam = !_net.Lobby.Settings.KillCam;
         PushSettings();
     }
 
@@ -314,6 +329,8 @@ public partial class LobbyUI : Control
         _rare.Disabled = !host;
         _deals.Text = st.CursedDeals ? "Cursed deals: On" : "Cursed deals: Off";
         _deals.Disabled = !host;
+        _killCam.Text = st.KillCam ? "On" : "Off";
+        _killCam.Disabled = !host;
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
 
         _addBot.Visible = host;

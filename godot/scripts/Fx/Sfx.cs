@@ -53,9 +53,14 @@ public partial class Sfx : Node
         Format = AudioStreamWav.FormatEnum.Format16Bits, MixRate = Dsp.Rate, Stereo = false, Data = Dsp.ToPcm16(mono),
     };
 
+    /// <summary>While set, every sound played is added here, stamped with <see cref="RecordTime"/> (for the kill cam).</summary>
+    public List<(float T, string Name, float Volume)> Record;
+    public float RecordTime;
+
     /// <summary>Plays a sound with slight pitch variation. Rapid repeats of the same sound are throttled.</summary>
-    public void Play(string name, float volume = 1f)
+    public void Play(string name, float volume = 1f, float pitch = 1f)
     {
+        Record?.Add((RecordTime, name, volume));
         if (!_sounds.TryGetValue(name, out var takes)) return;
         ulong now = Time.GetTicksMsec();
         if (_lastPlayed.TryGetValue(name, out var last) && now - last < 30) return;
@@ -68,7 +73,7 @@ public partial class Sfx : Node
         var v = _voices[_next];
         _next = (_next + 1) % _voices.Count;
         v.Stream = takes[take];
-        v.PitchScale = 0.96f + (float)_rng.NextDouble() * 0.08f;
+        v.PitchScale = pitch * (0.96f + (float)_rng.NextDouble() * 0.08f);
         v.VolumeDb = Mathf.LinearToDb(Mathf.Max(0.01f, volume));
         v.Play();
     }

@@ -51,6 +51,12 @@ public partial class GameManager : Node2D
     /// <summary>When true the local player is driven by a bot (used by the automated tests).</summary>
     public bool AutopilotLocal;
     public bool DisableHitStop;
+    /// <summary>--simulate: no kill cams (nobody is watching).</summary>
+    public bool DisableKillCam;
+    /// <summary>Replays the final kill of each battle (see <see cref="Game.KillCam"/>).</summary>
+    public KillCam KillCam { get; private set; }
+    /// <summary>Every peer: a kill cam replay began.</summary>
+    public event Action KillCamStarted;
 
     /// <summary>Host-only card balance log (see StatsRecorder).</summary>
     public readonly StatsRecorder Stats = new();
@@ -99,6 +105,7 @@ public partial class GameManager : Node2D
         Bullets = new BulletSystem { Name = "Bullets", Game = this };
         _avatars = new Node2D { Name = "Avatars" };
         Fx = new FxLayer { Name = "Fx" };
+        KillCam = new KillCam(this);
         _cam = new Camera2D { Name = "Camera", Position = new Vector2(MapLayout.Width, MapLayout.Height) / 2 };
         AddChild(MapNode);
         Arena = new Arena { Name = "Arena", Game = this };
@@ -114,6 +121,7 @@ public partial class GameManager : Node2D
         MapNode.Avatars = LiveAvatars;
         MapNode.PadFired += pos =>
         {
+            if (KillCam.Playing) return; // its burst was recorded and replays with the rest
             Fx.Emit(pos, PKind.Streak, MapNode.Theme.Edge, 10, 220, 0.35f, 1.1f, 0, Vector2.Up, 0.9f);
             Fx.RingFx(pos, 4, 26, MapNode.Theme.Edge, 0.3f, 2);
             Sfx.Play("pad", 0.7f);
@@ -312,6 +320,7 @@ public partial class GameManager : Node2D
         if (Phase == Phase.Idle) return;
         var mp = Slots.FirstOrDefault(p => p != null && !p.Info.IsBot && p.Info.PeerId == peer);
         if (mp == null) return;
+        if (KillCam.Playing) Rpc(MethodName.EndKillCam); // back to the real state before anything changes
         if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar, KillCause.Left);
         Rpc(MethodName.PlayerLeft, mp.Slot);
         if (Phase == Phase.CardPick) HostCheckPicksDone();
@@ -405,6 +414,7 @@ public partial class GameManager : Node2D
     {
         float dt = (float)delta;
         _clock += dt;
+        KillCam.Stamp(_clock);
         TickChatGuards(dt);
         if (IsHost) Stats.Tick(dt, Phase);
         if (IsHost && _rejoinWaitT > 0) HostRejoinWaitTick(dt);
@@ -418,6 +428,13 @@ public partial class GameManager : Node2D
                 a();
             }
         }
+
+        if (IsHost && _killCamWait && !KillCam.Playing)
+        {
+            _killCamWait = false;
+            HostAfter(0.3f, HostResolveBattle);
+        }
+        if (KillCam.Playing) return; // nothing moves while the replay is on
 
         if (Phase == Phase.CardPick)
         {
@@ -455,6 +472,7 @@ public partial class GameManager : Node2D
         else Arena.ClientSmooth();
         Arena.RebuildSolids();
         Bullets.Step(dt, IsHost, Arena.Solids);
+        KillCam.Capture(_clock);
 
         if (IsHost)
         {
@@ -524,7 +542,113 @@ public partial class GameManager : Node2D
         _pendingWinner = alive.Count == 1 ? alive[0].Player.Slot : -1;
         HostBotChat(_pendingWinner, 0.45f, 0, 1);
         Phase = Phase.Intermission;
-        HostAfter(0.8f, HostResolveBattle);
+        HostAfter(0.8f, HostKillCamOrResolve);
+    }
+
+    // ---------- kill cam ----------
+
+    private int _lastVictim = -1, _lastKiller = -1;
+    private bool _killCamWait; // host: a kill cam is on; the battle resolves once it ends
+    private readonly HashSet<int> _killCamSkips = new();
+    /// <summary>This peer asked to skip the kill cam on screen.</summary>
+    public bool SkipAsked { get; private set; }
+    /// <summary>How many have asked to skip the kill cam on screen (it ends once every human has).</summary>
+    public int KillCamSkipVotes { get; private set; }
+
+    /// <summary>Host: replay the battle's final kill everywhere, then resolve the battle (straight away if there's none).</summary>
+    private void HostKillCamOrResolve()
+    {
+        if (Settings.KillCam && !DisableKillCam && _lastVictim >= 0)
+        {
+            _killCamSkips.Clear();
+            Rpc(MethodName.PlayKillCam, _lastVictim, _lastKiller);
+            if (KillCam.Playing)
+            {
+                _killCamWait = true;
+                return;
+            }
+        }
+        HostResolveBattle();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void PlayKillCam(int victim, int killer)
+    {
+        SkipAsked = false;
+        KillCamSkipVotes = 0;
+        if (!KillCam.Start(victim, killer)) return;
+        Log.Info($"kill cam: {NameOf(victim)}{(killer >= 0 ? $" by {NameOf(killer)}" : "")}");
+        KillCamStarted?.Invoke();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void EndKillCam()
+    {
+        if (KillCam.Playing) Log.Info($"kill cam ended early at {KillCam.Progress:P0}");
+        KillCam.Stop();
+    }
+
+    /// <summary>The local player wants to skip the kill cam.</summary>
+    public void SkipKillCam()
+    {
+        if (!KillCam.Playing || SkipAsked || LocalMatchPlayer == null) return;
+        SkipAsked = true;
+        if (IsHost) HostSkipKillCam(LocalMatchPlayer.Slot);
+        else RpcId(1, MethodName.RequestSkipKillCam);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestSkipKillCam()
+    {
+        if (!IsHost) return;
+        long sender = Multiplayer.GetRemoteSenderId();
+        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
+        if (p != null) HostSkipKillCam(p.Slot);
+    }
+
+    private void HostSkipKillCam(int slot)
+    {
+        if (!_killCamWait) return;
+        _killCamSkips.Add(slot);
+        Rpc(MethodName.KillCamSkipped, _killCamSkips.Count);
+        HostCheckKillCamSkips();
+    }
+
+    private void HostCheckKillCamSkips()
+    {
+        var humans = Active().Where(p => !p.Info.IsBot).ToList();
+        if (KillCam.Playing && humans.Count > 0 && humans.All(p => _killCamSkips.Contains(p.Slot))) Rpc(MethodName.EndKillCam);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void KillCamSkipped(int votes) => KillCamSkipVotes = votes;
+
+    /// <summary>Humans who could skip the kill cam (the HUD shows votes out of this).</summary>
+    public int KillCamVoters => Active().Count(p => !p.Info.IsBot);
+
+    private float _camZoom = 1;
+    private Vector2 _camFocus = new Vector2(MapLayout.Width, MapLayout.Height) / 2;
+
+    /// <summary>The camera closes in on the kill while the kill cam plays and eases back out after.</summary>
+    private void FrameKillCam(float dt)
+    {
+        var center = new Vector2(MapLayout.Width, MapLayout.Height) / 2;
+        var focus = center;
+        float zoom = 1;
+        if (KillCam.Playing)
+        {
+            var (at, span) = KillCam.Framing();
+            focus = at;
+            zoom = Mathf.Clamp(Mathf.Min(MapLayout.Width / (span.X + 320), MapLayout.Height / (span.Y + 200)), 1.35f, 2f);
+        }
+        // Real time (the replay slows delta down), so the camera keeps up at any speed.
+        float real = dt / Mathf.Max(0.05f, (float)Engine.TimeScale);
+        float k = 1f - Mathf.Exp(-(KillCam.Playing ? 5f : 7f) * real);
+        _camZoom = Mathf.Lerp(_camZoom, zoom, k);
+        _camFocus = _camFocus.Lerp(focus, k);
+        // Keep the view inside the arena.
+        var half = new Vector2(MapLayout.Width, MapLayout.Height) / (2 * _camZoom);
+        _cam.Position = new Vector2(Mathf.Clamp(_camFocus.X, half.X, MapLayout.Width - half.X), Mathf.Clamp(_camFocus.Y, half.Y, MapLayout.Height - half.Y));
     }
 
     private void HostPickTick(float dt)
@@ -797,6 +921,8 @@ public partial class GameManager : Node2D
             if (cause == KillCause.Fall) Book.Add(a.Player.Slot, AwardStat.Falls);
         }
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
+        _lastVictim = cause == KillCause.Left ? -1 : a.Player.Slot;
+        _lastKiller = killer;
         if (cause != KillCause.Left)
         {
             HostBotChat(killer, 0.3f, 1, 3, 4);
@@ -1202,6 +1328,9 @@ public partial class GameManager : Node2D
         _lastCountdownTick = -1;
         System.Array.Clear(_battleKills);
         _endCheckT = -1;
+        _lastVictim = _lastKiller = -1;
+        _killCamWait = false;
+        KillCam.Begin();
         PickOptions.Clear();
         PickDeals.Clear();
         Log.Info($"battle {BattleNumber} start (seed {seed}, map attempts {layout.Attempts}{(layout.UsedFallback ? ", fallback" : "")})");
@@ -1211,6 +1340,7 @@ public partial class GameManager : Node2D
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void BattleOver(int winner, byte[] scores, bool roundWon, bool matchWon)
     {
+        KillCam.End();
         ApplyScores(scores);
         string name = NameOf(winner);
         Color col = winner >= 0 ? Palette.Player(ColorOf(winner)) : Palette.TextDim;
@@ -1448,6 +1578,7 @@ public partial class GameManager : Node2D
         a.Alive = false;
         a.CollisionLayer = 0;
         a.QueueRedraw();
+        KillCam.NoteDeath(slot, _clock);
         KillFx(slot, killer, at, (KillCause)cause);
         Log.Info($"{NameOf(slot)} died{(killer >= 0 ? $" (by {NameOf(killer)})" : "")}");
     }
@@ -1845,6 +1976,8 @@ public partial class GameManager : Node2D
         // Leaving mid-match: keep whatever finished battles there were, flagged as incomplete.
         Stats.MatchEnd(-1, false, Slots.Where(p => p != null));
         foreach (var c in _avatars.GetChildren()) c.QueueFree();
+        KillCam.End();
+        _killCamWait = false;
         Bullets.Clear();
         Fx.Clear();
         MapNode.Build(null);
@@ -1868,11 +2001,15 @@ public partial class GameManager : Node2D
         if (what == NotificationWMCloseRequest) Stats.MatchEnd(-1, false, Slots.Where(p => p != null));
     }
 
-    public void Shake(float amount) => _trauma = Mathf.Min(1, _trauma + amount);
+    public void Shake(float amount)
+    {
+        _trauma = Mathf.Min(1, _trauma + amount);
+        KillCam.NoteShake(_clock, amount);
+    }
 
     private void HitStop(int ms)
     {
-        if (DisableHitStop) return;
+        if (DisableHitStop || KillCam.Playing) return;
         Engine.TimeScale = 0.05;
         _hitStopUntil = Time.GetTicksMsec() + (ulong)ms;
     }
@@ -1880,7 +2017,9 @@ public partial class GameManager : Node2D
     public override void _Process(double delta)
     {
         ReadChatKeys();
-        if (_hitStopUntil != 0 && Time.GetTicksMsec() >= _hitStopUntil)
+        if (KillCam.Playing && !AutopilotLocal && (Input.IsActionJustPressed("shoot") || Input.IsActionJustPressed("jump"))) SkipKillCam();
+        if (KillCam.Playing) KillCam.Advance((float)delta);
+        if (_hitStopUntil != 0 && Time.GetTicksMsec() >= _hitStopUntil && !KillCam.Playing)
         {
             Engine.TimeScale = 1;
             _hitStopUntil = 0;
@@ -1889,6 +2028,7 @@ public partial class GameManager : Node2D
         float s = _trauma * _trauma * 6f * Accessibility.Shake;
         _cam.Offset = new Vector2((float)GD.RandRange(-s, s), (float)GD.RandRange(-s, s));
         _zoomPunch = Mathf.Max(0, _zoomPunch - (float)delta * 3f);
-        _cam.Zoom = Vector2.One * (1f + 0.06f * _zoomPunch * _zoomPunch * Accessibility.Shake);
+        FrameKillCam((float)delta);
+        _cam.Zoom = Vector2.One * (_camZoom + 0.06f * _zoomPunch * _zoomPunch * Accessibility.Shake);
     }
 }
