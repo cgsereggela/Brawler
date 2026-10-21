@@ -33,6 +33,7 @@ public struct AvatarPose
     public GunLook GunLook;
     public float Kick;        // 0..1 recoil
     public float Flash;       // 0..1 muzzle flash
+    public Vector2 ArmSway;   // sprite units the elbow trails behind its rest spot (springy follow-through; 0 = at rest)
 }
 
 /// <summary>
@@ -784,18 +785,29 @@ public static class AvatarArt
     }
 
     // ---------- arm ----------
-    // One stubby arm in the cloak color, from the shoulder (GunRig.Shoulder, sprite space) to the hand on the grip.
-    // Drawn before the body, so the body hides its root and it can never cover the face; only the part reaching out
-    // past the body shows (over the head when aiming up).
+    // A two-part arm in the cloak color, from the shoulder (GunRig.Shoulder, sprite space) through a bending elbow
+    // (GunRig.Elbow) to the hand on the grip. The elbow straightens as the gun reaches out, folds as it comes in or
+    // kicks back, and trails a little behind fast moves (AvatarPose.ArmSway). Drawn before the body, so the body hides
+    // its root and it can never cover the face; only the part reaching out past the body shows (over the head when
+    // aiming up).
 
-    private const float ArmRadius = 1.05f, ArmOutline = 0.55f;
+    private const float UpperArmRadius = 1.15f, ForearmRadius = 1.0f, ArmOutline = 0.55f, MaxSway = 2.6f;
 
     private static void DrawArm(Ctx c, int facing)
     {
         var p = c.P;
-        var (hand, angle) = GunRig.Pose(SpriteGunAim(p, facing), p.Kick);
-        var grip = G(GunRig.ToSprite(new System.Numerics.Vector2(0.6f, 0.2f), hand, angle));
-        Shapes.Fill(c.Ci, Shapes.Capsule(G(GunRig.Shoulder), grip, ArmRadius), c.H(Cloak(p.Body).Darkened(0.1f)), Ink, ArmOutline);
+        var (grip, elbow) = GunRig.Arm(SpriteGunAim(p, facing), p.Kick);
+        var shoulder = G(GunRig.Shoulder);
+        var e = G(elbow) + p.ArmSway.LimitLength(MaxSway);
+        var upper = Shapes.Capsule(shoulder, e, UpperArmRadius);
+        var fore = Shapes.Capsule(e, G(grip), ForearmRadius);
+        // Both outlines first, then both fills, so the joint reads as one limb rather than two stacked pills.
+        Shapes.Fill(c.Ci, upper, Ink, Ink, ArmOutline);
+        Shapes.Fill(c.Ci, fore, Ink, Ink, ArmOutline);
+        var col = c.H(Cloak(p.Body).Darkened(0.1f));
+        c.Ci.DrawColoredPolygon(upper, col.Darkened(0.08f));
+        c.Ci.DrawColoredPolygon(fore, col);
+        c.Ci.DrawCircle(e, ForearmRadius * 0.95f, col, true, -1, true); // round elbow over the seam
     }
 
     // ---------- gun ----------
@@ -830,7 +842,7 @@ public static class AvatarArt
         }
 
         // The hand on the grip, in the cloak color (the arm behind the body reaches it).
-        Shapes.Fill(ci, Shapes.Ellipse(new Vector2(0.6f, 0.2f), 1.45f, 1.35f, 14), c.H(Cloak(p.Body).Lightened(0.06f)), Ink, 0.5f);
+        Shapes.Fill(ci, Shapes.Ellipse(G(GunRig.Grip), 1.45f, 1.35f, 14), c.H(Cloak(p.Body).Lightened(0.06f)), Ink, 0.5f);
 
         if (p.Flash > 0)
         {

@@ -94,6 +94,8 @@ public partial class Avatar : CharacterBody2D
     private float _walkPhase, _animT, _blinkT, _nextBlink = 2f, _kick, _flash;
     // Legs: blends eased toward what the geometry and velocity say (works the same for remote players).
     private float _walk, _air, _wall, _land, _airVy, _groundDrop, _groundSlope;
+    private Vector2 _elbow, _elbowVel, _armSway, _armLastPos, _armBodyVel; // arm follow-through (sprite space), see AnimateArm
+    private int _armFacing;
     private int _moveDir = 1, _wallSide = 1;
     public GunLook Gun = GunLook.Default;
 
@@ -559,6 +561,7 @@ public partial class Avatar : CharacterBody2D
         _animT += dt;
         if (Mathf.Abs(AimDir.X) > 0.15f) _facing = AimDir.X < 0 ? -1 : 1;
         AnimateLegs(dt);
+        AnimateArm(dt);
         _blinkT -= dt;
         if (_blinkT < -_nextBlink)
         {
@@ -607,6 +610,44 @@ public partial class Avatar : CharacterBody2D
         bool sliding = side != 0 && Velocity.Y > 0 && Velocity.Y < slide + 30;
         if (side != 0) _wallSide = side;
         _wall = Mathf.MoveToward(_wall, sliding ? 1 : 0, dt * 10);
+    }
+
+    /// <summary>
+    /// Arm follow-through (cosmetic): the elbow is a damped spring chasing its rest spot (GunRig.Arm), so it trails
+    /// behind quick aim swings and recoil and settles with a small bounce. The body's own speed-ups and stops (starting
+    /// a run, jumping, landing) shove it the other way, like the weight of a real arm; steady motion leaves it at rest.
+    /// Facing turns and teleports snap it back.
+    /// </summary>
+    private void AnimateArm(float dt)
+    {
+        const float stiffness = 420f, damping = 18f, inertia = 0.35f;
+        if (dt <= 0) return;
+        float size = S[Stat.Size];
+        var aim = GunRig.SpriteAim(new System.Numerics.Vector2(AimDir.X, AimDir.Y), _facing);
+        var rest = GunRig.Arm(aim, _kick).Elbow;
+        var target = new Vector2(rest.X, rest.Y);
+        var moved = (GlobalPosition - _armLastPos) / size;
+        _armLastPos = GlobalPosition;
+        var bodyVel = new Vector2(moved.X * _facing, moved.Y) / dt; // sprite space
+        if (_facing != _armFacing || moved.LengthSquared() > 400)
+        {
+            _armFacing = _facing;
+            _elbow = target;
+            _elbowVel = Vector2.Zero;
+            _armBodyVel = bodyVel;
+            return;
+        }
+        _elbowVel -= (bodyVel - _armBodyVel) * inertia;
+        _armBodyVel = bodyVel;
+        // Substeps keep the spring stable through frame hitches.
+        int steps = Mathf.Clamp(Mathf.CeilToInt(dt / (1 / 120f)), 1, 8);
+        float h = Mathf.Min(dt, 0.1f) / steps;
+        for (int i = 0; i < steps; i++)
+        {
+            _elbowVel += (stiffness * (target - _elbow) - damping * _elbowVel) * h;
+            _elbow += _elbowVel * h;
+        }
+        _armSway = _elbow - target;
     }
 
     /// <summary>Visible tells for cards that change how a player works (everyone can read them at a glance).</summary>
@@ -672,6 +713,7 @@ public partial class Avatar : CharacterBody2D
             GunLook = Gun,
             Kick = _kick,
             Flash = _flash,
+            ArmSway = _armSway,
         };
         // A soft aura in the player color keeps characters readable on any backdrop.
         GlowTex.Draw(this, Vector2.Zero, 22 * size, Player.Color with { A = 0.22f });

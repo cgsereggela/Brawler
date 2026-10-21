@@ -57,6 +57,38 @@ public static class GunRig
         (100, new(4.0f, 8.0f)),
     };
 
+    /// <summary>Upper arm and forearm lengths (sprite space): nearly straight at the farthest reach, bent when the hand comes in.</summary>
+    public const float UpperArm = 7.4f, Forearm = 8.0f;
+
+    /// <summary>Where the gun hand grips, in gun space (the arm ends here).</summary>
+    public static readonly Vector2 Grip = new(0.6f, 0.2f);
+
+    /// <summary>
+    /// Two-bone arm: the elbow (sprite space) for an arm from <paramref name="shoulder"/> to <paramref name="hand"/>.
+    /// It bends to the clockwise side of the shoulder→hand line (below it when reaching ahead, in front when reaching
+    /// up), so the elbow hangs as gravity would have it. Out of reach, the arm goes straight toward the hand.
+    /// </summary>
+    public static Vector2 Elbow(Vector2 shoulder, Vector2 hand, float upper = UpperArm, float fore = Forearm)
+    {
+        var d = hand - shoulder;
+        float len = d.Length();
+        if (len < 1e-4f) return shoulder + new Vector2(0, upper);
+        var dir = d / len;
+        float reach = Math.Clamp(len, Math.Abs(upper - fore) + 1e-3f, upper + fore);
+        // Law of cosines: distance along the line to the elbow's foot, then how far it sticks out.
+        float along = (upper * upper - fore * fore + reach * reach) / (2 * reach);
+        float side = MathF.Sqrt(MathF.Max(0, upper * upper - along * along));
+        return shoulder + dir * along + new Vector2(-dir.Y, dir.X) * side;
+    }
+
+    /// <summary>The hand's grip point and the elbow in sprite space for a sprite-space aim and recoil.</summary>
+    public static (Vector2 Grip, Vector2 Elbow) Arm(Vector2 spriteAim, float kick = 0)
+    {
+        var (hand, angle) = Pose(spriteAim, kick);
+        var grip = ToSprite(Grip, hand, angle);
+        return (grip, Elbow(Shoulder, grip));
+    }
+
     /// <summary>Recoil: how far the hand is pushed back and how much the muzzle climbs (radians) at kick 1.</summary>
     public const float KickBack = 1.6f, KickClimb = 0.22f;
 

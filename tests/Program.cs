@@ -937,6 +937,36 @@ void Check(bool cond, string name, string detail = "")
             $"closest {minMargin:0.00} px at {worst}{(covered > 0 ? $"; {covered} points inside, aims (5-degree bands): {string.Join(",", bad)}" : "")}");
     }
 
+    // The two-bone arm reaches the grip at every allowed aim and recoil without stretching, bends more as the hand
+    // comes in, and the elbow moves smoothly (no flips) as the aim sweeps round.
+    {
+        float worstUpper = 0, worstFore = 0, maxJump = 0, minReachSlack = float.MaxValue;
+        Vector2? prev = null;
+        for (float deg = -90 - back * 180 / MathF.PI; deg <= 90 + back * 180 / MathF.PI + 1e-3f; deg += 0.5f)
+        {
+            float rad = deg * MathF.PI / 180;
+            var aim = new Vector2(MathF.Cos(rad), MathF.Sin(rad));
+            foreach (float kick in new[] { 0f, 1f })
+            {
+                var (grip, elbow) = GunRig.Arm(aim, kick);
+                worstUpper = MathF.Max(worstUpper, MathF.Abs(Vector2.Distance(GunRig.Shoulder, elbow) - GunRig.UpperArm));
+                worstFore = MathF.Max(worstFore, MathF.Abs(Vector2.Distance(elbow, grip) - GunRig.Forearm));
+                minReachSlack = MathF.Min(minReachSlack, GunRig.UpperArm + GunRig.Forearm - Vector2.Distance(GunRig.Shoulder, grip));
+            }
+            var e0 = GunRig.Arm(aim).Elbow;
+            if (prev is { } pe) maxJump = MathF.Max(maxJump, Vector2.Distance(pe, e0));
+            prev = e0;
+        }
+        Check(worstUpper < 1e-3f && worstFore < 1e-3f && minReachSlack > 0, "Arm reaches the grip at every aim without stretching",
+            $"upper err {worstUpper:0.0000}, fore err {worstFore:0.0000}, reach slack {minReachSlack:0.00}");
+        Check(maxJump < 0.6f, "Elbow moves smoothly as the aim sweeps round", $"largest step {maxJump:0.00} per 0.5 deg");
+        var (lg, le) = GunRig.Arm(new Vector2(1, 0));
+        var (kg, ke) = GunRig.Arm(new Vector2(1, 0), 1);
+        float Sag(Vector2 gr, Vector2 el) { var d = Vector2.Normalize(gr - GunRig.Shoulder); var r = el - GunRig.Shoulder; return MathF.Abs(r.X * d.Y - r.Y * d.X); }
+        Check(le.Y > GunRig.Shoulder.Y + (lg.Y - GunRig.Shoulder.Y) * ((le.X - GunRig.Shoulder.X) / (lg.X - GunRig.Shoulder.X)) && Sag(kg, ke) > Sag(lg, le),
+            "Level arm's elbow hangs below the line and folds further under recoil", $"sag {Sag(lg, le):0.00} -> {Sag(kg, ke):0.00}");
+    }
+
     // The muzzle mirrors with facing, scales with size and sits past the body at arm's length.
     var g = GunLook.Default;
     var right = GunRig.Muzzle(new Vector2(1, 0), 1, 1, g);
