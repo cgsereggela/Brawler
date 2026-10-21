@@ -767,8 +767,8 @@ public partial class GameManager : Node2D
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
         if (cause != KillCause.Left)
         {
-            HostBotChat(killer, 0.3f, 1, 3);
-            HostBotChat(a.Player.Slot, 0.3f, 2, 3);
+            HostBotChat(killer, 0.3f, 1, 3, 4);
+            HostBotChat(a.Player.Slot, 0.3f, 2, 3, 4);
         }
         // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
         float boom = a.S[Stat.Kamikaze];
@@ -1055,6 +1055,8 @@ public partial class GameManager : Node2D
 
         // Words: how hard it was, plus a streak call-out.
         string word = fell && killer < 0 ? "OUT!" : KillWords[tier][(int)(GD.Randi() % (uint)KillWords[tier].Length)];
+        // Blown up by your own shot (or nobody's): no one to credit.
+        if (cause == KillCause.Shot && killer < 0) word = "UNLUCKY!";
         if (cause == KillCause.Hazard && victim >= 0)
             word = _lastHazard[victim] switch { HazardHit.Saw => "SHREDDED!", HazardHit.Magma => "MELTED!", _ => "POISONED!" };
         Fx.Popup(at + new Vector2(0, fell ? -40 : -18), word, kc.Lightened(0.2f), 16 + tier * 3, 1.1f);

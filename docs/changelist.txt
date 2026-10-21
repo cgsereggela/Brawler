@@ -1,8 +1,4 @@
 issues to fix:
-- add 'Unlucky' to the emote wheel, and add an on-kill text
-- the executable icon should be a simple player head instead of the godot logo
-- the E and T overlap slightly in the 'DELETED' text
-- the game framerate slows a lot when there's many particles on screen, we need some sort of dynamic culling to try and keep the game snappy when lots is going on
 
 features to add:
 - dynamic arena hazards: collapsing platforms, lava that rises late in a round, or a closing ring, so late rounds don't stall into camping

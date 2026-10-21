@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Brawler.Core;
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.Fx;
@@ -25,6 +26,12 @@ public enum PKind
 public partial class FxLayer : Node2D
 {
     private const int MaxParticles = 2200;
+
+    /// <summary>Shrinks the particle budget while frames run slow (see <see cref="FxBudget"/>). Off with --nofxcull.</summary>
+    public static bool Culling = true;
+
+    public readonly FxBudget Budget = new(MaxParticles, 300);
+    private ulong _lastUsec;
 
     private struct Particle
     {
@@ -98,7 +105,8 @@ public partial class FxLayer : Node2D
     public void Emit(Vector2 pos, PKind kind, Color color, int count, float speed, float life, float size,
         float gravity = 0, Vector2? dir = null, float spread = Mathf.Tau, float drag = 2.5f)
     {
-        for (int i = 0; i < count && _parts.Count < MaxParticles; i++)
+        if (Culling) count = Budget.Scale(count);
+        for (int i = 0; i < count && _parts.Count < Limit; i++)
         {
             float a = dir is { } d ? d.Angle() + _rng.RandfRange(-spread * 0.5f, spread * 0.5f) : _rng.RandfRange(0, Mathf.Tau);
             float l = life * _rng.RandfRange(0.6f, 1f);
@@ -114,7 +122,8 @@ public partial class FxLayer : Node2D
     /// <summary>Particles that burst out, then get pulled toward <paramref name="home"/> (life-steal motes).</summary>
     public void EmitHoming(Vector2 pos, Vector2 home, Color color, int count, float speed, float life, float size)
     {
-        for (int i = 0; i < count && _parts.Count < MaxParticles; i++)
+        if (Culling) count = Budget.Scale(count);
+        for (int i = 0; i < count && _parts.Count < Limit; i++)
         {
             float l = life * _rng.RandfRange(0.75f, 1f);
             _parts.Add(new Particle
@@ -124,6 +133,10 @@ public partial class FxLayer : Node2D
             });
         }
     }
+
+    public int ParticleCount => _parts.Count;
+
+    private int Limit => Culling ? Budget.Cap : MaxParticles;
 
     public void Spark(Vector2 pos, Color color, int count) => Emit(pos, PKind.Streak, color, count, 140, 0.22f, 0.9f);
 
@@ -171,6 +184,12 @@ public partial class FxLayer : Node2D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        // Real time, not game time: hit-stop slows delta, but the frame still costs what it costs.
+        ulong now = Time.GetTicksUsec();
+        if (_lastUsec > 0 && Culling) Budget.Frame((now - _lastUsec) / 1e6f, _parts.Count);
+        _lastUsec = now;
+        // Over budget: drop the oldest particles first (they're the faintest).
+        if (_parts.Count > Limit) _parts.RemoveRange(0, _parts.Count - Limit);
         for (int i = _parts.Count - 1; i >= 0; i--)
         {
             var p = _parts[i];
@@ -231,8 +250,14 @@ public partial class FxLayer : Node2D
 
     // ---------- drawing ----------
 
+    private readonly TriBatch _solidTris = new(), _addTris = new(), _glowTris = new(textured: true);
+    private readonly Vector2[] _rayPts = new Vector2[4];
+    private readonly Color[] _rayCols = new Color[4];
+
     private void DrawSolid(DrawLayer l)
     {
+        var b = _solidTris;
+        b.Begin(l);
         foreach (var p in _parts)
         {
             float k = p.Life / p.MaxLife;
@@ -241,33 +266,33 @@ public partial class FxLayer : Node2D
                 case PKind.Smoke:
                 {
                     float r = p.Size * (1f + (1f - k) * 1.8f);
-                    l.DrawCircle(p.Pos, r, p.Color with { A = p.Color.A * 0.45f * k }, true, -1, true);
+                    b.Circle(p.Pos, r, p.Color with { A = p.Color.A * 0.45f * k }, 14);
                     break;
                 }
                 case PKind.Chunk:
                 {
                     float s = p.Size * (0.5f + 0.5f * Mathf.Min(1, k * 2));
-                    var poly = Quad(p.Pos, s, s, p.Rot);
-                    l.DrawColoredPolygon(poly, p.Color with { A = Mathf.Min(1, k * 3) });
-                    l.DrawColoredPolygon(Quad(p.Pos - new Vector2(s * 0.15f, s * 0.15f), s * 0.45f, s * 0.45f, p.Rot), p.Color.Lightened(0.35f) with { A = Mathf.Min(1, k * 3) });
+                    b.Quad(p.Pos, s, s, p.Rot, p.Color with { A = Mathf.Min(1, k * 3) });
+                    b.Quad(p.Pos - new Vector2(s * 0.15f, s * 0.15f), s * 0.45f, s * 0.45f, p.Rot, p.Color.Lightened(0.35f) with { A = Mathf.Min(1, k * 3) });
                     break;
                 }
                 case PKind.Confetti:
                 {
                     float flip = Mathf.Abs(Mathf.Cos(p.Rot * 1.3f));
-                    l.DrawColoredPolygon(Quad(p.Pos, p.Size * (0.25f + 0.75f * flip), p.Size * 0.55f, p.Rot), p.Color with { A = Mathf.Min(1, k * 2.5f) });
+                    b.Quad(p.Pos, p.Size * (0.25f + 0.75f * flip), p.Size * 0.55f, p.Rot, p.Color with { A = Mathf.Min(1, k * 2.5f) });
                     break;
                 }
                 case PKind.Shard:
                 {
                     var a = Vector2.FromAngle(p.Rot) * p.Size;
-                    var b = Vector2.FromAngle(p.Rot + 2.4f) * p.Size * 0.6f;
+                    var e = Vector2.FromAngle(p.Rot + 2.4f) * p.Size * 0.6f;
                     var c = Vector2.FromAngle(p.Rot + 3.9f) * p.Size * 0.5f;
-                    l.DrawColoredPolygon(new[] { p.Pos + a, p.Pos + b, p.Pos + c }, p.Color with { A = Mathf.Min(1, k * 2.5f) });
+                    b.Triangle(p.Pos + a, p.Pos + e, p.Pos + c, p.Color with { A = Mathf.Min(1, k * 2.5f) });
                     break;
                 }
             }
         }
+        b.Flush();
     }
 
     /// <summary>A jagged lightning bolt between two points.</summary>
@@ -287,16 +312,17 @@ public partial class FxLayer : Node2D
 
     private void DrawAdditive(DrawLayer l)
     {
+        // Additive blending doesn't care about order, so all the soft glows go in one textured batch and every
+        // other shape in one plain batch. Under load, the halos around sparks are skipped and rings get fewer segments.
+        bool cheap = Culling && Budget.Quality < 0.5f;
+        var b = _addTris;
+        var glow = _glowTris;
+        b.Begin(l);
+        glow.Begin(l, GlowTex.Tex);
         foreach (var g in _glows)
         {
             float k = g.Life / g.MaxLife;
-            GlowTex.Draw(l, g.Pos, g.Radius * (1.2f - 0.4f * k), g.Color with { A = k * k * Accessibility.FlashScale });
-        }
-        foreach (var b in _bolts)
-        {
-            float k = b.Life / b.MaxLife;
-            l.DrawPolyline(b.Pts, b.Color with { A = 0.5f * k }, 4f, true);
-            l.DrawPolyline(b.Pts, Shapes.Hdr(Colors.White, 1.8f) with { A = k * Accessibility.FlashScale }, 1.3f, true);
+            glow.Sprite(g.Pos, g.Radius * (1.2f - 0.4f * k), g.Color with { A = k * k * Accessibility.FlashScale });
         }
         foreach (var r in _rays)
         {
@@ -306,9 +332,14 @@ public partial class FxLayer : Node2D
             {
                 float a = r.Rot + i * Mathf.Tau / r.Count;
                 float w = 0.09f + 0.05f * (i % 2);
-                var tip = r.Pos + Vector2.FromAngle(a) * len * (i % 2 == 0 ? 1f : 0.7f);
-                l.DrawPolygon(new[] { r.Pos, r.Pos + Vector2.FromAngle(a - w) * len * 0.3f, tip, r.Pos + Vector2.FromAngle(a + w) * len * 0.3f },
-                    new[] { r.Color with { A = 0.7f * k }, r.Color with { A = 0.4f * k }, r.Color with { A = 0 }, r.Color with { A = 0.4f * k } });
+                _rayPts[0] = r.Pos;
+                _rayPts[1] = r.Pos + Vector2.FromAngle(a - w) * len * 0.3f;
+                _rayPts[2] = r.Pos + Vector2.FromAngle(a) * len * (i % 2 == 0 ? 1f : 0.7f);
+                _rayPts[3] = r.Pos + Vector2.FromAngle(a + w) * len * 0.3f;
+                _rayCols[0] = r.Color with { A = 0.7f * k };
+                _rayCols[1] = _rayCols[3] = r.Color with { A = 0.4f * k };
+                _rayCols[2] = r.Color with { A = 0 };
+                b.Fan(_rayPts, _rayCols);
             }
         }
         foreach (var r in _rings)
@@ -316,7 +347,7 @@ public partial class FxLayer : Node2D
             if (r.Delay > 0) continue;
             float k = 1f - r.Life / r.MaxLife;
             float radius = Mathf.Lerp(r.R0, r.R1, 1f - (1f - k) * (1f - k));
-            l.DrawArc(r.Pos, radius, 0, Mathf.Tau, 48, Shapes.Hdr(r.Color, 1.5f) with { A = 1f - k }, r.Width * (1.3f - k), true);
+            b.Ring(r.Pos, radius, r.Width * (1.3f - k), Shapes.Hdr(r.Color, 1.5f) with { A = 1f - k }, cheap ? 24 : 48);
         }
         foreach (var p in _parts)
         {
@@ -324,27 +355,35 @@ public partial class FxLayer : Node2D
             switch (p.Kind)
             {
                 case PKind.Dot:
-                    GlowTex.Draw(l, p.Pos, p.Size * 4, p.Color with { A = 0.35f * k });
-                    l.DrawCircle(p.Pos, p.Size * (0.4f + 0.6f * k), Shapes.Hdr(p.Color, 1.6f) with { A = Mathf.Min(1, k * 2) }, true, -1, true);
+                    if (!cheap) glow.Sprite(p.Pos, p.Size * 4, p.Color with { A = 0.35f * k });
+                    b.Circle(p.Pos, p.Size * (0.4f + 0.6f * k), Shapes.Hdr(p.Color, 1.6f) with { A = Mathf.Min(1, k * 2) }, 10);
                     break;
                 case PKind.Streak:
                 {
                     var tail = p.Vel * 0.035f;
                     if (tail.LengthSquared() < 1) tail = tail.Normalized();
-                    l.DrawLine(p.Pos, p.Pos - tail, Shapes.Hdr(p.Color, 1.8f) with { A = Mathf.Min(1, k * 2) }, p.Size * (0.5f + 0.5f * k), true);
+                    b.Line(p.Pos, p.Pos - tail, p.Size * (0.5f + 0.5f * k), Shapes.Hdr(p.Color, 1.8f) with { A = Mathf.Min(1, k * 2) });
                     break;
                 }
                 case PKind.Ember:
                 {
                     float flick = 0.6f + 0.4f * Mathf.Sin(p.Life * 40 + p.Rot * 5);
-                    GlowTex.Draw(l, p.Pos, p.Size * 5, p.Color with { A = 0.3f * k * flick });
-                    l.DrawCircle(p.Pos, p.Size * 0.7f * (0.5f + 0.5f * k), Shapes.Hdr(p.Color.Lightened(0.3f), 2f) with { A = k * flick }, true, -1, true);
+                    if (!cheap) glow.Sprite(p.Pos, p.Size * 5, p.Color with { A = 0.3f * k * flick });
+                    b.Circle(p.Pos, p.Size * 0.7f * (0.5f + 0.5f * k), Shapes.Hdr(p.Color.Lightened(0.3f), 2f) with { A = k * flick }, 8);
                     break;
                 }
                 case PKind.Star:
-                    l.DrawColoredPolygon(Shapes.Star(p.Pos, p.Size * (0.6f + 0.6f * k), p.Size * 0.25f, 4, p.Rot), Shapes.Hdr(p.Color, 1.8f) with { A = Mathf.Min(1, k * 2) });
+                    b.Star(p.Pos, p.Size * (0.6f + 0.6f * k), p.Size * 0.25f, 4, p.Rot, Shapes.Hdr(p.Color, 1.8f) with { A = Mathf.Min(1, k * 2) });
                     break;
             }
+        }
+        glow.Flush();
+        b.Flush();
+        foreach (var bolt in _bolts)
+        {
+            float k = bolt.Life / bolt.MaxLife;
+            l.DrawPolyline(bolt.Pts, bolt.Color with { A = 0.5f * k }, 4f, true);
+            l.DrawPolyline(bolt.Pts, Shapes.Hdr(Colors.White, 1.8f) with { A = k * Accessibility.FlashScale }, 1.3f, true);
         }
         if (_screenLife > 0)
             l.DrawRect(ScreenRect, _screenColor with { A = _screenColor.A * (_screenLife / _screenMax) });
@@ -359,9 +398,11 @@ public partial class FxLayer : Node2D
             float pop = 1f + 0.7f * Mathf.Exp(-t.Age * 16f);
             float alpha = Mathf.Min(1, k * 4);
             int size = Mathf.Max(6, Mathf.RoundToInt(t.Size * pop));
-            var font = Fonts.Heavy;
+            var font = Fonts.Shout;
             float w = font.GetStringSize(t.Value, HorizontalAlignment.Left, -1, size).X;
             var at = t.Pos + new Vector2(-w / 2, size * 0.35f);
+            // Keep words over a player at the arena's edge on screen.
+            at.X = Mathf.Clamp(at.X, 6, Mathf.Max(6, MapLayout.Width - 6 - w));
             l.DrawStringOutline(font, at + new Vector2(0, 1.2f), t.Value, HorizontalAlignment.Left, -1, size, Mathf.Max(3, size / 4), new Color(0.05f, 0.02f, 0.1f, 0.55f * alpha));
             l.DrawStringOutline(font, at, t.Value, HorizontalAlignment.Left, -1, size, Mathf.Max(2, size / 5), new Color(0.08f, 0.04f, 0.14f, alpha));
             l.DrawString(font, at, t.Value, HorizontalAlignment.Left, -1, size, t.Color with { A = alpha });
@@ -387,12 +428,5 @@ public partial class FxLayer : Node2D
         var at = tip + new Vector2(-tw / 2, -h - 3);
         l.DrawStringOutline(font, at, p.Value, HorizontalAlignment.Left, -1, size, 3, ink);
         l.DrawString(font, at, p.Value, HorizontalAlignment.Left, -1, size, p.Color.Lightened(0.35f) with { A = alpha });
-    }
-
-    private static Vector2[] Quad(Vector2 c, float w, float h, float rot)
-    {
-        var x = Vector2.FromAngle(rot) * w * 0.5f;
-        var y = Vector2.FromAngle(rot + Mathf.Pi / 2) * h * 0.5f;
-        return new[] { c - x - y, c + x - y, c + x + y, c - x + y };
     }
 }

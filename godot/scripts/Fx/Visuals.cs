@@ -142,13 +142,27 @@ public static class GlowTex
 public static class Fonts
 {
     private static readonly string[] Names = { "Bahnschrift", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Sans-Serif" };
-    private static Font _regular, _bold, _heavy;
+    private static Font _regular, _bold, _heavy, _shout;
 
     public static Font Regular => _regular ??= Make(400, 0);
     public static Font Bold => _bold ??= Make(700, 0.4f);
     public static Font Heavy => _heavy ??= Make(800, 0.9f);
 
-    private static Font Make(int weight, float embolden)
+    /// <summary>
+    /// Heavy with a little air between letters, for big popup words. Emboldening widens every glyph, so at popup sizes
+    /// neighbours touch (the E and T in DELETED).
+    /// </summary>
+    public static Font Shout => _shout ??= MakeShout();
+
+    private static Font MakeShout()
+    {
+        var v = Make(800, 0.9f);
+        v.OpentypeFeatures = new Godot.Collections.Dictionary { { TextServerManager.GetPrimaryInterface().NameToTag("kern"), 0 } };
+        v.SetSpacing(TextServer.SpacingType.Glyph, 2);
+        return v;
+    }
+
+    private static FontVariation Make(int weight, float embolden)
     {
         var sys = new SystemFont
         {

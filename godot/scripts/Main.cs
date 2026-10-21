@@ -333,6 +333,7 @@ public partial class Main : Node
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
             else if (a == "--nobots") _noBots = true;
+            else if (a == "--nofxcull") Fx.FxLayer.Culling = false;
             else if (a == "--rematch") _rematchTest = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
             else if (a.StartsWith("--players="))
@@ -446,6 +447,48 @@ public partial class Main : Node
                     };
                 }
                 tree.CreateTimer(3.0, true, false, true).Timeout += Next;
+            }
+            else if (a == "--fxbench")
+            {
+                // Floods the arena with top-tier hit and kill effects for 8 s (windowed, vsync off), printing frame
+                // time and live particles each second, then a FXBENCH summary. Compare with --nofxcull.
+                _autoMode = "bench";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var tree = GetTree();
+                var all = Game.Flavor.Fire | Game.Flavor.Homing | Game.Flavor.Vampire | Game.Flavor.Glass | Game.Flavor.Feather | Game.Flavor.Bouncy | Game.Flavor.Split | Game.Flavor.Pierce;
+                double total = 0, worst = 0;
+                int seconds = 0, peak = 0;
+                void Burst()
+                {
+                    if (seconds >= 8) return;
+                    _game.DebugShowcase(12, all);
+                    tree.CreateTimer(0.04, true, false, true).Timeout += Burst;
+                }
+                void Second()
+                {
+                    ulong t0 = Time.GetTicksUsec(), f0 = Engine.GetProcessFrames();
+                    tree.CreateTimer(1.0, true, false, true).Timeout += () =>
+                    {
+                        double ms = (Time.GetTicksUsec() - t0) / 1000.0 / Mathf.Max(1, Engine.GetProcessFrames() - f0);
+                        int live = _game.Fx.ParticleCount;
+                        peak = Mathf.Max(peak, live);
+                        total += ms;
+                        worst = Mathf.Max(worst, ms);
+                        seconds++;
+                        Log.Info($"fxbench {seconds}s: {ms:0.00} ms/frame, {live} particles, cap {_game.Fx.Budget.Cap} (baseline {_game.Fx.Budget.Baseline * 1000:0.0} ms)");
+                        if (seconds < 8) { Second(); return; }
+                        Log.Info($"FXBENCH culling {(Fx.FxLayer.Culling ? "on" : "off")}: average {total / seconds:0.00} ms/frame, worst second {worst:0.00} ms, peak {peak} particles");
+                        tree.Quit(0);
+                    };
+                }
+                tree.CreateTimer(2.6).Timeout += () => { Burst(); Second(); };
             }
             else if (a == "--fxshots" && _shotDir != null)
             {
@@ -792,6 +835,11 @@ public partial class Main : Node
                     string result = PortOpener.Probe();
                     Callable.From(() => { Log.Info($"UPNPCHECK {result}"); GetTree().Quit(0); }).CallDeferred();
                 });
+            }
+            else if (a == "--makeicon")
+            {
+                _autoMode = "icon";
+                Fx.IconMaker.Make(this);
             }
             else if (a == "--menushots" && _shotDir != null)
             {

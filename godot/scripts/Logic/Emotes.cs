@@ -17,6 +17,7 @@ public static class Emotes
         new("HAHA!", "BOO!"),
         new("OOPS", "OOPS"),
         new("COME AT ME", "AVENGE ME!"),
+        new("UNLUCKY", "SO UNLUCKY"),
     };
 
     /// <summary>The input action for emote <paramref name="id"/>: "emote_1" for id 0.</summary>

@@ -34,6 +34,7 @@ public static class Keybinds
         Set("emote_2", K(Key.Key2));
         Set("emote_3", K(Key.Key3));
         Set("emote_4", K(Key.Key4));
+        Set("emote_5", K(Key.Key5));
         Set("ping", K(Key.Q), Binding.Mouse((int)MouseButton.Middle));
         return t;
     }

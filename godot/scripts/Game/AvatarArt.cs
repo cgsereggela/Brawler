@@ -319,6 +319,11 @@ public static class AvatarArt
 
     private static readonly Vector2[] MaskOutline = BuildMask();
 
+    /// <summary>The mask's outline in sprite space (for the app icon).</summary>
+    public static Vector2[] MaskShape() => (Vector2[])MaskOutline.Clone();
+
+    public static readonly Color InkColor = Ink, HollowColor = Hollow, MaskBoneColor = MaskBone, MaskShadeColor = MaskShade;
+
     /// <summary>A wide dome tapering to a short, narrower jaw.</summary>
     private static Vector2[] BuildMask()
     {
