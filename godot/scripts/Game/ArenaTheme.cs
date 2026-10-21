@@ -3,9 +3,9 @@ using Godot;
 
 namespace Brawler.Game;
 
-public enum Skyline { City, Mountains, Hills, Spires }
-public enum Motes { Bokeh, Embers, Bubbles, Snow, Fireflies }
-public enum Deco { Neon, Grass, Weeds, Mushrooms, Cracks, Icicles, Sprinkles }
+public enum Skyline { City, Mountains, Hills, Spires, Arches, Forest, Circuit }
+public enum Motes { Bokeh, Embers, Bubbles, Snow, Fireflies, Leaves, Bits }
+public enum Deco { Neon, Grass, Weeds, Mushrooms, Cracks, Icicles, Sprinkles, Torches, Ferns, Circuits }
 
 /// <summary>A color scheme and dressing for one arena. Each battle picks one from its seed, so every peer agrees.</summary>
 public sealed record ArenaTheme(
@@ -33,6 +33,12 @@ public sealed record ArenaTheme(
             Skyline.Spires, Motes.Snow, Deco.Icicles, new("#ffffff"), new("#cfe6ff")),
         new("Candy Clouds", new("#21152f"), new("#5e3a6e"), new("#d197b3"), new("#4a3158"), new("#fff0b8"),
             Skyline.Hills, Motes.Bokeh, Deco.Sprinkles, new("#fff2b0"), new("#b8f0ff")),
+        new("Dungeon Depths", new("#0c0a12"), new("#262033"), new("#5f5264"), new("#2a2632"), new("#f2a65e"),
+            Skyline.Arches, Motes.Embers, Deco.Torches, new("#ffbb6b"), new("#ffe2a0")),
+        new("Elder Forest", new("#0f1912"), new("#2c4630"), new("#8aa477"), new("#2b3a28"), new("#d8e6a0"),
+            Skyline.Forest, Motes.Leaves, Deco.Ferns, new("#e8c66a"), new("#c9784a")),
+        new("Mainframe", new("#050d12"), new("#0f2a30"), new("#2f6a6a"), new("#13262c"), new("#5ff2c8"),
+            Skyline.Circuit, Motes.Bits, Deco.Circuits, new("#7dffd8"), new("#ffcf5c")),
     };
 
     /// <summary>The look for a theme id; All is in ThemeId order.</summary>

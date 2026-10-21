@@ -641,10 +641,10 @@ void Check(bool cond, string name, string detail = "")
 
 // ---------- Arena themes fit their features ----------
 {
-    // Theme choice lives in Logic now; it must still be the formula the Godot side always used.
+    // Theme choice lives in Logic; it hashes the seed so neighboring seeds get different themes.
     bool sameAsBefore = Enumerable.Range(-500, 5000).All(seed =>
-        (int)ThemeRules.ForSeed(seed) == (int)((uint)(seed * 2654435761u) >> 8) % 7);
-    Check(sameAsBefore && ThemeRules.Count == Enum.GetValues<ThemeId>().Length, "ThemeRules.ForSeed keeps the old seed-to-theme mapping");
+        (int)ThemeRules.ForSeed(seed) == (int)((uint)(seed * 2654435761u) >> 8) % ThemeRules.Count);
+    Check(sameAsBefore && ThemeRules.Count == Enum.GetValues<ThemeId>().Length, "ThemeRules.ForSeed hashes the seed onto the themes");
 
     // Godot's ArenaTheme.All must list the same themes in ThemeId order, or the HUD name and colors would not match the rules.
     string dir = AppContext.BaseDirectory, themeFile = null;

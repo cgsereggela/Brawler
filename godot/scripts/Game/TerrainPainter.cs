@@ -42,8 +42,8 @@ public static class TerrainPainter
         var deep = Ink(t).Lerp(t.Block, 0.35f);
         var rim = t.Block.Lerp(t.Edge, 0.7f).Lightened(0.25f);
         var (capCol, capDepth, capDrip) = Cap(t);
-        bool veins = t.Deco == Deco.Cracks;
-        Raster glow = veins ? new Raster(MapLayout.Width, MapLayout.Height, Scale) : null;
+        bool veins = t.Deco == Deco.Cracks, board = t.Deco == Deco.Circuits;
+        Raster glow = veins || board ? new Raster(MapLayout.Width, MapLayout.Height, Scale) : null;
         float s = Scale;
 
 
@@ -78,7 +78,9 @@ public static class TerrainPainter
             col = col.Lightened(Math.Max(0, broad - 0.62f) * 0.25f);
             // Cracks.
             if (vein > 0.9f && td > 3) col = col.Darkened(0.4f * Mathf.SmoothStep(0.9f, 0.97f, vein));
-            if (t.Deco == Deco.Neon && td > 2.5f) col = Bricks(col, x / s, td);
+            if (t.Deco is Deco.Neon or Deco.Torches && td > 2.5f) col = Bricks(col, x / s, td);
+            float trace = board && td > 3 ? Trace(x / s, y / s) : 0;
+            if (trace > 0) col = col.Lerp(t.Edge.Darkened(0.6f), trace * 0.55f);
             // Edges sink into shadow; the arena border is darker still, so the playfield reads first.
             col = col.Darkened(0.32f * (1 - Mathf.SmoothStep(0, 5, edge)));
             if (border[i] > 0.5f) col = col.Darkened(0.35f);
@@ -99,7 +101,9 @@ public static class TerrainPainter
             col = col.Darkened((PaintNoise.Grain.At(wx * 3, wy * 3) - 0.5f) * 0.08f);
             r.Blend(i, col with { A = 1 }, m);
 
-            if (glow != null && vein > 0.88f && td > 4 && edge > 2)
+            if (trace > 0 && edge > 1.5f && NoiseTile.Hash((int)(x / s / 40), (int)(y / s / 40), seed) > 0.7f)
+                glow.Set(i, t.Edge with { A = trace * 0.16f });
+            else if (veins && vein > 0.88f && td > 4 && edge > 2)
             {
                 float g = Mathf.SmoothStep(0.88f, 0.96f, vein) * Mathf.SmoothStep(4, 10, td);
                 glow.Set(i, t.Edge with { A = g * 0.9f });
@@ -121,8 +125,34 @@ public static class TerrainPainter
         Deco.Icicles => (new Color("#dce8f4"), 3.2f, 1.5f),
         Deco.Sprinkles => (new Color("#f2cfe0"), 3.4f, 5f),
         Deco.Cracks => (t.Block.Darkened(0.35f), 2f, 0f),
+        Deco.Ferns => (new Color("#6c8a48"), 2.8f, 3.5f),
+        Deco.Circuits => (t.Edge.Darkened(0.55f), 1.6f, 0f),
         _ => (null, 0, 0),
     };
+
+    /// <summary>
+    /// Circuit-board traces (0 off a trace, up to 1 on one): runs along an 8 px grid, each grid segment switched on
+    /// or off by a hash, with round pads where traces end or meet.
+    /// </summary>
+    private static float Trace(float x, float y)
+    {
+        const float G = 8, Half = 0.75f;
+        int cx = (int)MathF.Floor(x / G), cy = (int)MathF.Floor(y / G);
+        float fx = x - cx * G, fy = y - cy * G;
+        float best = 0;
+        // Horizontal segment along this cell's top edge, vertical along its left edge.
+        if (NoiseTile.Hash(cx, cy, 71) > 0.65f) best = Math.Max(best, 1 - Mathf.SmoothStep(Half - 0.4f, Half + 0.4f, MathF.Abs(fy)));
+        if (NoiseTile.Hash(cx, cy + 1, 71) > 0.65f) best = Math.Max(best, 1 - Mathf.SmoothStep(Half - 0.4f, Half + 0.4f, MathF.Abs(G - fy)));
+        if (NoiseTile.Hash(cx, cy, 73) > 0.78f) best = Math.Max(best, 1 - Mathf.SmoothStep(Half - 0.4f, Half + 0.4f, MathF.Abs(fx)));
+        if (NoiseTile.Hash(cx + 1, cy, 73) > 0.78f) best = Math.Max(best, 1 - Mathf.SmoothStep(Half - 0.4f, Half + 0.4f, MathF.Abs(G - fx)));
+        // Solder pads on some grid corners.
+        if (NoiseTile.Hash(cx, cy, 79) > 0.8f)
+        {
+            float d = new Vector2(fx, fy).Length();
+            best = Math.Max(best, 1 - Mathf.SmoothStep(1.4f, 2.2f, d));
+        }
+        return best;
+    }
 
     /// <summary>Masonry: courses every 6 px down from the surface, joints staggered per course.</summary>
     private static Color Bricks(Color col, float x, float td)

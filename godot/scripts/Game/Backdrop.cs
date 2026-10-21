@@ -61,7 +61,7 @@ public partial class Backdrop : Node2D
         BuildLayer(rng, 0, Size.Y * 0.36f, Size.Y * 0.62f);
         BuildLayer(rng, 1, Size.Y * 0.5f, Size.Y * 0.74f);
         BuildLayer(rng, 2, Size.Y * 0.64f, Size.Y * 0.88f);
-        if (theme.Motes is not Motes.Bokeh) BuildCeiling(rng);
+        if (theme.Motes is Motes.Embers or Motes.Bubbles or Motes.Snow or Motes.Fireflies) BuildCeiling(rng);
 
         _motes.Clear();
         int n = theme.Motes == Motes.Bokeh ? 26 : 46;
@@ -167,6 +167,132 @@ public partial class Backdrop : Node2D
                         new Vector2(x + sw, bottom),
                     });
                     x += sw * rng.Range(0.45f, 0.9f);
+                }
+                break;
+            }
+            case Skyline.Arches:
+            {
+                // A vaulted colonnade: pillars carrying a wall with round arches cut under it, banners hung in some bays.
+                float pw = rng.Range(10f, 16f) * k, bay = rng.Range(46f, 70f) * k;
+                float spring = rng.Range(minY, maxY) + (far ? -40 : 0), wallTop = spring - bay * 0.5f - rng.Range(10f, 26f) * k;
+                float x = -rng.Range(0f, bay);
+                while (x < w + bay)
+                {
+                    into.Add(new[] { new Vector2(x, bottom), new Vector2(x, spring), new Vector2(x + pw, spring), new Vector2(x + pw, bottom) });
+                    float x0 = x + pw, x1 = x + bay, r = (x1 - x0) * 0.5f;
+                    // The wall over the bay: flat on top, a half-circle bitten out of its underside.
+                    var wall = new List<Vector2> { new(x - 0.5f, wallTop), new(x1 + 0.5f, wallTop), new(x1, spring) };
+                    for (int i = 1; i < 12; i++)
+                    {
+                        float a = Mathf.Pi * i / 12f;
+                        wall.Add(new Vector2(x0 + r + Mathf.Cos(a) * r, spring - Mathf.Sin(a) * r));
+                    }
+                    wall.Add(new Vector2(x0, spring));
+                    wall.Add(new Vector2(x - 0.5f, spring));
+                    into.Add(wall.ToArray());
+                    // Broken battlements along the top.
+                    for (float bx = x; bx < x1; bx += 9 * k)
+                        if (rng.Chance(0.6f))
+                            into.Add(new[] { new Vector2(bx, wallTop + 1), new Vector2(bx, wallTop - 5 * k), new Vector2(bx + 5 * k, wallTop - 5 * k), new Vector2(bx + 5 * k, wallTop + 1) });
+                    if (!far && rng.Chance(0.35f))
+                    {
+                        float bw = r * 0.6f, cx = x0 + r, by = spring - r + 4, len = rng.Range(30f, 60f) * k;
+                        into.Add(new[] { new Vector2(cx - bw * 0.5f, by), new Vector2(cx + bw * 0.5f, by), new Vector2(cx + bw * 0.5f, by + len), new Vector2(cx, by + len - bw * 0.4f), new Vector2(cx - bw * 0.5f, by + len) });
+                    }
+                    if (rng.Chance(0.25f)) // a lit window high in the wall
+                        _windows.Add((new Rect2(x0 + r - 2 * k, wallTop + 4 * k, 4 * k, 7 * k), rng.Range(0, 1), rng.Range(0f, 50f), layer));
+                    x = x1;
+                }
+                break;
+            }
+            case Skyline.Forest:
+            {
+                // Pines on a rolling forest floor; up close, a few great trunks rise out of sight.
+                var pts = new List<Vector2> { new(-10, bottom) };
+                float p1 = rng.Range(0f, 6f), ground = Mathf.Lerp(maxY, bottom, 0.45f);
+                for (float x = -10; x <= w + 10; x += 8) pts.Add(new Vector2(x, ground + Mathf.Sin(x * 0.01f + p1) * 10));
+                pts.Add(new Vector2(w + 10, bottom));
+                into.Add(pts.ToArray());
+                float tx = -10;
+                while (tx < w + 10)
+                {
+                    float top = rng.Range(minY - 50, maxY - 10), base0 = ground + 6, tw = rng.Range(18f, 34f) * k;
+                    float trunk = Mathf.Max(2.5f, tw * 0.12f);
+                    into.Add(new[] { new Vector2(tx - trunk, base0), new Vector2(tx - trunk, top + 10), new Vector2(tx + trunk, top + 10), new Vector2(tx + trunk, base0) });
+                    // Tiers of boughs, wider toward the foot, each drooping at its tips.
+                    int tiers = rng.Range(3, 5);
+                    float h = (base0 - 14 - top) / tiers;
+                    for (int i = 0; i < tiers; i++)
+                    {
+                        float ty = top + i * h * 0.85f, half = tw * (0.35f + 0.65f * (i + 1) / tiers) * 0.5f;
+                        into.Add(new[] { new Vector2(tx, ty), new Vector2(tx + half, ty + h * 1.25f), new Vector2(tx + half * 0.4f, ty + h * 1.05f), new Vector2(tx - half * 0.4f, ty + h * 1.05f), new Vector2(tx - half, ty + h * 1.25f) });
+                    }
+                    tx += tw * rng.Range(0.5f, 1.1f);
+                }
+                if (layer == 2)
+                    for (int i = rng.Range(2, 3); i > 0; i--)
+                    {
+                        float cx = rng.Range(40f, w - 40), tw2 = rng.Range(16f, 26f);
+                        into.Add(new[] { new Vector2(cx - tw2 * 0.7f, bottom), new Vector2(cx - tw2 * 0.5f, ground - 10), new Vector2(cx - tw2 * 0.45f, -10), new Vector2(cx + tw2 * 0.45f, -10), new Vector2(cx + tw2 * 0.5f, ground - 10), new Vector2(cx + tw2 * 0.7f, bottom) });
+                        // A bare branch or two.
+                        for (int b = rng.Range(1, 2); b > 0; b--)
+                        {
+                            float by = rng.Range(40f, ground - 80), dirX = rng.Chance(0.5f) ? 1 : -1, len = rng.Range(30f, 60f);
+                            into.Add(new[] { new Vector2(cx, by), new Vector2(cx + dirX * len, by - len * 0.4f), new Vector2(cx + dirX * len, by - len * 0.4f + 3), new Vector2(cx, by + 8) });
+                        }
+                    }
+                break;
+            }
+            case Skyline.Circuit:
+            {
+                // The inside of a machine: racks of blinking lights far off, chips on a board nearer, cables and
+                // capacitors up close.
+                float x = -10;
+                while (x < w + 10)
+                {
+                    float bw = rng.Range(30f, 70f) * k, top = rng.Range(minY - (far ? 60 : 20), maxY);
+                    into.Add(new[] { new Vector2(x, bottom), new Vector2(x, top), new Vector2(x + bw, top), new Vector2(x + bw, bottom) });
+                    if (far)
+                    {
+                        // A server rack: rows of status lights.
+                        for (float wy = top + 6; wy < bottom - 8; wy += 6)
+                            for (float wx = x + 4; wx < x + bw - 4; wx += 5)
+                                if (rng.Chance(0.12f))
+                                    _windows.Add((new Rect2(wx, wy, 2, 2), rng.Range(0, 1), rng.Range(0f, 50f), layer));
+                    }
+                    else if (layer == 1)
+                    {
+                        // A chip: pins along its top and a status light.
+                        for (float px = x + 4; px < x + bw - 4; px += 6 * k)
+                            into.Add(new[] { new Vector2(px, top + 1), new Vector2(px, top - 4 * k), new Vector2(px + 2.5f * k, top - 4 * k), new Vector2(px + 2.5f * k, top + 1) });
+                        _windows.Add((new Rect2(x + bw * 0.5f - 2, top + 8, 4, 4), rng.Range(0, 1), rng.Range(0f, 50f), layer));
+                    }
+                    else
+                    {
+                        // A capacitor (a can with a domed lid) or a fat cable dropping from above.
+                        float cr = bw * 0.3f;
+                        into.Add(Shapes.Ellipse(new Vector2(x + bw * 0.5f, top), bw * 0.5f, cr * 0.5f, 18));
+                        if (rng.Chance(0.5f))
+                        {
+                            float cx = x + rng.Range(0f, bw), cw = rng.Range(5f, 9f), sag = rng.Range(20f, 60f);
+                            into.Add(new[] { new Vector2(cx - cw, -10), new Vector2(cx + cw, -10), new Vector2(cx + cw * 0.8f + 10, top - sag), new Vector2(cx - cw * 0.8f + 10, top - sag) });
+                        }
+                    }
+                    x += bw + rng.Range(4f, 30f) * k;
+                }
+                // Traces across the board: long thin runs with right-angle jogs.
+                for (int i = 0; i < 3 + layer; i++)
+                {
+                    float y = rng.Range(minY, bottom - 10), tx = -10, th = 1.6f * k;
+                    while (tx < w + 10)
+                    {
+                        float run = rng.Range(40f, 160f);
+                        into.Add(new[] { new Vector2(tx, y), new Vector2(tx + run, y), new Vector2(tx + run, y + th), new Vector2(tx, y + th) });
+                        tx += run;
+                        float jog = rng.Range(-20f, 20f);
+                        into.Add(new[] { new Vector2(tx - th, Mathf.Min(y, y + jog)), new Vector2(tx, Mathf.Min(y, y + jog)), new Vector2(tx, Mathf.Max(y, y + jog) + th), new Vector2(tx - th, Mathf.Max(y, y + jog) + th) });
+                        y += jog;
+                    }
                 }
                 break;
             }
@@ -419,6 +545,21 @@ public partial class Backdrop : Node2D
                     a = Mathf.Max(0, Mathf.Sin(_t * 2 * speed + phase));
                     GlowTex.Draw(l, p, r * 6, c with { A = 0.35f * a });
                     l.DrawCircle(p, r * 0.6f, Shapes.Hdr(c, 1.4f) with { A = a }, true, -1, true);
+                    break;
+                case Motes.Leaves:
+                    // Leaves tumbling down on the breeze, turning as they fall.
+                    p = Wrap(p0 + new Vector2(Mathf.Sin(_t * 0.9f * speed + phase) * 24 + _t * 12, _t * 16 * speed));
+                    var along = Vector2.FromAngle(_t * 1.8f * speed + phase) * r * 1.4f;
+                    var across = new Vector2(-along.Y, along.X) * (0.45f * Mathf.Abs(Mathf.Sin(_t * 2.2f * speed + phase)) + 0.1f);
+                    l.DrawColoredPolygon(new[] { p - along, p + across, p + along, p - across }, c with { A = 0.32f });
+                    break;
+                case Motes.Bits:
+                    // Bits of data streaming up the board: little squares that blink on and off.
+                    p = Wrap(p0 + new Vector2(0, -_t * 26 * speed));
+                    p = new Vector2(Mathf.Round(p.X / 6) * 6, p.Y);
+                    a = Mathf.Sin(_t * 4 * speed + phase) > -0.3f ? 1 : 0.15f;
+                    GlowTex.Draw(l, p, r * 4, c with { A = 0.25f * a });
+                    l.DrawRect(new Rect2(p - new Vector2(r * 0.5f, r * 0.5f), new Vector2(r, r)), Shapes.Hdr(c, 1.3f) with { A = 0.8f * a });
                     break;
                 default:
                     // Drifting dust: soft specks catching the light.

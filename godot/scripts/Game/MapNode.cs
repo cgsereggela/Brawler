@@ -90,7 +90,8 @@ public partial class MapNode : Node2D
     }
 
     /// <summary>Decorations that sway or pulse redraw every frame; the rest are baked into the static layers.</summary>
-    private bool DecoAnimated => Theme.Deco is Deco.Grass or Deco.Weeds or Deco.Mushrooms or Deco.Cracks;
+    private bool DecoAnimated => Theme.Deco is Deco.Grass or Deco.Weeds or Deco.Mushrooms or Deco.Cracks
+        or Deco.Torches or Deco.Ferns or Deco.Circuits;
 
     private static bool IsBorder(RectI r) => r.X <= 0 || r.Y <= 0 || r.Right >= MapLayout.Width;
 
@@ -383,6 +384,73 @@ public partial class MapNode : Node2D
                 var col = cols[(int)(phase * 10) % cols.Length];
                 var dir = Vector2.FromAngle(phase) * 1.6f;
                 l.DrawLine(p + new Vector2(0, -2.2f) - dir, p + new Vector2(0, -2.2f) + dir, col, 1.3f, true);
+                break;
+            case Deco.Torches:
+                if (below)
+                {
+                    // Rusty chains hanging from the odd platform, swaying a touch.
+                    if (size < 1.15f || glowPass) return;
+                    float links = 2 + (int)(phase * 0.8f);
+                    var tip = p + new Vector2(Mathf.Sin(_t * 0.9f + phase) * 0.8f * links, links * 3.2f);
+                    for (int i = 0; i < links; i++)
+                    {
+                        var c = p.Lerp(tip, (i + 0.5f) / links);
+                        l.DrawArc(c, i % 2 == 0 ? 1.4f : 0.9f, 0, Mathf.Tau, 8, new Color("#6b5a52"), 0.8f, true);
+                    }
+                    return;
+                }
+                // Candles of a few heights, with flickering flames.
+                if (size < 1.05f) return;
+                float ch = 2.5f + (size - 1) * 14;
+                float flick = 0.75f + 0.25f * Mathf.Sin(_t * 11 + phase * 5) * Mathf.Sin(_t * 7.3f + phase);
+                var flame = p + new Vector2(Mathf.Sin(_t * 5 + phase) * 0.3f, -ch - 1.6f);
+                if (glowPass)
+                {
+                    GlowTex.Draw(l, flame, 14 * flick, a with { A = 0.3f * flick });
+                    l.DrawColoredPolygon(Shapes.Ellipse(flame, 0.9f, 1.7f * flick, 10), Shapes.Hdr(t.MoteB, 1.8f));
+                    return;
+                }
+                l.DrawRect(new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, ch), new Color("#e8dcc0"));
+                l.DrawRect(new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, 0.7f), new Color("#fff6e0"));
+                break;
+            case Deco.Ferns:
+                if (glowPass) return;
+                if (below)
+                {
+                    // Vines trailing from platforms.
+                    if (size < 1.1f) return;
+                    var vine = new Vector2[5];
+                    for (int i = 0; i < 5; i++)
+                        vine[i] = p + new Vector2(Mathf.Sin(_t * 1.1f + phase + i * 0.7f) * i * 0.5f, i * 2.4f * size);
+                    l.DrawPolyline(vine, new Color("#4f6b3a"), 1f, true);
+                    return;
+                }
+                var leaf = t.Block.Lerp(new Color("#7f9e54"), 0.65f);
+                if (kind == 1 && size > 1.1f)
+                {
+                    // A small flower on a stalk.
+                    var head = p + new Vector2(Mathf.Sin(_t * 1.7f + phase) * 0.8f, -5 * size);
+                    l.DrawLine(p, head, leaf.Darkened(0.2f), 0.9f, true);
+                    l.DrawCircle(head, 1.3f, t.MoteA, true, -1, true);
+                    return;
+                }
+                // A fern: three arching fronds.
+                for (int i = -1; i <= 1; i++)
+                {
+                    float sway = Mathf.Sin(_t * 1.5f + phase + i * 0.5f) * 0.8f;
+                    var mid = p + new Vector2(i * 2.6f * size + sway * 0.5f, -4.5f * size);
+                    var end = p + new Vector2(i * 4.4f * size + sway, -(i == 0 ? 6.5f : 3f) * size);
+                    l.DrawPolyline(new[] { p, mid, end }, i == 0 ? leaf : leaf.Darkened(0.18f), 1.3f, true);
+                }
+                break;
+            case Deco.Circuits:
+                // Status lights on and under the platforms, blinking in their own rhythms.
+                if (!below && kind == 1) return;
+                bool lit = Mathf.Sin(_t * (1.5f + size * 2) + phase * 4) > -0.2f;
+                var led = p + new Vector2(0, below ? 1.6f : -1.4f);
+                var ledCol = size > 1.1f ? t.MoteB : a;
+                if (glowPass) { if (lit) GlowTex.Draw(l, led, 6, ledCol with { A = 0.35f }); }
+                else l.DrawRect(new Rect2(led - new Vector2(1, 0.7f), new Vector2(2, 1.4f)), lit ? Shapes.Hdr(ledCol, 1.6f) : ledCol.Darkened(0.6f));
                 break;
         }
     }

@@ -1,7 +1,7 @@
 namespace Brawler.Logic;
 
 /// <summary>The arena themes, in the same order as Game.ArenaTheme.All (which holds their colors and dressing).</summary>
-public enum ThemeId { NeonNight, SunsetPeaks, DeepReef, ToxicGrove, MagmaCore, FrostBite, CandyClouds }
+public enum ThemeId { NeonNight, SunsetPeaks, DeepReef, ToxicGrove, MagmaCore, FrostBite, CandyClouds, DungeonDepths, ElderForest, Mainframe }
 
 /// <summary>
 /// Which arena extras suit a theme, and how often. Pools roll <see cref="PoolChance"/> and then pick magma or poison
@@ -20,7 +20,8 @@ public readonly record struct FeatureRules(float PoolChance, float MagmaWeight, 
 public static class ThemeRules
 {
     public static readonly string[] Names =
-        { "Neon Night", "Sunset Peaks", "Deep Reef", "Toxic Grove", "Magma Core", "Frost Bite", "Candy Clouds" };
+        { "Neon Night", "Sunset Peaks", "Deep Reef", "Toxic Grove", "Magma Core", "Frost Bite", "Candy Clouds",
+          "Dungeon Depths", "Elder Forest", "Mainframe" };
 
     //                                   pools  magma poison  saws  barrels
     private static readonly FeatureRules[] Table =
@@ -32,6 +33,9 @@ public static class ThemeRules
         /* Magma Core: magma, no poison, lots of fire */   new(0.85f, 1f,   0f, 0.5f,  0.8f),
         /* Frost Bite: no pools at all, more saws */       new(0f,    0f,   0f, 0.7f,  0.6f),
         /* Candy Clouds: sour goo, few saws */             new(0.5f,  0f,   1f, 0.35f, 0.5f),
+        /* Dungeon Depths: slime pits, traps, a little lava */ new(0.55f, 0.3f, 1f, 0.6f, 0.7f),
+        /* Elder Forest: swamp pools, sawmill blades */  new(0.6f,  0f,   1f, 0.45f, 0.6f),
+        /* Mainframe: fan saws, coolant leaks, no magma */ new(0.35f, 0f,   1f, 0.75f, 0.5f),
     };
 
     public static int Count => Names.Length;

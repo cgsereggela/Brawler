@@ -110,7 +110,7 @@ There are 81 cards in five categories. Strong cards come with a tradeoff (less d
   - Which hazards appear, and how often, depends on the theme (one table in `godot/scripts/Logic/ThemeRules.cs`): no sawblades or magma on Deep Reef, no magma on Toxic Grove, no poison on Magma Core, no pools at all on Frost Bite.
   - Blocking stops hazard damage too. A hazard or pit kill is credited to whoever hit the victim in the last 4 seconds.
 - **Movement:** you run at 144 px/s and a jump rises about 82 px. Gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
-- The seed also picks one of seven **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds). Each theme sets the sky, the silhouettes, drifting motes (bokeh, embers, bubbles, snow, fireflies), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles). Themes are cosmetic and identical on every peer.
+- The seed also picks one of ten **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds, Dungeon Depths, Elder Forest, Mainframe). Each theme sets the sky, the silhouettes (city towers, mountains, hills, thorns, vaulted arches, pine forest, circuit boards), drifting motes (bokeh, embers, bubbles, snow, fireflies, falling leaves, data bits), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles, candles and chains, ferns and vines, status LEDs). Themes are cosmetic and identical on every peer.
 
 ## Effects that grow with your cards
 Every card you hold makes your shots, hits and kills flashier. Your **power** is your card count, and it maps to tiers 0–5:
