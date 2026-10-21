@@ -65,12 +65,13 @@ To put several cards in one file, wrap them in square brackets with commas betwe
 | `id` | yes | A whole number from **1000 to 32767**, different for every card. Numbers below 1000 belong to the built-in cards. |
 | `name` | yes | The card's title, up to 24 letters. |
 | `description` | no | The text on the card. Either one piece of text (use `\n` for a new line) or a list of lines as in the example. Up to 160 letters; about four short lines fit. The game does not write this for you, so make it match your mods. |
-| `category` | no | `Gun`, `Body`, `Movement`, `Chaos` or `Block`. It sets the card's colour and icon. Default: `Chaos`. |
+| `category` | no | `Gun`, `Body`, `Movement`, `Chaos`, `Block` or `Curse`. It sets the card's colour and icon. A `Curse` card is only ever offered as the downside of a cursed deal. Default: `Chaos`. |
+| `rarity` | no | `Common` or `Rare`. Rare cards get a gold frame, turn up only at the lobby's rare-card chance, and are the prize in cursed deals. Default: `Common`. |
 | `mods` | see below | The list of stat changes. Each one is `{ "stat": ..., "op": ..., "value": ... }`. At most 12. |
 | `effect` | no | A special behaviour that numbers alone can't do (see [Effects](#effects)). |
 
 A card needs at least one mod or an effect. Upper or lower case doesn't matter in field names, stat names, `op` or
-`category`. You may write `// comments` and leave a comma after the last item.
+`category` or `rarity`. You may write `// comments` and leave a comma after the last item.
 
 ### How mods work
 
@@ -230,12 +231,12 @@ If you build the game yourself you can also add cards in code, and add new effec
 below 1000. Never renumber existing ids; saved stats and network messages refer to them.
 
 ```csharp
-Add(82, "Pogo", "+2 mid-air jumps\n-10% HP", CardCategory.Movement,
+Add(104, "Pogo", "+2 mid-air jumps\n-10% HP", CardCategory.Movement,
     A(Stat.AirJumps, 2), M(Stat.MaxHp, 0.9f));
 ```
 
 `A(...)` is an add and `M(...)` a multiply. Put an effect id before the mods, as Blink and Dash do. Optionally give it a
-visual flavour in `Game/FxStyle.cs`. Run the unit tests with `dotnet run --project tests`.
+visual flavour in `Game/FxStyle.cs`. Use `Rare(...)` instead of `Add(...)` for a rare card, and `CardCategory.Curse` for a curse. Run the unit tests with `dotnet run --project tests`.
 
 **A new stat.** Add it to the end of the `Stat` enum in `Logic/Stats.cs`, give it a base value in `StatBlock.Base()`
 if it isn't 0 and a clamp in `Clamp()` if it needs one, and read it where it matters (`Avatar.S[Stat.X]` in

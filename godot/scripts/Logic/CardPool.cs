@@ -12,14 +12,25 @@ public static class CardPool
     /// <summary>The most cards a pick can offer (the lobby's choice spin boxes stop here).</summary>
     public const int MaxChoices = 7;
 
-    /// <summary>The pool must keep at least this many cards, so any pick the lobby allows can be filled.</summary>
+    /// <summary>The pool must keep at least this many common cards, so any pick the lobby allows can be filled.</summary>
     public const int MinEnabled = MaxChoices;
 
     public static bool IsEnabled(int id, IReadOnlySet<int> disabled) => disabled == null || !disabled.Contains(id);
 
-    /// <summary>Registered cards that are not disabled, in registry order.</summary>
+    /// <summary>Enabled common cards, in registry order: what an ordinary offer draws from.</summary>
     public static List<int> Allowed(IReadOnlySet<int> disabled)
-        => CardRegistry.All.Where(c => IsEnabled(c.Id, disabled)).Select(c => c.Id).ToList();
+        => CardRegistry.All.Where(c => !c.IsRare && !c.IsCurse && IsEnabled(c.Id, disabled)).Select(c => c.Id).ToList();
+
+    /// <summary>Enabled rare cards, in registry order.</summary>
+    public static List<int> AllowedRares(IReadOnlySet<int> disabled)
+        => CardRegistry.All.Where(c => c.IsRare && !c.IsCurse && IsEnabled(c.Id, disabled)).Select(c => c.Id).ToList();
+
+    /// <summary>Enabled curses, in registry order.</summary>
+    public static List<int> AllowedCurses(IReadOnlySet<int> disabled)
+        => CardRegistry.All.Where(c => c.IsCurse && IsEnabled(c.Id, disabled)).Select(c => c.Id).ToList();
+
+    /// <summary>Enabled common cards: <see cref="MinEnabled"/> applies to these, since rares and curses are extras.</summary>
+    public static int CommonCount(IReadOnlySet<int> disabled) => Allowed(disabled).Count;
 
     public static int EnabledCount(IReadOnlySet<int> disabled) => CardRegistry.All.Count(c => IsEnabled(c.Id, disabled));
 

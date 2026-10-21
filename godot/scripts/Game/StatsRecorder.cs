@@ -44,7 +44,7 @@ public sealed class StatsRecorder
             Settings = new SettingsRec
             {
                 BattlesPerRound = s.BattlesPerRound, RoundsToWin = s.RoundsToWin,
-                LoserChoices = s.LoserChoices, WinnerChoices = s.WinnerChoices,
+                LoserChoices = s.LoserChoices, WinnerChoices = s.WinnerChoices, RareChance = s.RareChance, CursedDeals = s.CursedDeals,
             },
         };
         foreach (var p in players.OrderBy(p => p.Slot))
@@ -148,7 +148,7 @@ public sealed class StatsRecorder
         _fighting = false;
     }
 
-    public void PickOffered(int round, MatchPlayer p, bool isBot, bool roundWinner, List<int> offered)
+    public void PickOffered(int round, MatchPlayer p, bool isBot, bool roundWinner, List<int> offered, (int Rare, int Curse)? deal)
     {
         if (_match == null) return;
         _pickT = 0;
@@ -156,14 +156,17 @@ public sealed class StatsRecorder
         {
             Round = round, Slot = p.Slot, Bot = isBot, RoundWinner = roundWinner,
             Offered = offered.ToList(), HeldBefore = p.Cards.ToList(),
+            Deal = deal is { } d ? new List<int> { d.Rare, d.Curse } : new List<int>(),
         };
     }
 
-    public void Picked(int slot, int cardId, bool timedOut)
+    /// <param name="curse">The curse taken with a cursed deal, or -1.</param>
+    public void Picked(int slot, int cardId, bool timedOut, int curse = -1)
     {
         if (_match == null || !_openPicks.Remove(slot, out var open)) return;
         open.Picked = cardId;
         open.TimedOut = timedOut;
+        open.TookDeal = curse >= 0;
         open.DecisionSec = Round2(_pickT);
         _match.Picks.Add(open);
     }

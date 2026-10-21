@@ -879,6 +879,80 @@ void Check(bool cond, string name, string detail = "")
         "Truncated or empty data decodes safely");
 }
 
+// ---------- Rare cards and cursed deals ----------
+{
+    var rares = CardRegistry.All.Where(c => c.IsRare).ToList();
+    var curses = CardRegistry.All.Where(c => c.IsCurse).ToList();
+    Check(rares.Count >= 10 && curses.Count >= 12, "At least 10 rare cards and 12 curses", $"{rares.Count} rare, {curses.Count} curses");
+    Check(rares.All(c => !c.IsCurse), "No card is both rare and a curse");
+    // A curse is a pure downside: compared with base stats it must make something worse and nothing better.
+    var baseStats = StatBlock.Base();
+    var higherIsWorse = new HashSet<Stat> { Stat.FireCooldown, Stat.ReloadTime, Stat.BlockCooldown, Stat.Size, Stat.KnockbackTaken };
+    bool allWorse = curses.All(c =>
+    {
+        var s = StatBlock.Compute(new[] { c });
+        var moved = Enum.GetValues<Stat>().Where(st => Math.Abs(s[st] - baseStats[st]) > 1e-4f).ToList();
+        return moved.Count > 0 && moved.All(st => higherIsWorse.Contains(st) ? s[st] > baseStats[st] : s[st] < baseStats[st]);
+    });
+    Check(allWorse, "Every curse only makes stats worse");
+    var jaw = StatBlock.Compute(new[] { CardRegistry.Get(99) });
+    Check(Math.Abs(jaw[Stat.Armor] + 0.2f) < 1e-4f, "Glass Jaw's negative armor survives the clamp", $"{jaw[Stat.Armor]}");
+
+    var rng = new Rng(11);
+    bool plainOnly = true, neverCursed = true;
+    int offered = 0, rareOffered = 0;
+    for (int i = 0; i < 3000; i++)
+    {
+        var plain = CardRegistry.RollOptions(rng, 5);
+        plainOnly &= plain.All(id => !CardRegistry.Get(id).IsRare && !CardRegistry.Get(id).IsCurse);
+        var opts = CardRegistry.RollOptions(rng, 5, null, 0.1f);
+        neverCursed &= opts.All(id => !CardRegistry.Get(id).IsCurse) && opts.Distinct().Count() == opts.Count && opts.Count == 5;
+        offered += opts.Count;
+        rareOffered += opts.Count(id => CardRegistry.Get(id).IsRare);
+    }
+    Check(plainOnly, "Rares off: offers are only common cards");
+    Check(neverCursed, "Curses are never offered on their own, and rare offers stay distinct and full");
+    double rate = (double)rareOffered / offered;
+    Check(rate > 0.08 && rate < 0.12, "A 10% rare chance makes about 10% of offered cards rare", $"{rate:P1}");
+    var allRare = CardRegistry.RollOptions(new Rng(2), 5, null, 1f);
+    Check(allRare.Count == 5 && allRare.All(id => CardRegistry.Get(id).IsRare), "A 100% rare chance offers only rares");
+    var commonsOff = new HashSet<int>(CardPool.Allowed(null));
+    var onlyRares = CardRegistry.RollOptions(new Rng(2), 5, commonsOff, 0.1f);
+    Check(onlyRares.Count == 5 && onlyRares.All(id => CardRegistry.Get(id).IsRare), "With every common card disabled, rares fill the offer");
+
+    bool dealsOk = true;
+    var seen = new HashSet<int>();
+    var r2 = new Rng(4);
+    var noArsenal = new HashSet<int> { 82, 92 };
+    for (int i = 0; i < 2000; i++)
+    {
+        var opts = CardRegistry.RollOptions(r2, 5, noArsenal, 0.35f);
+        var deal = CardRegistry.RollDeal(r2, noArsenal, opts);
+        dealsOk &= deal is { } d && CardRegistry.Get(d.Rare).IsRare && CardRegistry.Get(d.Curse).IsCurse
+                   && !opts.Contains(d.Rare) && !noArsenal.Contains(d.Rare) && !noArsenal.Contains(d.Curse);
+        if (deal is { } dd) { seen.Add(dd.Rare); seen.Add(dd.Curse); }
+    }
+    Check(dealsOk, "A deal is a rare card not already offered plus a curse, both enabled");
+    Check(seen.Count == rares.Count + curses.Count - 2, "Every enabled rare and curse comes up in deals", $"{seen.Count}");
+    var noCurses = new HashSet<int>(curses.Select(c => c.Id));
+    Check(CardRegistry.RollDeal(new Rng(1), noCurses, new List<int>()) == null, "No enabled curses: no deal");
+    var noRares = new HashSet<int>(rares.Select(c => c.Id));
+    Check(CardRegistry.RollDeal(new Rng(1), noRares, new List<int>()) == null, "No enabled rares: no deal");
+    Check(CardPool.CommonCount(noRares) == CardPool.CommonCount(null) && CardPool.CommonCount(null) >= CardPool.MinEnabled,
+        "Rares don't count toward the common minimum");
+
+    // Stats report: a taken deal counts as a pick for the rare and the curse, an extra option for everything offered.
+    var m = new MatchRecord { Complete = true, Winner = 0 };
+    m.Players.Add(new PlayerRec { Slot = 0, Name = "A" });
+    m.Picks.Add(new PickRec { Slot = 0, Offered = new List<int> { 1, 2, 3 }, Deal = new List<int> { 83, 94 }, Picked = 83, TookDeal = true });
+    var rep = StatsReport.Build(new[] { m }, new StatsFilter());
+    var c83 = rep.Cards.First(c => c.Card.Id == 83);
+    var c94 = rep.Cards.First(c => c.Card.Id == 94);
+    var c1 = rep.Cards.First(c => c.Card.Id == 1);
+    Check(c83.Picked == 1 && c94.Picked == 1 && c83.Offered == 1 && Math.Abs(c1.ExpectedPicks - 0.25) < 1e-9,
+        "Stats report: a taken deal counts its rare and curse", $"{c83.Picked}/{c94.Picked}/{c1.ExpectedPicks}");
+}
+
 // ---------- Custom cards (JSON files, host sync) ----------
 {
     var log = new List<string>();
@@ -939,6 +1013,11 @@ void Check(bool cond, string name, string detail = "")
     log.Clear();
     var typo = CustomCards.Parse("""{ "id": 1006, "name": "Typo", "effect": "dash", "mod": [] }""", "typo.json", log);
     Check(typo.Count == 1 && Logged("unknown field \"mod\" ignored"), "Custom card: an unknown field is a warning, not an error");
+    log.Clear();
+    var rareCustom = CustomCards.Parse("""{ "id": 1007, "name": "Shiny", "rarity": "rare", "category": "curse", "effect": "dash" }""", "rare.json", log);
+    Check(rareCustom.Count == 1 && rareCustom[0].IsRare && rareCustom[0].IsCurse && log.Count == 0, "Custom card: rarity and the Curse category parse", string.Join(" | ", log));
+    var badRarity = CustomCards.Parse("""{ "id": 1008, "name": "Meh", "rarity": "epic", "effect": "dash" }""", "rare.json", log);
+    Check(badRarity.Count == 0 && Logged("\"rarity\" must be one of Common, Rare"), "Custom card: an unknown rarity is skipped and logged");
 
     // Id range: below 1000 is reserved for built-ins, and ids must fit the 16-bit card pick message.
     foreach (int id in new[] { 0, 1, 999, 32768, -5 })
@@ -989,11 +1068,11 @@ void Check(bool cond, string name, string detail = "")
 
     // Network form: what the client rebuilds is identical to what the host holds, down to the float bits.
     var hostSet = new List<CardDef>(one) { list[0], list[1], huge };
-    hostSet.Add(new CardDef { Id = 1030, Name = "Odd floats", Description = "ünïcödé ✓", Category = CardCategory.Body, EffectId = null,
+    hostSet.Add(new CardDef { Id = 1030, Name = "Odd floats", Description = "ünïcödé ✓", Category = CardCategory.Body, Rarity = CardRarity.Rare, EffectId = null,
         Mods = new[] { new StatMod(Stat.Damage, ModOp.Mul, 1.1f), new StatMod(Stat.BulletGravity, ModOp.Mul, -0.8f), new StatMod(Stat.Spread, ModOp.Add, 0.12345679f) } });
     log.Clear();
     var back = CustomCards.Deserialize(CustomCards.Serialize(hostSet), log);
-    bool Same(CardDef a, CardDef b) => a.Id == b.Id && a.Name == b.Name && a.Description == b.Description && a.Category == b.Category
+    bool Same(CardDef a, CardDef b) => a.Id == b.Id && a.Name == b.Name && a.Description == b.Description && a.Category == b.Category && a.Rarity == b.Rarity
         && a.EffectId == b.EffectId && a.Mods.Length == b.Mods.Length
         && a.Mods.Zip(b.Mods).All(p => p.First.Stat == p.Second.Stat && p.First.Op == p.Second.Op
                                     && BitConverter.SingleToInt32Bits(p.First.Value) == BitConverter.SingleToInt32Bits(p.Second.Value));
@@ -1018,7 +1097,7 @@ void Check(bool cond, string name, string detail = "")
           && !CardRegistry.Register(new CardDef { Id = 1000, Name = "Again" }), "Custom card registry: taken ids are refused");
     var rolled = new HashSet<int>();
     var rr = new Rng(3);
-    for (int i = 0; i < 400; i++) foreach (int id in CardRegistry.RollOptions(rr, 5)) rolled.Add(id);
+    for (int i = 0; i < 400; i++) foreach (int id in CardRegistry.RollOptions(rr, 5, null, 0.2f)) rolled.Add(id); // 1030 is rare
     Check(hostSet.All(c => rolled.Contains(c.Id)), "Custom card registry: custom cards come up in rolls");
     var stats = StatBlock.Compute(new[] { CardRegistry.Get(1000) });
     Check(stats.Int(Stat.AirJumps) == 2 && Math.Abs(stats[Stat.MaxHp] - 90) < 0.01f, "Custom card registry: a custom card's mods apply", $"{stats[Stat.AirJumps]}");
@@ -1320,7 +1399,7 @@ void Check(bool cond, string name, string detail = "")
 {
     // Block pack: each card does what it says, and the trade-away cards really turn blocking off.
     CardDef Named(string n) => CardRegistry.All.First(c => c.Name == n);
-    var blockCards = CardRegistry.All.Where(c => c.Category == CardCategory.Block).ToList();
+    var blockCards = CardRegistry.All.Where(c => c.Category == CardCategory.Block && !c.IsRare).ToList();
     Check(blockCards.Select(c => c.Id).OrderBy(i => i).SequenceEqual(Enumerable.Range(70, 12)), "Block cards use ids 70-81",
         string.Join(",", blockCards.Select(c => c.Id)));
     var refl = StatBlock.Compute([Named("Reflector")]);

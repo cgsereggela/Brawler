@@ -46,6 +46,7 @@ namespace Brawler;
 ///   --lava=SECS           sudden-death lava rises after SECS seconds of fighting (0 = off) in the matches this run hosts
 ///   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
 ///                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
+///   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -334,6 +335,7 @@ public partial class Main : Node
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
             else if (a == "--streamer") StreamerMode.SetForRun(true);
             else if (a.StartsWith("--lava=") && int.TryParse(a["--lava=".Length..], out int lava)) _game.LavaOverride = lava;
+            else if (a.StartsWith("--rarechance=") && int.TryParse(a["--rarechance=".Length..], out int rare)) _game.RareOverride = Mathf.Clamp(rare, 0, 100);
             else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
@@ -1279,7 +1281,7 @@ public partial class Main : Node
 
     // Out of the pool in test matches: a few cards from every category, plus ids no card has (custom cards
     // another machine may have) to show unknown ids pass through.
-    private static readonly int[] AutoDisabled = { 1, 2, 3, 17, 30, 43, 55, 56, 57, 58, 59, 60, 1000, 4242 };
+    private static readonly int[] AutoDisabled = { 1, 2, 3, 17, 30, 43, 55, 56, 57, 58, 59, 60, 82, 92, 1000, 4242 };
     private bool _poolCheck;
     private int _poolPicks;
 
@@ -1290,7 +1292,8 @@ public partial class Main : Node
         {
             if (!_poolCheck) return;
             _poolPicks++;
-            var offered = _game.PickOptions.Values.SelectMany(ids => ids).ToList();
+            var offered = _game.PickOptions.Values.SelectMany(ids => ids)
+                .Concat(_game.PickDeals.Values.SelectMany(d => new[] { d.Rare, d.Curse })).ToList();
             var bad = offered.Where(AutoDisabled.Contains).ToList();
             if (bad.Count > 0) { Finish(1, $"poolcheck: disabled cards offered: {string.Join(",", bad)}"); return; }
             if (_game.PickOptions.Values.Any(ids => ids.Distinct().Count() != ids.Count)) { Finish(1, "poolcheck: an offer repeats a card"); return; }

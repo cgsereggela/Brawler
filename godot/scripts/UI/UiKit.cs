@@ -194,12 +194,16 @@ public static class UiKit
         return (screen, body);
     }
 
+    /// <summary>Rare cards' frame, ribbon and shimmer.</summary>
+    public static readonly Color RareGold = new("#ffc94d");
+
     public static Color CategoryColor(CardCategory c) => c switch
     {
         CardCategory.Gun => new Color("#ff8a3d"),
         CardCategory.Body => new Color("#4ef08a"),
         CardCategory.Movement => new Color("#3db4ff"),
         CardCategory.Block => new Color("#ffd447"),
+        CardCategory.Curse => new Color("#e0304e"),
         _ => new Color("#c46cff"),
     };
 

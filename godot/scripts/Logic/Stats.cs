@@ -174,7 +174,7 @@ public sealed class StatBlock
         b[Stat.JumpVelocity] = Math.Clamp(b[Stat.JumpVelocity], 168, 805);
         b[Stat.AirJumps] = Math.Clamp(b[Stat.AirJumps], 0, 5);
         b[Stat.Accel] = Math.Clamp(b[Stat.Accel], 0.2f, 4f);
-        b[Stat.Armor] = Math.Clamp(b[Stat.Armor], 0, 0.75f);
+        b[Stat.Armor] = Math.Clamp(b[Stat.Armor], -0.5f, 0.75f); // below 0 (Glass Jaw) is extra damage taken
         b[Stat.KnockbackTaken] = Math.Clamp(b[Stat.KnockbackTaken], 0.1f, 4f);
         b[Stat.Thorns] = Math.Clamp(b[Stat.Thorns], 0, 1.5f);
         b[Stat.Lifetime] = Math.Clamp(b[Stat.Lifetime], 0.5f, 8f);

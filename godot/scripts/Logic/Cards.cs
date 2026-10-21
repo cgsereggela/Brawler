@@ -1,8 +1,15 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Brawler.Logic;
 
-public enum CardCategory { Gun, Body, Movement, Chaos, Block }
+public enum CardCategory { Gun, Body, Movement, Chaos, Block, Curse }
+
+/// <summary>
+/// Rare cards turn up in a pick only now and then (MatchSettings.RareChance per offered card) and in cursed deals.
+/// Curse cards (CardCategory.Curse) are never offered on their own: they only come bundled with a rare in a deal.
+/// </summary>
+public enum CardRarity { Common, Rare }
 
 /// <summary>
 /// A card is a list of stat modifiers plus an optional effect id.
@@ -16,6 +23,9 @@ public sealed class CardDef
     public CardCategory Category { get; init; }
     public StatMod[] Mods { get; init; } = [];
     public string EffectId { get; init; }
+    public CardRarity Rarity { get; init; }
+    public bool IsRare => Rarity == CardRarity.Rare;
+    public bool IsCurse => Category == CardCategory.Curse;
 }
 
 public static class CardRegistry
@@ -200,6 +210,54 @@ public static class CardRegistry
         Add(81, "Spiked Shield", "Blocked hits deal\nfull damage back\nto the attacker", CardCategory.Block,
             A(Stat.BlockSpikes, 1));
 
+        // ---------- Rare: build-defining cards that turn up now and then (MatchSettings.RareChance) ----------
+        Rare(82, "Arsenal", "+2 bullets per shot\n+4 ammo\n-15% fire cooldown", CardCategory.Gun,
+            A(Stat.Projectiles, 2), A(Stat.Spread, 0.2f), A(Stat.Ammo, 4), M(Stat.FireCooldown, 0.85f));
+        Rare(83, "Seeker Warheads", "Homing explosive bullets\n+20% damage\n+15% fire cooldown", CardCategory.Gun,
+            A(Stat.Homing, 3), A(Stat.ExplosionRadius, 34), M(Stat.Damage, 1.2f), M(Stat.FireCooldown, 1.15f));
+        Rare(84, "Hydra", "Bullets split into 4\non impact\n+2 bullet bounces", CardCategory.Gun,
+            A(Stat.SplitCount, 4), A(Stat.Bounces, 2));
+        Rare(85, "Overclock", "-45% fire cooldown\n-50% reload time\n+3 ammo", CardCategory.Gun,
+            M(Stat.FireCooldown, 0.55f), M(Stat.ReloadTime, 0.5f), A(Stat.Ammo, 3));
+        Rare(86, "Titan", "+90 HP\nTake 20% less damage\nHuge, hard to push\n-25% move speed", CardCategory.Body,
+            A(Stat.MaxHp, 90), A(Stat.Armor, 0.2f), M(Stat.Size, 1.6f), M(Stat.KnockbackTaken, 0.2f), M(Stat.MoveSpeed, 0.75f));
+        Rare(87, "Phoenix", "Survive 2 lethal hits\nper battle, at half HP\n+10 HP", CardCategory.Body,
+            A(Stat.ExtraLives, 2), A(Stat.MaxHp, 10));
+        Rare(88, "Skywalker", "+2 mid-air jumps\nHold jump to glide\n+20% move speed", CardCategory.Movement,
+            A(Stat.AirJumps, 2), A(Stat.Glide, 1), M(Stat.MoveSpeed, 1.2f), M(Stat.JumpVelocity, 1.08f));
+        Rare(89, "Storm Caller", "Hits arc to the next\nenemy for full damage\n+2 bullet bounces", CardCategory.Chaos,
+            A(Stat.Chain, 1f), A(Stat.Bounces, 2));
+        Rare(90, "Vampire Lord", "50% lifesteal\nDrain 20 HP/s nearby\n+20 HP", CardCategory.Chaos,
+            A(Stat.Lifesteal, 0.5f), A(Stat.Leech, 20), A(Stat.MaxHp, 20));
+        Rare(91, "Mirror Guard", "Blocks reflect bullets\n-40% block cooldown\nBlocks refund half", CardCategory.Block,
+            A(Stat.Reflect, 1), M(Stat.BlockCooldown, 0.6f), A(Stat.BlockRefund, 0.5f));
+
+        // ---------- Curse: pure downsides, only ever taken as half of a cursed deal ----------
+        Add(92, "Brittle", "-25% HP", CardCategory.Curse,
+            M(Stat.MaxHp, 0.75f));
+        Add(93, "Lead Boots", "-20% move speed\n-15% jump height", CardCategory.Curse,
+            M(Stat.MoveSpeed, 0.8f), M(Stat.JumpVelocity, 0.92f));
+        Add(94, "Butterfingers", "+60% reload time", CardCategory.Curse,
+            M(Stat.ReloadTime, 1.6f));
+        Add(95, "Rusty Trigger", "+35% fire cooldown", CardCategory.Curse,
+            M(Stat.FireCooldown, 1.35f));
+        Add(96, "Blunt Rounds", "-20% damage", CardCategory.Curse,
+            M(Stat.Damage, 0.8f));
+        Add(97, "Greased Soles", "-60% acceleration", CardCategory.Curse,
+            M(Stat.Accel, 0.4f));
+        Add(98, "Heavy Shield", "+75% block cooldown", CardCategory.Curse,
+            M(Stat.BlockCooldown, 1.75f));
+        Add(99, "Glass Jaw", "Take 20% more damage", CardCategory.Curse,
+            A(Stat.Armor, -0.2f));
+        Add(100, "Big Target", "+35% body size", CardCategory.Curse,
+            M(Stat.Size, 1.35f));
+        Add(101, "Small Mag", "-2 ammo", CardCategory.Curse,
+            A(Stat.Ammo, -2));
+        Add(102, "Short Fuse", "Bullets fizzle out\nafter 1 second", CardCategory.Curse,
+            M(Stat.Lifetime, 0.25f));
+        Add(103, "Pushover", "Take 2x knockback", CardCategory.Curse,
+            M(Stat.KnockbackTaken, 2f));
+
         BuiltInCount = All.Count;
     }
 
@@ -249,30 +307,54 @@ public static class CardRegistry
     /// Picks <paramref name="count"/> distinct random cards, skipping <paramref name="disabled"/> ones (see CardPool).
     /// If the pool runs short the offer is just smaller; if nothing at all is enabled, every card is back in play,
     /// so a pick can never come up empty.
+    /// Each card in the offer is a rare one with probability <paramref name="rareChance"/> (0..1) while enabled rares
+    /// are left; curses are never offered here (see <see cref="RollDeal"/>).
     /// </summary>
-    public static List<int> RollOptions(Rng rng, int count, IReadOnlySet<int> disabled = null)
+    public static List<int> RollOptions(Rng rng, int count, IReadOnlySet<int> disabled = null, float rareChance = 0)
     {
         var pool = CardPool.Allowed(disabled);
-        if (pool.Count == 0) pool = CardPool.Allowed(null);
+        var rares = rareChance > 0 ? CardPool.AllowedRares(disabled) : new List<int>();
+        if (pool.Count == 0 && rares.Count == 0) pool = CardPool.Allowed(null);
         var result = new List<int>();
-        while (result.Count < count && pool.Count > 0)
+        while (result.Count < count && (pool.Count > 0 || rares.Count > 0))
         {
-            int i = rng.Range(0, pool.Count - 1);
-            result.Add(pool[i]);
-            pool.RemoveAt(i);
+            // No rng draw for the rare roll when rares are off, so a match without them rolls exactly as before.
+            bool rare = rares.Count > 0 && (pool.Count == 0 || rng.Range(0f, 1f) < rareChance);
+            var from = rare ? rares : pool;
+            int i = rng.Range(0, from.Count - 1);
+            result.Add(from[i]);
+            from.RemoveAt(i);
         }
         return result;
+    }
+
+    /// <summary>
+    /// A cursed deal: a random enabled rare card that isn't already in <paramref name="offered"/>, bundled with a random
+    /// enabled curse. Null when either pool is empty.
+    /// </summary>
+    public static (int Rare, int Curse)? RollDeal(Rng rng, IReadOnlySet<int> disabled, IReadOnlyCollection<int> offered)
+    {
+        var rares = CardPool.AllowedRares(disabled).Where(id => !offered.Contains(id)).ToList();
+        var curses = CardPool.AllowedCurses(disabled);
+        if (rares.Count == 0 || curses.Count == 0) return null;
+        return (rares[rng.Range(0, rares.Count - 1)], curses[rng.Range(0, curses.Count - 1)]);
     }
 
     private static StatMod A(Stat s, float v) => new(s, ModOp.Add, v);
     private static StatMod M(Stat s, float v) => new(s, ModOp.Mul, v);
 
     private static void Add(int id, string name, string desc, CardCategory cat, params StatMod[] mods)
-        => Add(id, name, desc, cat, null, mods);
+        => Put(id, name, desc, cat, null, CardRarity.Common, mods);
 
     private static void Add(int id, string name, string desc, CardCategory cat, string effect, params StatMod[] mods)
+        => Put(id, name, desc, cat, effect, CardRarity.Common, mods);
+
+    private static void Rare(int id, string name, string desc, CardCategory cat, params StatMod[] mods)
+        => Put(id, name, desc, cat, null, CardRarity.Rare, mods);
+
+    private static void Put(int id, string name, string desc, CardCategory cat, string effect, CardRarity rarity, StatMod[] mods)
     {
-        var c = new CardDef { Id = id, Name = name, Description = desc, Category = cat, Mods = mods, EffectId = effect };
+        var c = new CardDef { Id = id, Name = name, Description = desc, Category = cat, Mods = mods, EffectId = effect, Rarity = rarity };
         All.Add(c);
         ById[id] = c;
     }

@@ -56,6 +56,11 @@ public partial class CardPickUI : Control
             if (!ShowAutopilotPick || slot != _game.LocalMatchPlayer?.Slot) return;
             foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
         };
+        _game.CurseTaken += (slot, _) =>
+        {
+            _cursed.Add(slot);
+            UpdateStatus();
+        };
         _game.ComboFound += (slot, combo) =>
         {
             _found.Add(slot);
@@ -69,6 +74,7 @@ public partial class CardPickUI : Control
         UiKit.ClearChildren(_cards);
         _views.Clear();
         _found.Clear();
+        _cursed.Clear();
         UiKit.ClearChildren(_combo);
         var me = _game.LocalMatchPlayer;
         bool canPick = me != null && _game.PickOptions.TryGetValue(me.Slot, out _);
@@ -77,27 +83,42 @@ public partial class CardPickUI : Control
         if (canPick)
         {
             var opts = _game.PickOptions[me.Slot];
+            bool hasDeal = _game.PickDeals.TryGetValue(me.Slot, out var deal) && CardRegistry.Get(deal.Rare) != null && CardRegistry.Get(deal.Curse) != null;
+            int n = opts.Count + (hasDeal ? 1 : 0);
+            float width = Mathf.Min(132, (760 - 12 * (n - 1) - (hasDeal ? DealGap : 0)) / (float)n);
             for (int i = 0; i < opts.Count; i++)
+                AddView(CardRegistry.Get(opts[i]), i * 0.07f, width, null);
+            if (hasDeal)
             {
-                var card = CardRegistry.Get(opts[i]);
-                int owned = me.Cards.Count(id => id == card.Id);
-                float width = Mathf.Min(132, (760 - 12 * (opts.Count - 1)) / (float)opts.Count);
-                var view = new CardView(card, owned, i * 0.07f, width, Combos.Unlocks(me.Cards, card.Id)) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
-                int id = card.Id;
-                view.Picked += () =>
-                {
-                    foreach (var other in _views) other.Locked = true;
-                    view.Chosen = true;
-                    _game.LocalPick(id);
-                };
-                _views.Add(view);
-                _cards.AddChild(view);
+                _cards.AddChild(new Control { CustomMinimumSize = new Vector2(DealGap - 12, 0), MouseFilter = MouseFilterEnum.Ignore });
+                AddView(CardRegistry.Get(deal.Rare), opts.Count * 0.07f + 0.1f, width, CardRegistry.Get(deal.Curse));
             }
         }
         UpdateStatus();
     }
 
+    /// <summary>Extra room before the cursed deal, so it reads as a separate choice.</summary>
+    private const float DealGap = 28;
+
+    /// <summary>One card to choose; with <paramref name="curse"/> it is the cursed deal and picking it takes both.</summary>
+    private void AddView(CardDef card, float delay, float width, CardDef curse)
+    {
+        var me = _game.LocalMatchPlayer;
+        int owned = me.Cards.Count(id => id == card.Id);
+        var view = new CardView(card, owned, delay, width, Combos.Unlocks(me.Cards, card.Id), curse) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
+        int id = card.Id;
+        view.Picked += () =>
+        {
+            foreach (var other in _views) other.Locked = true;
+            view.Chosen = true;
+            _game.LocalPick(id, deal: curse != null);
+        };
+        _views.Add(view);
+        _cards.AddChild(view);
+    }
+
     private readonly HashSet<int> _found = new();
+    private readonly HashSet<int> _cursed = new();
 
     /// <summary>Your pick unlocked a combo: its name and what it does, under the cards.</summary>
     private void ShowCombo(ComboDef combo)
@@ -113,7 +134,7 @@ public partial class CardPickUI : Control
         foreach (var (slot, _) in _game.PickOptions)
         {
             string n = _game.NameOf(slot);
-            string combo = _found.Contains(slot) ? "  COMBO!" : "";
+            string combo = (_found.Contains(slot) ? "  COMBO!" : "") + (_cursed.Contains(slot) ? "  CURSED" : "");
             parts.Add(_game.Picked.Contains(slot) ? $"{n}  ✓{combo}" : $"{n}  …");
         }
         _status.Text = string.Join("      ", parts);
@@ -136,19 +157,26 @@ public partial class CardView : Control
 
     private readonly float W = 132;
     private const float H = 188;
+    /// <summary>The curse plate hanging under a cursed deal's card.</summary>
+    private const float PlateGap = 10, PlateH = 58;
+    private readonly CardDef _curse;
+    /// <summary>Card plus curse plate, if any.</summary>
+    private float FullH => _curse == null ? H : H + PlateGap + PlateH;
 
     public CardView() { }
 
-    public CardView(CardDef card, int owned, float delay, float width = 132, List<ComboDef> combos = null)
+    /// <param name="curse">Makes this the cursed deal: the curse hangs under the card, and both are taken together.</param>
+    public CardView(CardDef card, int owned, float delay, float width = 132, List<ComboDef> combos = null, CardDef curse = null)
     {
         _card = card;
+        _curse = curse;
         _owned = owned;
         _combos = combos ?? new List<ComboDef>();
         if (_combos.Count > 0)
             TooltipText = string.Join("\n\n", _combos.Select(c => $"Completes the {c.Name} combo:\n{c.Description}"));
         W = width;
         _delay = delay;
-        CustomMinimumSize = new Vector2(W, H);
+        CustomMinimumSize = new Vector2(W, FullH);
         MouseFilter = MouseFilterEnum.Stop;
         MouseDefaultCursorShape = CursorShape.PointingHand;
         MouseEntered += () => _mouseIn = true;
@@ -171,11 +199,30 @@ public partial class CardView : Control
         desc.MouseFilter = MouseFilterEnum.Ignore;
         desc.AddThemeConstantOverride("line_spacing", -1);
         text.AddChild(desc);
-        var cat = UiKit.Label(card.Category.ToString().ToUpperInvariant(), UiKit.Tiny, col.Darkened(0.65f), HorizontalAlignment.Center, Fonts.Heavy);
+        string catText = card.IsRare ? "RARE" : card.Category.ToString().ToUpperInvariant(); // the header color still says the category
+        var cat = UiKit.Label(catText, UiKit.Tiny, col.Darkened(0.65f), HorizontalAlignment.Center, Fonts.Heavy);
         cat.Position = new Vector2(0, 6);
         cat.Size = new Vector2(W, 16);
         cat.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(cat);
+        if (curse != null)
+        {
+            var plate = new VBoxContainer { Position = new Vector2(6, H + PlateGap + 5), Size = new Vector2(W - 12, PlateH - 8), MouseFilter = MouseFilterEnum.Ignore };
+            plate.AddThemeConstantOverride("separation", 0);
+            AddChild(plate);
+            var cname = UiKit.Label($"+ CURSE: {curse.Name.ToUpperInvariant()}", UiKit.Tiny, UiKit.CategoryColor(CardCategory.Curse).Lightened(0.45f), HorizontalAlignment.Center, Fonts.Heavy);
+            cname.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            cname.CustomMinimumSize = new Vector2(W - 12, 0);
+            cname.MouseFilter = MouseFilterEnum.Ignore;
+            plate.AddChild(cname);
+            var cdesc = UiKit.Label(curse.Description.Replace("\n", ", "), UiKit.Tiny, Palette.Text, HorizontalAlignment.Center);
+            cdesc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            cdesc.CustomMinimumSize = new Vector2(W - 12, 0);
+            cdesc.MouseFilter = MouseFilterEnum.Ignore;
+            cdesc.AddThemeConstantOverride("line_spacing", -2);
+            plate.AddChild(cdesc);
+            TooltipText = (TooltipText.Length > 0 ? TooltipText + "\n\n" : "") + $"Cursed deal: take {card.Name}, but {curse.Name} comes with it.";
+        }
         Modulate = new Color(1, 1, 1, 0);
     }
 
@@ -206,23 +253,32 @@ public partial class CardView : Control
     public override void _Draw()
     {
         var col = UiKit.CategoryColor(_card.Category);
+        var gold = UiKit.RareGold;
+        var curseCol = UiKit.CategoryColor(CardCategory.Curse);
         var rect = new Rect2(Vector2.Zero, new Vector2(W, H));
-        // Glow behind the card when hovered or chosen.
-        if (_hover > 0) GlowTex.Draw(this, rect.GetCenter(), H * 0.75f, col with { A = 0.45f * _hover });
+        var full = new Rect2(Vector2.Zero, new Vector2(W, FullH));
+        // Glow behind the card when hovered or chosen: gold for rares, blood red for a cursed deal.
+        var glow = _curse != null ? curseCol : _card.IsRare ? gold : col;
+        if (_hover > 0) GlowTex.Draw(this, full.GetCenter(), FullH * 0.75f, glow with { A = 0.45f * _hover });
+        if (_curse != null) DrawCursePlate(curseCol);
         DrawColoredPolygon(Shapes.RoundRect(new Rect2(rect.Position + new Vector2(0, 6), rect.Size), 14), new Color(0, 0, 0, 0.4f));
         var face = Shapes.RoundRect(rect, 14, 6);
-        Shapes.Gradient(this, face, new Color(0.16f, 0.11f, 0.3f), new Color(0.07f, 0.05f, 0.14f));
+        if (_card.IsRare) Shapes.Gradient(this, face, new Color(0.24f, 0.16f, 0.24f), new Color(0.1f, 0.06f, 0.1f));
+        else Shapes.Gradient(this, face, new Color(0.16f, 0.11f, 0.3f), new Color(0.07f, 0.05f, 0.14f));
 
         // Header band in the category color, clipped to the card's rounded top.
         var header = Shapes.RoundRect(new Rect2(0, 0, W, 76), 14, 6);
         for (int i = 0; i < header.Length; i++) if (header[i].Y > 30) header[i].Y = 76;
         Shapes.Gradient(this, header, col.Lightened(0.25f), col.Darkened(0.2f));
         DrawIcon(new Vector2(W / 2, 47), col);
+        if (_card.IsRare) DrawSparkles(gold);
 
         float pulse = 0.5f + 0.5f * Mathf.Sin(_t * 4);
-        var border = _hover > 0 ? Shapes.Hdr(col.Lightened(0.3f), 1f + 0.4f * _hover) : new Color(1, 1, 1, 0.16f);
-        Shapes.DrawClosed(this, face, border, 1.5f + _hover * 1.2f);
-        if (Chosen) Shapes.DrawClosed(this, Shapes.RoundRect(rect.Grow(4), 17, 6), Shapes.Hdr(Colors.White, 1.2f) with { A = 0.6f + 0.4f * pulse }, 2f);
+        var border = _card.IsRare
+            ? Shapes.Hdr(gold.Lightened(0.15f * _hover), 1f + 0.25f * pulse + 0.4f * _hover)
+            : _hover > 0 ? Shapes.Hdr(col.Lightened(0.3f), 1f + 0.4f * _hover) : new Color(1, 1, 1, 0.16f);
+        Shapes.DrawClosed(this, face, border, (_card.IsRare ? 2.2f : 1.5f) + _hover * 1.2f);
+        if (Chosen) Shapes.DrawClosed(this, Shapes.RoundRect(full.Grow(4), 17, 6), Shapes.Hdr(Colors.White, 1.2f) with { A = 0.6f + 0.4f * pulse }, 2f);
 
         // Player-made cards (custom card files) get a tag hanging off the bottom edge, clear of the category and badge.
         if (CardRegistry.IsCustom(_card.Id))
@@ -247,6 +303,38 @@ public partial class CardView : Control
             DrawColoredPolygon(Shapes.RoundRect(badge, 10), Palette.Accent);
             DrawString(Fonts.Heavy, badge.Position + new Vector2(0, 15), $"x{_owned + 1}", HorizontalAlignment.Center, badge.Size.X, 13, new Color(0.15f, 0.08f, 0.02f));
         }
+    }
+
+    /// <summary>Four-point glints that twinkle in turn around a rare card's header.</summary>
+    private void DrawSparkles(Color gold)
+    {
+        ReadOnlySpan<Vector2> spots = [new(0.16f, 18), new(0.84f, 26), new(0.26f, 62), new(0.76f, 66), new(0.5f, 14)];
+        for (int i = 0; i < spots.Length; i++)
+        {
+            float a = Mathf.Max(0, Mathf.Sin(_t * 2.2f + i * 1.9f));
+            if (a <= 0.05f) continue;
+            var c = new Vector2(spots[i].X * W, spots[i].Y);
+            float r = 2.5f + 3.5f * a;
+            DrawColoredPolygon(Shapes.Star(c, r, r * 0.28f, 4, _t * 0.6f + i), Shapes.Hdr(gold.Lightened(0.5f), 1.3f) with { A = a });
+        }
+    }
+
+    /// <summary>The curse that comes with a cursed deal: a dark red plate chained under the card.</summary>
+    private void DrawCursePlate(Color curseCol)
+    {
+        var plate = new Rect2(3, H + PlateGap, W - 6, PlateH);
+        // Two short chains from the card's bottom edge down to the plate.
+        foreach (float x in new[] { W * 0.17f, W * 0.83f }) // clear of the CUSTOM tag in the middle
+            for (int k = 0; k < 3; k++)
+            {
+                var c = new Vector2(x, H - 1 + k * 5);
+                DrawArc(c, 2.6f, 0, Mathf.Tau, 10, curseCol.Darkened(0.25f), 1.6f);
+            }
+        DrawColoredPolygon(Shapes.RoundRect(new Rect2(plate.Position + new Vector2(0, 4), plate.Size), 10), new Color(0, 0, 0, 0.4f));
+        var pts = Shapes.RoundRect(plate, 10, 5);
+        Shapes.Gradient(this, pts, curseCol.Darkened(0.55f), new Color(0.12f, 0.02f, 0.05f));
+        float flicker = 0.75f + 0.25f * Mathf.Sin(_t * 5.3f) * Mathf.Sin(_t * 2.1f);
+        Shapes.DrawClosed(this, pts, Shapes.Hdr(curseCol, 0.9f + 0.3f * _hover) with { A = flicker }, 1.5f + _hover);
     }
 
     /// <summary>A simple glyph per category, drawn in white on the header.</summary>
@@ -320,6 +408,27 @@ public partial class CardView : Control
                 DrawLine(c + new Vector2(0, -11).Rotated(sway), c + new Vector2(0, 12).Rotated(sway), col with { A = 0.7f }, 2.5f, true);
                 DrawCircle(boss, 4, col, true, -1, true);
                 DrawCircle(boss + new Vector2(-1.2f, -1.2f), 1.4f, col.Lightened(0.7f), true, -1, true);
+                break;
+            }
+            case CardCategory.Curse:
+            {
+                // A skull that leans slowly side to side.
+                float lean = Mathf.Sin(_t * 1.6f) * 0.12f;
+                Vector2 P(float x, float y) => c + new Vector2(x, y).Rotated(lean);
+                var skull = new List<Vector2>();
+                for (int i = 0; i <= 20; i++)
+                {
+                    float a = Mathf.Pi * (0.85f + 1.3f * i / 20f); // the dome, left to right over the top
+                    skull.Add(P(14 * Mathf.Cos(a), -3 + 13 * Mathf.Sin(a)));
+                }
+                skull.AddRange(new[] { P(8, 9), P(7, 14), P(-7, 14), P(-8, 9) });
+                var pts = skull.ToArray();
+                DrawColoredPolygon(Shapes.Offset(pts, new Vector2(2, 2)), shadow);
+                DrawColoredPolygon(pts, ink);
+                DrawCircle(P(-5.5f, -2), 3.6f, col.Darkened(0.5f), true, -1, true);
+                DrawCircle(P(5.5f, -2), 3.6f, col.Darkened(0.5f), true, -1, true);
+                DrawColoredPolygon(new[] { P(0, 3), P(2, 7), P(-2, 7) }, col.Darkened(0.5f));
+                for (int i = -1; i <= 1; i++) DrawLine(P(i * 3.2f, 10), P(i * 3.2f, 14), col.Darkened(0.5f), 1.4f, true);
                 break;
             }
             default:

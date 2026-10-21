@@ -40,6 +40,8 @@ public partial class GameManager : Node2D
     public MatchSettings Settings = new();
     /// <summary>Test runs (--lava=SECS): when 0 or more, overrides the lobby's sudden-death lava setting for matches this peer hosts.</summary>
     public int LavaOverride = -1;
+    /// <summary>--rarechance=PCT: the rare-card chance for matches this run hosts (-1 = the lobby setting).</summary>
+    public int RareOverride = -1;
     public Phase Phase { get; private set; } = Phase.Idle;
     public float CountdownLeft { get; private set; }
     public MatchPlayer LocalMatchPlayer { get; private set; }
@@ -59,11 +61,15 @@ public partial class GameManager : Node2D
     private readonly float[] _airT = new float[LobbyState.MaxPlayers];
 
     public Dictionary<int, List<int>> PickOptions { get; private set; } = new();
+    /// <summary>The cursed deal each slot was offered this pick, if any: a rare card that comes with a curse.</summary>
+    public Dictionary<int, (int Rare, int Curse)> PickDeals { get; private set; } = new();
     public readonly HashSet<int> Picked = new();
 
     public event Action MatchBegan, BattleStarted, ScoresChanged, CardPickBegan, ReturnedToLobby, RematchVotesChanged;
     public event Action<int> MatchEnded;
     public event Action<int, int> CardWasPicked;
+    /// <summary>A cursed deal was taken: this slot also got this curse card (every peer, right after <see cref="CardWasPicked"/>).</summary>
+    public event Action<int, int> CurseTaken;
     /// <summary>A pick unlocked a card combo for this slot (on every peer, right after <see cref="CardWasPicked"/>).</summary>
     public event Action<int, ComboDef> ComboFound;
     public event Action<string, Color, float> Banner;
@@ -152,6 +158,7 @@ public partial class GameManager : Node2D
         Net.InMatch = true;
         if (Stats.Mode != "sim") Stats.Mode = Net.Mode == NetMode.Host ? "host" : "offline";
         if (LavaOverride >= 0) Net.Lobby.Settings.LavaAfter = LavaOverride;
+        if (RareOverride >= 0) Net.Lobby.Settings.RareChance = RareOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         HostStartBattle();
     }
@@ -194,12 +201,14 @@ public partial class GameManager : Node2D
     private void HostBeginCardPick(int roundWinner)
     {
         var w = new Wire();
-        var entries = new List<(int slot, List<int> ids)>();
+        var entries = new List<PickEntry>();
         foreach (var p in Active())
         {
             int count = p.Slot == roundWinner ? Settings.WinnerChoices : Settings.LoserChoices;
-            var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards) : null;
-            if (ids is { Count: > 0 }) entries.Add((p.Slot, ids));
+            var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards, Settings.RareChance / 100f) : null;
+            if (ids is not { Count: > 0 }) continue;
+            var deal = Settings.CursedDeals ? CardRegistry.RollDeal(HostRng, Settings.DisabledCards, ids) : null;
+            entries.Add(new PickEntry(p.Slot, ids, deal));
         }
         if (entries.Count == 0)
         {
@@ -211,22 +220,29 @@ public partial class GameManager : Node2D
         _botPickT.Clear();
         _pickTimeoutT = PickTimeout;
         int completedRounds = Slots.Where(p => p != null).Sum(p => p.RoundWins);
-        foreach (var (slot, ids) in entries)
+        foreach (var (slot, ids, deal) in entries)
         {
             bool bot = IsBotPlayer(Slots[slot]);
             if (bot) _botPickT[slot] = HostRng.Range(0.5f, 1.5f);
-            Stats.PickOffered(completedRounds, Slots[slot], bot, slot == roundWinner, ids);
+            Stats.PickOffered(completedRounds, Slots[slot], bot, slot == roundWinner, ids, deal);
         }
         Rpc(MethodName.BeginCardPick, w.Done());
     }
 
-    private void HostApplyPick(int slot, int cardId, bool timedOut = false)
+    /// <param name="deal">Take the slot's cursed deal: <paramref name="cardId"/> must be its rare card, and its curse comes too.</param>
+    private void HostApplyPick(int slot, int cardId, bool deal = false, bool timedOut = false)
     {
         if (Phase != Phase.CardPick || _hostPicked.Contains(slot)) return;
-        if (!PickOptions.TryGetValue(slot, out var opts) || !opts.Contains(cardId)) return;
+        int curse = -1;
+        if (deal)
+        {
+            if (!PickDeals.TryGetValue(slot, out var d) || d.Rare != cardId) return;
+            curse = d.Curse;
+        }
+        else if (!PickOptions.TryGetValue(slot, out var opts) || !opts.Contains(cardId)) return;
         _hostPicked.Add(slot);
-        Stats.Picked(slot, cardId, timedOut);
-        Rpc(MethodName.CardPicked, slot, cardId);
+        Stats.Picked(slot, cardId, timedOut, curse);
+        Rpc(MethodName.CardPicked, slot, cardId, curse);
         HostCheckPicksDone();
     }
 
@@ -373,11 +389,12 @@ public partial class GameManager : Node2D
     // Local actions (from UI)
     // =====================================================================
 
-    public void LocalPick(int cardId)
+    /// <param name="deal">Take the cursed deal (its rare card is <paramref name="cardId"/>) instead of an ordinary card.</param>
+    public void LocalPick(int cardId, bool deal = false)
     {
         if (LocalMatchPlayer == null) return;
-        if (IsHost) HostApplyPick(LocalMatchPlayer.Slot, cardId);
-        else RpcId(1, MethodName.RequestPick, cardId);
+        if (IsHost) HostApplyPick(LocalMatchPlayer.Slot, cardId, deal);
+        else RpcId(1, MethodName.RequestPick, cardId, deal);
     }
 
     // =====================================================================
@@ -519,7 +536,8 @@ public partial class GameManager : Node2D
             if (_botPickT[slot] <= 0)
             {
                 _botPickT.Remove(slot);
-                HostApplyPick(slot, BotChooseCard(slot, PickOptions[slot]));
+                var (card, deal) = BotChooseCard(slot, PickOptions[slot]);
+                HostApplyPick(slot, card, deal);
             }
         }
         if (_pickTimeoutT <= 0)
@@ -543,16 +561,25 @@ public partial class GameManager : Node2D
         // Like a bot: a combo card when there is one, mostly, so autotests see combos found.
         var combos = opts.Where(id => Combos.Unlocks(LocalMatchPlayer.Cards, id).Count > 0).ToList();
         var from = combos.Count > 0 && GD.Randf() < 0.75f ? combos : opts;
-        LocalPick(from[(int)(GD.Randi() % (uint)from.Count)]);
+        // Now and then the cursed deal, so autotests take curses too.
+        if (combos.Count == 0 && PickDeals.TryGetValue(LocalMatchPlayer.Slot, out var deal) && GD.Randf() < 0.3f) LocalPick(deal.Rare, deal: true);
+        else LocalPick(from[(int)(GD.Randi() % (uint)from.Count)]);
     }
 
-    /// <summary>Bots usually take a card that completes a combo when one is offered, otherwise any card.</summary>
-    private int BotChooseCard(int slot, List<int> opts)
+    /// <summary>
+    /// Bots usually take a card that completes a combo when one is offered; otherwise they sometimes gamble on the
+    /// cursed deal, and take any card the rest of the time.
+    /// </summary>
+    private (int Card, bool Deal) BotChooseCard(int slot, List<int> opts)
     {
         var combos = opts.Where(id => Combos.Unlocks(Slots[slot].Cards, id).Count > 0).ToList();
-        if (combos.Count > 0 && HostRng.Range(0f, 1f) < 0.75f) return combos[HostRng.Range(0, combos.Count - 1)];
-        return opts[HostRng.Range(0, opts.Count - 1)];
+        if (combos.Count > 0 && HostRng.Range(0f, 1f) < 0.75f) return (combos[HostRng.Range(0, combos.Count - 1)], false);
+        if (PickDeals.TryGetValue(slot, out var deal) && HostRng.Range(0f, 1f) < BotDealChance) return (deal.Rare, true);
+        return (opts[HostRng.Range(0, opts.Count - 1)], false);
     }
+
+    /// <summary>How often a bot without a combo to chase takes the cursed deal.</summary>
+    private const float BotDealChance = 0.3f;
 
     // =====================================================================
     // Host: combat resolution (called by Avatar / BulletSystem)
@@ -1176,6 +1203,7 @@ public partial class GameManager : Node2D
         System.Array.Clear(_battleKills);
         _endCheckT = -1;
         PickOptions.Clear();
+        PickDeals.Clear();
         Log.Info($"battle {BattleNumber} start (seed {seed}, map attempts {layout.Attempts}{(layout.UsedFallback ? ", fallback" : "")})");
         BattleStarted?.Invoke();
     }
@@ -1274,8 +1302,9 @@ public partial class GameManager : Node2D
         Banner?.Invoke($"WAITING FOR PLAYERS TO REJOIN  {seconds}", Palette.TextDim, 1.2f);
     }
 
+    /// <param name="curseId">The curse that came with a cursed deal, or -1 for an ordinary pick.</param>
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void CardPicked(int slot, int cardId)
+    private void CardPicked(int slot, int cardId, int curseId)
     {
         var p = Slots[slot];
         if (p == null) return;
@@ -1283,10 +1312,13 @@ public partial class GameManager : Node2D
         var unlocked = Combos.Unlocks(p.Cards, cardId);
         _lastPickCombo = unlocked.Count > 0;
         p.Cards.Add(cardId);
+        if (curseId >= 0) p.Cards.Add(curseId);
         p.RecomputeStats();
         Sfx.Play("pick", 0.6f);
-        Log.Info($"{p.Info.Name} picked {CardRegistry.Get(cardId)?.Name}");
+        if (curseId >= 0) Log.Info($"{p.Info.Name} took a cursed deal: {CardRegistry.Get(cardId)?.Name} with {CardRegistry.Get(curseId)?.Name}");
+        else Log.Info($"{p.Info.Name} picked {CardRegistry.Get(cardId)?.Name}");
         CardWasPicked?.Invoke(slot, cardId);
+        if (curseId >= 0) CurseTaken?.Invoke(slot, curseId);
         foreach (var combo in unlocked)
         {
             Log.Info($"combo: {p.Info.Name} found {combo.Name}");
@@ -1676,12 +1708,12 @@ public partial class GameManager : Node2D
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestPick(int cardId)
+    private void RequestPick(int cardId, bool deal)
     {
         if (!IsHost) return;
         long sender = Multiplayer.GetRemoteSenderId();
         var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && s.Info.PeerId == sender);
-        if (p != null) HostApplyPick(p.Slot, cardId);
+        if (p != null) HostApplyPick(p.Slot, cardId, deal);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1722,13 +1754,18 @@ public partial class GameManager : Node2D
         ScoresChanged?.Invoke();
     }
 
-    private static void WritePicks(Wire w, IReadOnlyCollection<(int slot, List<int> ids)> entries)
+    /// <summary>One slot's offer in a card pick: its cards, and the cursed deal if it has one.</summary>
+    private readonly record struct PickEntry(int Slot, List<int> Ids, (int Rare, int Curse)? Deal);
+
+    private static void WritePicks(Wire w, IReadOnlyCollection<PickEntry> entries)
     {
         w.U8(entries.Count);
-        foreach (var (slot, ids) in entries)
+        foreach (var (slot, ids, deal) in entries)
         {
             w.U8(slot).U8(ids.Count);
             foreach (int id in ids) w.I16(id); // 16 bits: custom card ids start at 1000
+            w.Bool(deal != null);
+            if (deal is { } d) w.I16(d.Rare).I16(d.Curse);
         }
     }
 
@@ -1736,6 +1773,7 @@ public partial class GameManager : Node2D
     {
         var r = new WireReader(data);
         PickOptions = new Dictionary<int, List<int>>();
+        PickDeals = new Dictionary<int, (int Rare, int Curse)>();
         int n = r.U8();
         for (int i = 0; i < n; i++)
         {
@@ -1744,6 +1782,7 @@ public partial class GameManager : Node2D
             var ids = new List<int>();
             for (int k = 0; k < count; k++) ids.Add(r.I16());
             PickOptions[slot] = ids;
+            if (r.Bool()) PickDeals[slot] = (r.I16(), r.I16());
         }
     }
 
@@ -1769,7 +1808,7 @@ public partial class GameManager : Node2D
         if (picking)
         {
             var picks = new Wire();
-            WritePicks(picks, PickOptions.Select(kv => (kv.Key, kv.Value)).ToList());
+            WritePicks(picks, PickOptions.Select(kv => new PickEntry(kv.Key, kv.Value, PickDeals.TryGetValue(kv.Key, out var d) ? d : null)).ToList());
             w.Blob(picks.Done());
             w.U8(Picked.Count);
             foreach (int s in Picked) w.U8(s);
@@ -1813,6 +1852,7 @@ public partial class GameManager : Node2D
         Array.Clear(Slots);
         LocalMatchPlayer = null;
         PickOptions.Clear();
+        PickDeals.Clear();
         Picked.Clear();
         RematchVotes.Clear();
         MatchAwards.Clear();

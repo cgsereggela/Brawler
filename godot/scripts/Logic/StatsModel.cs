@@ -13,7 +13,7 @@ namespace Brawler.Logic;
 /// </summary>
 public sealed class MatchRecord
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal)
 
     public int V { get; set; } = CurrentVersion;
     public string Id { get; set; }
@@ -37,6 +37,8 @@ public sealed class SettingsRec
     public int RoundsToWin { get; set; }
     public int LoserChoices { get; set; }
     public int WinnerChoices { get; set; }
+    public int RareChance { get; set; }
+    public bool CursedDeals { get; set; }
 }
 
 public sealed class PlayerRec
@@ -104,6 +106,10 @@ public sealed class PickRec
     public float DecisionSec { get; set; }
     public List<int> Offered { get; set; } = new();
     public int Picked { get; set; }
+    /// <summary>The cursed deal on offer as [rare, curse], or empty when there was none.</summary>
+    public List<int> Deal { get; set; } = new();
+    /// <summary>True when the deal was taken: <see cref="Picked"/> is its rare card, and the curse came with it.</summary>
+    public bool TookDeal { get; set; }
     public List<int> HeldBefore { get; set; } = new();
 }
 

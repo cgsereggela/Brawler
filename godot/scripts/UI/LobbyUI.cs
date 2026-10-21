@@ -19,7 +19,7 @@ public partial class LobbyUI : Control
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava;
+    private Button _lava, _rare, _deals;
 
     public LobbyUI(NetworkManager net) => _net = net;
     public LobbyUI() { }
@@ -66,6 +66,13 @@ public partial class LobbyUI : Control
         grid.AddChild(lavaLabel);
         _lava = UiKit.Button("", CycleLava, 70, "Small");
         grid.AddChild(_lava);
+        var rareLabel = UiKit.Label("Rare cards", UiKit.Small, Palette.Text);
+        rareLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        rareLabel.TooltipText = "How often each card in a pick is a rare one: strong, build-defining cards with a gold frame.";
+        rareLabel.MouseFilter = MouseFilterEnum.Pass;
+        grid.AddChild(rareLabel);
+        _rare = UiKit.Button("", CycleRare, 70, "Small");
+        grid.AddChild(_rare);
         body.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
@@ -74,6 +81,9 @@ public partial class LobbyUI : Control
         poolLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         poolLabel.VerticalAlignment = VerticalAlignment.Center;
         poolRow.AddChild(poolLabel);
+        _deals = UiKit.Button("", ToggleDeals, 150, "Small");
+        _deals.TooltipText = "Each pick also offers a cursed deal: a rare card, but you take a curse card with it.";
+        poolRow.AddChild(_deals);
         _cards = UiKit.Button("Cards", () => _pool.Open(), 120, "Small");
         poolRow.AddChild(_cards);
         body.AddChild(poolRow);
@@ -193,6 +203,8 @@ public partial class LobbyUI : Control
             LoserChoices = (int)_loserCards.Value,
             WinnerChoices = (int)_winnerCards.Value,
             LavaAfter = _net.Lobby.Settings.LavaAfter,
+            RareChance = _net.Lobby.Settings.RareChance,
+            CursedDeals = _net.Lobby.Settings.CursedDeals,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
     }
@@ -206,6 +218,27 @@ public partial class LobbyUI : Control
         var choices = RisingLava.Choices;
         int i = Array.IndexOf(choices, RisingLava.Snap(_net.Lobby.Settings.LavaAfter));
         _net.Lobby.Settings.LavaAfter = choices[(i + 1) % choices.Length];
+        PushSettings();
+    }
+
+    /// <summary>Choices for the rare-card chance, in percent per offered card.</summary>
+    public static readonly int[] RareChoices = { 0, 5, 10, 20, 35 };
+
+    private static string RareText(int pct) => pct <= 0 ? "Off" : $"{pct}%";
+
+    /// <summary>Host: steps the rare-card chance to its next choice (wrapping round to Off).</summary>
+    private void CycleRare()
+    {
+        if (!_net.IsHost) return;
+        int i = Array.IndexOf(RareChoices, _net.Lobby.Settings.RareChance);
+        _net.Lobby.Settings.RareChance = RareChoices[(i + 1) % RareChoices.Length];
+        PushSettings();
+    }
+
+    private void ToggleDeals()
+    {
+        if (!_net.IsHost) return;
+        _net.Lobby.Settings.CursedDeals = !_net.Lobby.Settings.CursedDeals;
         PushSettings();
     }
 
@@ -277,6 +310,10 @@ public partial class LobbyUI : Control
         foreach (var s in new[] { _battles, _rounds, _loserCards, _winnerCards }) s.Editable = host;
         _lava.Text = LavaText(st.LavaAfter);
         _lava.Disabled = !host;
+        _rare.Text = RareText(st.RareChance);
+        _rare.Disabled = !host;
+        _deals.Text = st.CursedDeals ? "Cursed deals: On" : "Cursed deals: Off";
+        _deals.Disabled = !host;
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
 
         _addBot.Visible = host;

@@ -165,8 +165,10 @@ public static class StatsReport
                 if (f.Bots != null && pk.Bot != f.Bots) continue;
                 data.Picks++;
                 if (!pk.Bot) data.HumanPicks++;
-                double chance = 1.0 / pk.Offered.Count;
-                foreach (int id in pk.Offered.Distinct())
+                // A cursed deal is one more choice: its rare card and its curse count as offered together, at that choice's odds.
+                var choices = pk.Deal.Count == 2 ? pk.Offered.Append(pk.Deal[0]).ToList() : pk.Offered;
+                double chance = 1.0 / choices.Count;
+                foreach (int id in (pk.Deal.Count == 2 ? choices.Append(pk.Deal[1]) : choices).Distinct())
                 {
                     if (!cards.TryGetValue(id, out var cs)) continue;
                     cs.Offered++;
@@ -178,6 +180,12 @@ public static class StatsReport
                     chosen.Picked++;
                     chosen.PickRoundSum += pk.Round;
                     if (!pk.Bot) chosen.PickedHuman++;
+                }
+                if (pk.TookDeal && pk.Deal.Count == 2 && cards.TryGetValue(pk.Deal[1], out var curse))
+                {
+                    curse.Picked++;
+                    curse.PickRoundSum += pk.Round;
+                    if (!pk.Bot) curse.PickedHuman++;
                 }
             }
         }

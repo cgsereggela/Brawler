@@ -121,12 +121,12 @@ public partial class CardPoolUI : Control
         foreach (var card in cards)
         {
             int id = card.Id;
-            var box = new CheckBox { Text = card.Name, FocusMode = FocusModeEnum.None };
+            var box = new CheckBox { Text = card.IsRare ? $"{card.Name} ★" : card.Name, FocusMode = FocusModeEnum.None };
             box.AddThemeFontSizeOverride("font_size", UiKit.Small);
             box.AddThemeConstantOverride("h_separation", 4);
             Compact(box);
             box.Toggled += on => SetMany(new[] { id }, on);
-            string text = $"{card.Name}: {card.Description.Replace("\n", ", ")}";
+            string text = $"{(card.IsRare ? "Rare. " : card.IsCurse ? "Curse, only taken with a cursed deal. " : "")}{card.Name}: {card.Description.Replace("\n", ", ")}";
             box.MouseEntered += () => _detail.Text = text;
             col.AddChild(box);
             _boxes[id] = box;
@@ -182,22 +182,22 @@ public partial class CardPoolUI : Control
             else if (!disabled.Contains(id))
             {
                 // Never let the pool fall below what the largest pick needs.
-                if (CardPool.EnabledCount(disabled) <= CardPool.MinEnabled) { _warned = true; break; }
+                if (IsCommon(id) && CardPool.CommonCount(disabled) <= CardPool.MinEnabled) { _warned = true; break; }
                 disabled.Add(id);
             }
         }
         Push(disabled);
     }
 
+    /// <summary>Only common cards count toward the minimum: rares and curses are extras on top of a pick.</summary>
+    private static bool IsCommon(int id) => CardRegistry.Get(id) is { IsRare: false, IsCurse: false };
+
     private void Push(HashSet<int> disabled)
     {
         if (!_net.IsHost) return;
-        var s = _net.Lobby.Settings;
-        _net.SetSettings(new MatchSettings
-        {
-            BattlesPerRound = s.BattlesPerRound, RoundsToWin = s.RoundsToWin,
-            LoserChoices = s.LoserChoices, WinnerChoices = s.WinnerChoices, DisabledCards = disabled,
-        });
+        var s = _net.Lobby.Settings.Copy();
+        s.DisabledCards = disabled;
+        _net.SetSettings(s);
         CardPoolSettings.Save(disabled);
         Refresh(); // offline play broadcasts too, but refresh here anyway in case nothing comes back
     }
@@ -229,7 +229,7 @@ public partial class CardPoolUI : Control
 
         int enabled = CardPool.EnabledCount(disabled), total = CardRegistry.All.Count;
         _summary.Text = !host ? $"{enabled} of {total} cards in play. The host chooses the pool."
-            : _warned ? $"{enabled} of {total} cards in play. At least {CardPool.MinEnabled} must stay in."
+            : _warned ? $"{enabled} of {total} cards in play. At least {CardPool.MinEnabled} common cards must stay in."
             : $"{enabled} of {total} cards in play. Untick cards to keep them out of picks.";
         _summary.AddThemeColorOverride("font_color", host && _warned ? Palette.Hot.Lightened(0.35f) : Palette.TextDim);
     }

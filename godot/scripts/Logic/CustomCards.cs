@@ -12,6 +12,7 @@ namespace Brawler.Logic;
 ///
 /// A file holds one card object or an array of them:
 ///   { "id": 1000, "name": "Pogo", "description": "+2 mid-air jumps", "category": "Movement",
+///     "rarity": "Common",
 ///     "mods": [ { "stat": "AirJumps", "op": "add", "value": 2 } ], "effect": "dash" }
 /// Problems never throw: a bad file or card is skipped (a bad value is clamped) and a line goes to the log.
 /// </summary>
@@ -49,7 +50,7 @@ public static class CustomCards
     public static float AddLimit(Stat s) => AddLimits.TryGetValue(s, out var v) ? v : DefaultAddLimit;
 
     private static readonly JsonDocumentOptions JsonOptions = new() { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip };
-    private static readonly HashSet<string> KnownFields = new(StringComparer.OrdinalIgnoreCase) { "id", "name", "description", "category", "mods", "effect" };
+    private static readonly HashSet<string> KnownFields = new(StringComparer.OrdinalIgnoreCase) { "id", "name", "description", "category", "rarity", "mods", "effect" };
 
     /// <summary>
     /// Every card from several files, in order. The first card with an id wins; later ones are skipped with a warning.
@@ -147,6 +148,13 @@ public static class CustomCards
                 return Skip($"\"category\" must be one of {string.Join(", ", Enum.GetNames<CardCategory>())}");
         }
 
+        var rarity = CardRarity.Common;
+        if (Prop(e, "rarity", out var rarEl) && rarEl.ValueKind != JsonValueKind.Null)
+        {
+            if (rarEl.ValueKind != JsonValueKind.String || !TryName(rarEl.GetString(), out rarity))
+                return Skip($"\"rarity\" must be one of {string.Join(", ", Enum.GetNames<CardRarity>())}");
+        }
+
         string effect = null;
         if (Prop(e, "effect", out var effEl) && effEl.ValueKind != JsonValueKind.Null)
         {
@@ -175,7 +183,7 @@ public static class CustomCards
             }
         }
 
-        return Validate(new CardDef { Id = id, Name = name, Description = desc, Category = cat, Mods = mods.ToArray(), EffectId = effect }, label, log);
+        return Validate(new CardDef { Id = id, Name = name, Description = desc, Category = cat, Rarity = rarity, Mods = mods.ToArray(), EffectId = effect }, label, log);
     }
 
     /// <summary>
@@ -201,6 +209,7 @@ public static class CustomCards
             desc = desc[..MaxDescriptionLength].TrimEnd();
         }
         if (!Enum.IsDefined(c.Category)) return Skip("unknown category");
+        if (!Enum.IsDefined(c.Rarity)) return Skip("unknown rarity");
 
         string effect = string.IsNullOrWhiteSpace(c.EffectId) ? null : c.EffectId.Trim().ToLowerInvariant();
         if (effect != null && Array.IndexOf(EffectIds, effect) < 0)
@@ -220,7 +229,7 @@ public static class CustomCards
             if (v != m.Value) log.Add($"{label}: {m.Stat} {m.Op.ToString().ToLowerInvariant()} {m.Value} is out of range, clamped to {v}");
             clean[i] = m with { Value = v };
         }
-        return new CardDef { Id = c.Id, Name = name, Description = desc, Category = c.Category, Mods = clean, EffectId = effect };
+        return new CardDef { Id = c.Id, Name = name, Description = desc, Category = c.Category, Rarity = c.Rarity, Mods = clean, EffectId = effect };
     }
 
     /// <summary>Case-insensitive field lookup, so "Name" works as well as "name".</summary>
@@ -244,7 +253,7 @@ public static class CustomCards
 
     // ---------- network form: the host sends its set to each client that joins ----------
 
-    private const byte WireVersion = 1;
+    private const byte WireVersion = 2; // 2: a rarity byte after the category
 
     public static byte[] Serialize(IReadOnlyList<CardDef> cards)
     {
@@ -259,6 +268,7 @@ public static class CustomCards
                 w.Write(c.Name ?? "");
                 w.Write(c.Description ?? "");
                 w.Write((byte)c.Category);
+                w.Write((byte)c.Rarity);
                 w.Write(c.EffectId ?? "");
                 w.Write((byte)c.Mods.Length);
                 foreach (var m in c.Mods)
@@ -297,10 +307,11 @@ public static class CustomCards
                 int id = r.ReadInt32();
                 string name = r.ReadString(), desc = r.ReadString();
                 var cat = (CardCategory)r.ReadByte();
+                var rarity = (CardRarity)r.ReadByte();
                 string effect = r.ReadString();
                 var mods = new StatMod[r.ReadByte()];
                 for (int k = 0; k < mods.Length; k++) mods[k] = new StatMod((Stat)r.ReadByte(), (ModOp)r.ReadByte(), r.ReadSingle());
-                raw.Add(new CardDef { Id = id, Name = name, Description = desc, Category = cat, Mods = mods, EffectId = effect.Length > 0 ? effect : null });
+                raw.Add(new CardDef { Id = id, Name = name, Description = desc, Category = cat, Rarity = rarity, Mods = mods, EffectId = effect.Length > 0 ? effect : null });
             }
         }
         catch (Exception e) when (e is EndOfStreamException or IOException or ArgumentException)

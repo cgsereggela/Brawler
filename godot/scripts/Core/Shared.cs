@@ -52,7 +52,15 @@ public sealed class MatchSettings
     public int LoserChoices = 5;     // cards offered to round losers
     public int WinnerChoices = 3;    // cards offered to the round winner (0 = winner doesn't pick)
     public int LavaAfter = RisingLava.DefaultAfter; // seconds of fighting before lava rises (0 = never)
+    public int RareChance = 10;      // percent chance that each offered card is a rare one (0 = rares only come in deals)
+    public bool CursedDeals = true;  // each pick also offers a rare card bundled with a curse
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
+
+    public MatchSettings Copy() => new()
+    {
+        BattlesPerRound = BattlesPerRound, RoundsToWin = RoundsToWin, LoserChoices = LoserChoices, WinnerChoices = WinnerChoices,
+        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, DisabledCards = new(DisabledCards),
+    };
 }
 
 public sealed class LobbyState
@@ -81,7 +89,7 @@ public sealed class LobbyState
     public byte[] Serialize()
     {
         var w = new Wire();
-        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter);
+        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(Players.Count);
         foreach (var p in Players)
@@ -101,6 +109,8 @@ public sealed class LobbyState
         s.Settings.LoserChoices = r.U8();
         s.Settings.WinnerChoices = r.U8();
         s.Settings.LavaAfter = r.U8();
+        s.Settings.RareChance = r.U8();
+        s.Settings.CursedDeals = r.Bool();
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)
