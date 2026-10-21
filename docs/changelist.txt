@@ -1,8 +1,8 @@
 issues to fix:
-- using the jumppad should allow players to jump at any time before they hit the ground
 - the bullet counter shouldn't surround the crosshair, we should go back to smaller pips, but they should be placed at the bottom right of the crosshair in a similar way to the reload animation
 
 features to add:
-- the arms currently stiff lines connected to the gun, it would look better if the arm had some movement / flex when the gun moved, something a bit more realistic
 - handle up to 8 players
-- add some more map themese like a dungeon, forest, inside of a computer
+- add some more map themes like a dungeon, forest, inside of a computer
+- the current music is good, add some more songs that have the same theme / vibe
+- add some more arena layout styles, my ideas: cave, tunnel, add some other options too
