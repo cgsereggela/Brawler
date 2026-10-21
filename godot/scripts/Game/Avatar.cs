@@ -64,6 +64,7 @@ public partial class Avatar : CharacterBody2D
     public float ReloadFrac;     // 0..1 progress while reloading
     public float BlockActive;    // seconds of block remaining
     public float BlockCd;        // seconds until block is ready
+    public float CounterT;       // host: seconds of Riposte bonus damage left
     public Vector2 AimDir = Vector2.Right;
     public bool Frozen = true;
     public int LastHitBy = -1;   // host: who hit us last, and when (credits knock-off kills)
@@ -438,6 +439,7 @@ public partial class Avatar : CharacterBody2D
             var dir = Vector2.FromAngle(a);
             var b = BulletSystem.FromStats(Player.Slot, origin, dir * S[Stat.BulletSpeed], S);
             b.Damage *= rage;
+            if (CounterT > 0) b.Damage *= 1 + S[Stat.Counter];
             if (wild)
             {
                 // Wild Rounds: big ones are slow and hit hard, small ones are quick.
@@ -455,11 +457,20 @@ public partial class Avatar : CharacterBody2D
     {
         BlockActive = Mathf.Max(0, BlockActive - dt);
         BlockCd = Mathf.Max(0, BlockCd - dt);
+        CounterT = Mathf.Max(0, CounterT - dt);
         if (!pressed || BlockCd > 0) return;
         BlockActive = S[Stat.BlockDuration];
         BlockCd = S[Stat.BlockCooldown];
         Game.HostOnBlock(this);
         foreach (var e in Player.Effects) e.OnBlock(this, Game);
+    }
+
+    /// <summary>Host: Reactive Reload. Ends any reload and fills the magazine.</summary>
+    public void RefillAmmo()
+    {
+        Reloading = false;
+        ReloadFrac = 0;
+        Ammo = S.Int(Stat.Ammo);
     }
 
     /// <summary>Host: apply a hit. Returns false when the block absorbed it.</summary>

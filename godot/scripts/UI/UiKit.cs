@@ -199,6 +199,7 @@ public static class UiKit
         CardCategory.Gun => new Color("#ff8a3d"),
         CardCategory.Body => new Color("#4ef08a"),
         CardCategory.Movement => new Color("#3db4ff"),
+        CardCategory.Block => new Color("#ffd447"),
         _ => new Color("#c46cff"),
     };
 

@@ -226,6 +226,11 @@ public sealed class BotBrain : IInputSource
         {
             if (_rng.Randf() < 0.55f) _blocks++;
         }
+        // Shield Bash: block into an enemy that's close enough to slam.
+        else if (self.BlockReady && self.S[Stat.ShieldBash] > 0 && NearestEnemy(self) is { } close
+                 && close.GlobalPosition.DistanceTo(self.GlobalPosition) < Mathf.Max(self.HalfSize.X, self.HalfSize.Y) + GameManager.BashReach + 4
+                 && _rng.Randf() < 0.15f)
+            _blocks++;
         _trailT -= dt;
         if (_trailT <= 0)
         {

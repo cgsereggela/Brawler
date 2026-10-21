@@ -11,7 +11,7 @@ namespace Brawler.Game;
 
 public enum Phase { Idle, Countdown, Fighting, Intermission, CardPick, MatchOver }
 
-public enum FxKind { Explosion, Block, Blocked, Blink, Zap, Revive }
+public enum FxKind { Explosion, Block, Blocked, Blink, Zap, Revive, Shockwave, Bash, Counter }
 
 /// <summary>
 /// Match flow and the battle simulation. The host is authoritative: it runs every avatar, resolves hits,
@@ -448,6 +448,7 @@ public partial class GameManager : Node2D
         {
             if (victim.Alive) Stats.HitBlocked(victim.Player.Slot);
             HostBlocked(victim, at);
+            HostBlockedHit(victim, damage, at, attackerSlot, reflected);
             return;
         }
         if (victim.Hp <= 0 && victim.TryRevive())
@@ -563,7 +564,11 @@ public partial class GameManager : Node2D
         knockback *= victim.S[Stat.KnockbackTaken];
         if (!victim.TakeHit(damage, knockback))
         {
-            if (kind == HazardHit.Saw) HostBlocked(victim, at);
+            if (kind == HazardHit.Saw)
+            {
+                HostBlocked(victim, at);
+                HostBlockedHit(victim, damage, at, -1);
+            }
             return;
         }
         if (victim.Hp <= 0 && victim.TryRevive())
@@ -615,6 +620,67 @@ public partial class GameManager : Node2D
     {
         Stats.BlockUsed(a.Player.Slot);
         HostFx(FxKind.Block, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
+
+        // Shockwave: starting a block erases enemy bullets around you.
+        int slot = a.Player.Slot;
+        var pos = a.GlobalPosition;
+        float body = Mathf.Max(a.HalfSize.X, a.HalfSize.Y);
+        float wave = a.S[Stat.Shockwave];
+        if (wave > 0)
+        {
+            Bullets.HostErase(pos, body + wave, slot);
+            HostFx(FxKind.Shockwave, pos, body + wave, slot, pos);
+        }
+
+        // Shield Bash: starting a block hits and shoves enemies touching your shield.
+        float bash = a.S[Stat.ShieldBash];
+        if (bash > 0)
+        {
+            float reach = body + BashReach;
+            foreach (var e in LiveAvatars().ToList())
+            {
+                if (e == a) continue;
+                var r = e.Bounds;
+                var closest = new Vector2(Mathf.Clamp(pos.X, r.Position.X, r.End.X), Mathf.Clamp(pos.Y, r.Position.Y, r.End.Y));
+                if (closest.DistanceTo(pos) > reach) continue;
+                var dir = (e.GlobalPosition - pos).Normalized();
+                if (dir == Vector2.Zero) dir = Vector2.Up;
+                HostDamage(e, bash, dir * 330 + new Vector2(0, -90), slot, closest);
+            }
+            HostFx(FxKind.Bash, pos, reach, slot, pos);
+        }
+    }
+
+    /// <summary>How far past your body Shield Bash reaches.</summary>
+    public const float BashReach = 20f;
+    /// <summary>How long Riposte's bonus damage lasts after a blocked hit.</summary>
+    public const float CounterTime = 2f;
+
+    /// <summary>Host: a hit (bullet, blast, saw) landed on an active block. Block cards react here.</summary>
+    /// <param name="reflected">The hit was itself spike or thorns damage: no spikes back (two Spiked Shields can't loop).</param>
+    public void HostBlockedHit(Avatar a, float damage, Vector2 at, int attackerSlot, bool reflected = false)
+    {
+        if (!a.Alive) return;
+        var s = a.S;
+        var attacker = attackerSlot >= 0 && attackerSlot < Slots.Length ? Slots[attackerSlot]?.Avatar : null;
+        if (!reflected && s[Stat.BlockSpikes] > 0 && damage > 0 && attacker != null && attacker != a && attacker.Alive)
+        {
+            HostFx(FxKind.Zap, a.GlobalPosition, 0, a.Player.Slot, attacker.GlobalPosition);
+            HostDamage(attacker, damage * s[Stat.BlockSpikes], Vector2.Zero, a.Player.Slot, attacker.GlobalPosition, reflected: true);
+        }
+        if (s[Stat.BlockHeal] > 0 && damage > 0)
+        {
+            float before = a.Hp;
+            a.Heal(damage * s[Stat.BlockHeal]);
+            Stats.Healed(a.Player.Slot, a.Hp - before);
+        }
+        if (s[Stat.BlockReload] > 0) a.RefillAmmo();
+        if (s[Stat.BlockRefund] > 0) a.BlockCd = Mathf.Max(0, a.BlockCd - s[Stat.BlockCooldown] * s[Stat.BlockRefund]);
+        if (s[Stat.Counter] > 0)
+        {
+            if (a.CounterT <= 0) HostFx(FxKind.Counter, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
+            a.CounterT = CounterTime;
+        }
     }
 
     public void HostFx(FxKind kind, Vector2 pos, float value, int slot, Vector2 pos2)
@@ -1124,6 +1190,24 @@ public partial class GameManager : Node2D
                 Fx.RingFx(pos, 2, 14, Colors.White, 0.2f, 1.5f);
                 Fx.Popup(pos + new Vector2(0, -10), "BLOCKED", Colors.White, 11, 0.7f);
                 Sfx.Play("blocked");
+                break;
+            case FxKind.Shockwave:
+                Fx.RingFx(pos, 6, value, col.Lightened(0.5f), 0.32f, 2.5f);
+                Fx.RingFx(pos, 4, value * 0.7f, Colors.White, 0.22f, 1.2f, 0.04f);
+                Fx.Flash(pos, value * 0.8f, col, 0.15f);
+                Fx.Emit(pos, PKind.Dot, col.Lightened(0.4f), 12, value * 3, 0.35f, 1.2f);
+                Sfx.Play("blink", 0.6f);
+                break;
+            case FxKind.Bash:
+                Fx.RingFx(pos, 6, value + 4, Colors.White, 0.2f, 3f);
+                Fx.Emit(pos, PKind.Streak, col.Lightened(0.5f), 14, 220, 0.25f, 1.2f);
+                Fx.Flash(pos, value * 1.4f, col, 0.18f);
+                Sfx.Play("blocked", 0.9f);
+                Shake(0.22f);
+                break;
+            case FxKind.Counter:
+                Fx.Popup(pos + new Vector2(0, -20), "COUNTER!", col.Lightened(0.45f), 11, 0.8f);
+                Fx.RingFx(pos, 20, 4, col.Lightened(0.3f), 0.3f, 2f);
                 break;
             case FxKind.Blink:
                 foreach (var p in new[] { pos, pos2 })

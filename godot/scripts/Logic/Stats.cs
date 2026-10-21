@@ -63,6 +63,15 @@ public enum Stat
     Kamikaze,        // explosion radius when you die
     Pinball,         // 1 = your body bounces off surfaces
     Warp,            // 1 = you teleport to where your bullets land
+    // Block
+    Reflect,         // 1 = blocked bullets fly back at their shooter
+    BlockHeal,       // fraction of a blocked hit's damage healed
+    BlockReload,     // 1 = blocking a hit refills the magazine
+    BlockRefund,     // fraction of the block cooldown refunded per blocked hit
+    Counter,         // bonus damage for a few seconds after blocking a hit
+    ShieldBash,      // damage to enemies next to you when you start a block
+    Shockwave,       // radius in which starting a block erases enemy bullets
+    BlockSpikes,     // fraction of a blocked hit's damage dealt back to the attacker
 }
 
 public enum ModOp { Add, Mul }
@@ -162,5 +171,10 @@ public sealed class StatBlock
         b[Stat.KnockbackTaken] = Math.Clamp(b[Stat.KnockbackTaken], 0.1f, 4f);
         b[Stat.Thorns] = Math.Clamp(b[Stat.Thorns], 0, 1.5f);
         b[Stat.Lifetime] = Math.Clamp(b[Stat.Lifetime], 0.5f, 8f);
+        b[Stat.BlockHeal] = Math.Clamp(b[Stat.BlockHeal], 0, 2f);
+        b[Stat.BlockRefund] = Math.Clamp(b[Stat.BlockRefund], 0, 1f);
+        b[Stat.Counter] = Math.Clamp(b[Stat.Counter], 0, 3f);
+        b[Stat.Shockwave] = Math.Clamp(b[Stat.Shockwave], 0, 160f);
+        b[Stat.BlockSpikes] = Math.Clamp(b[Stat.BlockSpikes], 0, 3f);
     }
 }

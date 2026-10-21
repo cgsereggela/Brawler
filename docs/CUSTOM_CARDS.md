@@ -65,7 +65,7 @@ To put several cards in one file, wrap them in square brackets with commas betwe
 | `id` | yes | A whole number from **1000 to 32767**, different for every card. Numbers below 1000 belong to the built-in cards. |
 | `name` | yes | The card's title, up to 24 letters. |
 | `description` | no | The text on the card. Either one piece of text (use `\n` for a new line) or a list of lines as in the example. Up to 160 letters; about four short lines fit. The game does not write this for you, so make it match your mods. |
-| `category` | no | `Gun`, `Body`, `Movement` or `Chaos`. It sets the card's colour and icon. Default: `Chaos`. |
+| `category` | no | `Gun`, `Body`, `Movement`, `Chaos` or `Block`. It sets the card's colour and icon. Default: `Chaos`. |
 | `mods` | see below | The list of stat changes. Each one is `{ "stat": ..., "op": ..., "value": ... }`. At most 12. |
 | `effect` | no | A special behaviour that numbers alone can't do (see [Effects](#effects)). |
 
@@ -168,6 +168,14 @@ The **Base** column is what every player starts with. Speeds are in pixels per s
 | `Kamikaze` | 0 | Explosion radius when you die. |
 | `Pinball` | 0 | 1 = your body bounces off walls, floors and ceilings. |
 | `Warp` | 0 | 1 = you teleport to where your bullets land. |
+| `Reflect` | 0 | 1 = bullets you block fly back at whoever shot them. |
+| `BlockHeal` | 0 | Fraction of a blocked hit's damage that heals you (up to 2). |
+| `BlockReload` | 0 | 1 = blocking a hit refills your ammo. |
+| `BlockRefund` | 0 | Fraction of the block cooldown given back for each blocked hit (up to 1). |
+| `Counter` | 0 | Bonus damage for 2 seconds after blocking a hit. 0.6 = +60%. |
+| `ShieldBash` | 0 | Damage to enemies right next to you when you start a block (they are knocked away too). |
+| `Shockwave` | 0 | Starting a block erases enemy bullets within this many pixels (up to 160). |
+| `BlockSpikes` | 0 | Fraction of a blocked hit's damage dealt back to the attacker (up to 3). |
 
 ## Effects
 
@@ -222,7 +230,7 @@ If you build the game yourself you can also add cards in code, and add new effec
 below 1000. Never renumber existing ids; saved stats and network messages refer to them.
 
 ```csharp
-Add(70, "Pogo", "+2 mid-air jumps\n-10% HP", CardCategory.Movement,
+Add(82, "Pogo", "+2 mid-air jumps\n-10% HP", CardCategory.Movement,
     A(Stat.AirJumps, 2), M(Stat.MaxHp, 0.9f));
 ```
 

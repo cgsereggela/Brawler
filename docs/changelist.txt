@@ -1,6 +1,8 @@
 issues to fix:
+- using the jumppad should allow players to jump at any time before they hit the ground
+- the bullet counter shouldn't surround the crosshair, we should go back to smaller pips, but they should be placed at the bottom right of the crosshair in a similar way to the reload animation
 
 features to add:
-- add a pool of cards that enhance / modify the players ability to block, perhaps damage on block, more block, trading block for some other power, etc
 - the arms currently stiff lines connected to the gun, it would look better if the arm had some movement / flex when the gun moved, something a bit more realistic
 - handle up to 8 players
+- add some fun screenshots and gifs to the readme so people can see what to expect from the game

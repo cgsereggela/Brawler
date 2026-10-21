@@ -1072,5 +1072,26 @@ void Check(bool cond, string name, string detail = "")
     Check(stacks.Count == 2 && stacks[0].Card.Id == bouncy.Id && stacks[0].Count == 2, "Owned cards stack by id in pick order");
 }
 
+{
+    // Block pack: each card does what it says, and the trade-away cards really turn blocking off.
+    CardDef Named(string n) => CardRegistry.All.First(c => c.Name == n);
+    var blockCards = CardRegistry.All.Where(c => c.Category == CardCategory.Block).ToList();
+    Check(blockCards.Select(c => c.Id).OrderBy(i => i).SequenceEqual(Enumerable.Range(70, 12)), "Block cards use ids 70-81",
+        string.Join(",", blockCards.Select(c => c.Id)));
+    var refl = StatBlock.Compute([Named("Reflector")]);
+    Check(refl[Stat.Reflect] == 1 && MathF.Abs(refl[Stat.BlockCooldown] - 4.8f) < 1e-4f, "Reflector reflects for +20% block cooldown", $"{refl[Stat.BlockCooldown]}");
+    foreach (var n in new[] { "Iron Will", "All In" })
+        Check(StatBlock.Compute([Named(n)])[Stat.BlockCooldown] >= 900, $"{n} turns blocking off");
+    var guards = StatBlock.Compute(Enumerable.Repeat(Named("Quick Guard"), 5));
+    Check(guards[Stat.BlockCooldown] >= 0.6f, "Stacked Quick Guards keep the block cooldown floor", $"{guards[Stat.BlockCooldown]}");
+    var mom = StatBlock.Compute(Enumerable.Repeat(Named("Momentum"), 4));
+    Check(mom[Stat.BlockRefund] <= 1f, "Momentum refunds at most the whole cooldown", $"{mom[Stat.BlockRefund]}");
+    var wave = StatBlock.Compute(Enumerable.Repeat(Named("Shockwave"), 4));
+    Check(wave[Stat.Shockwave] <= 160f, "Shockwave radius is capped", $"{wave[Stat.Shockwave]}");
+    var lines = StatSummary.Lines(StatBlock.Compute([Named("Riposte"), Named("Absorb")]));
+    Check(lines.Any(l => l.Label == "Counter" && l.Value == "60%") && lines.Any(l => l.Label == "Block heal" && l.Value == "75%"),
+        "Block cards show in the HUD stats", string.Join(", ", lines.Select(l => $"{l.Label}={l.Value}")));
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

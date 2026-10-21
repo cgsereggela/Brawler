@@ -75,6 +75,14 @@ public static class StatSummary
         [Stat.Kamikaze] = ("Kamikaze", v => N(v, "0") + "px"),
         [Stat.Pinball] = ("Pinball", _ => "yes"),
         [Stat.Warp] = ("Warp", _ => "yes"),
+        [Stat.Reflect] = ("Reflect", _ => "yes"),
+        [Stat.BlockHeal] = ("Block heal", Pct),
+        [Stat.BlockReload] = ("Block reload", _ => "yes"),
+        [Stat.BlockRefund] = ("Block refund", Pct),
+        [Stat.Counter] = ("Counter", Pct),
+        [Stat.ShieldBash] = ("Shield bash", v => N(v, "0")),
+        [Stat.Shockwave] = ("Shockwave", v => N(v, "0") + "px"),
+        [Stat.BlockSpikes] = ("Block spikes", Pct),
     };
 
     private static readonly StatBlock Base = StatBlock.Base();

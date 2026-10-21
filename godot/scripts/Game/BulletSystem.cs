@@ -262,6 +262,8 @@ public partial class BulletSystem : Node2D
             if (a.BlockActive > 0)
             {
                 Game.HostBlocked(a, b.Pos);
+                Game.HostBlockedHit(a, b.Damage, b.Pos, b.Owner);
+                if (a.S[Stat.Reflect] > 0) HostReflect(b, a);
                 HostDestroy(b, false);
                 return;
             }
@@ -306,6 +308,33 @@ public partial class BulletSystem : Node2D
     {
         b.Dead = true;
         Game.HostBulletDestroyed(b, impact);
+    }
+
+    /// <summary>
+    /// Reflector: a copy of a blocked bullet flies back at whoever fired it (straight back if they're gone),
+    /// now owned by the blocker. It's a Child, so it never warps or kicks anyone.
+    /// </summary>
+    private void HostReflect(Bullet b, Avatar blocker)
+    {
+        var shooter = b.Owner >= 0 && b.Owner < Game.Slots.Length ? Game.Slots[b.Owner]?.Avatar : null;
+        var dir = shooter is { Alive: true } && shooter != blocker ? (shooter.GlobalPosition - b.Pos).Normalized() : -b.Vel.Normalized();
+        if (dir == Vector2.Zero) dir = Vector2.Up;
+        var r = new Bullet
+        {
+            Owner = blocker.Player.Slot, Pos = b.Pos, Vel = dir * Mathf.Max(260, b.Vel.Length()),
+            Radius = b.Radius, Gravity = b.Gravity, Damage = b.Damage, Homing = b.Homing, Explosion = b.Explosion,
+            Knockback = b.Knockback, Life = Mathf.Max(1.5f, b.Life - b.Age), Bounces = b.Bounces, Pierce = b.Pierce,
+            Split = b.Split, Phase = b.Phase, Child = true,
+        };
+        r.Hit.Add(blocker.Player.Slot);
+        Game.HostSpawnBullet(r, queued: true);
+    }
+
+    /// <summary>Host: Shockwave. Destroys every bullet not owned by <paramref name="keepOwner"/> within the radius.</summary>
+    public void HostErase(Vector2 at, float radius, int keepOwner)
+    {
+        foreach (var b in Bullets)
+            if (!b.Dead && b.Owner != keepOwner && b.Pos.DistanceTo(at) <= radius + b.Radius) HostDestroy(b, false);
     }
 
     /// <summary>Bullets spawned during Step are queued so the list isn't modified mid-iteration.</summary>

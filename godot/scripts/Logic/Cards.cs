@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Brawler.Logic;
 
-public enum CardCategory { Gun, Body, Movement, Chaos }
+public enum CardCategory { Gun, Body, Movement, Chaos, Block }
 
 /// <summary>
 /// A card is a list of stat modifiers plus an optional effect id.
@@ -173,6 +173,32 @@ public static class CardRegistry
             A(Stat.Guided, 9));
         Add(69, "Leech Field", "Drain 30 HP/s from enemies\nclose to you\n-30% damage", CardCategory.Chaos,
             A(Stat.Leech, 30), M(Stat.Damage, 0.7f));
+
+        // ---------- Block: these change what your block does, or trade it away ----------
+        Add(70, "Reflector", "Blocked bullets fly\nback at the shooter\n+20% block cooldown", CardCategory.Block,
+            A(Stat.Reflect, 1), M(Stat.BlockCooldown, 1.2f));
+        Add(71, "Shield Bash", "Blocking hits nearby\nenemies for 30 and\nknocks them back", CardCategory.Block,
+            A(Stat.ShieldBash, 30));
+        Add(72, "Bulwark", "+100% block duration\n+15% block cooldown", CardCategory.Block,
+            M(Stat.BlockDuration, 2f), M(Stat.BlockCooldown, 1.15f));
+        Add(73, "Quick Guard", "-40% block cooldown\n-25% block duration", CardCategory.Block,
+            M(Stat.BlockCooldown, 0.6f), M(Stat.BlockDuration, 0.75f));
+        Add(74, "Riposte", "After a blocked hit\n+60% damage for 2 s", CardCategory.Block,
+            A(Stat.Counter, 0.6f));
+        Add(75, "Absorb", "Blocked hits heal\n75% of their damage\n-10% HP", CardCategory.Block,
+            A(Stat.BlockHeal, 0.75f), M(Stat.MaxHp, 0.9f));
+        Add(76, "Reactive Reload", "Blocking a hit refills\nyour ammo\n-10% reload time", CardCategory.Block,
+            A(Stat.BlockReload, 1), M(Stat.ReloadTime, 0.9f));
+        Add(77, "Momentum", "Blocked hits refund\nhalf your block\ncooldown", CardCategory.Block,
+            A(Stat.BlockRefund, 0.5f));
+        Add(78, "Shockwave", "Blocking erases\nnearby enemy bullets\n+10% block cooldown", CardCategory.Block,
+            A(Stat.Shockwave, 60), M(Stat.BlockCooldown, 1.1f));
+        Add(79, "Iron Will", "Cannot block\n+35 HP\nTake 10% less damage", CardCategory.Block,
+            A(Stat.BlockCooldown, 999), A(Stat.MaxHp, 35), A(Stat.Armor, 0.1f));
+        Add(80, "All In", "Cannot block\n+30% damage\n-20% fire cooldown", CardCategory.Block,
+            A(Stat.BlockCooldown, 999), M(Stat.Damage, 1.3f), M(Stat.FireCooldown, 0.8f));
+        Add(81, "Spiked Shield", "Blocked hits deal\nfull damage back\nto the attacker", CardCategory.Block,
+            A(Stat.BlockSpikes, 1));
 
         BuiltInCount = All.Count;
     }

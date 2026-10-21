@@ -246,6 +246,36 @@ public partial class CardView : Control
                     DrawLine(c + new Vector2(-24, -7 + i * 7 + hop), c + new Vector2(-14 + (i % 2) * 3, -7 + i * 7 + hop), ink with { A = 0.5f }, 2f, true);
                 break;
             }
+            case CardCategory.Block:
+            {
+                // A shield with a gentle sway and a glint across it.
+                float sway = Mathf.Sin(_t * 2) * 0.08f;
+                var shield = new List<Vector2>();
+                for (int i = 0; i <= 12; i++)
+                {
+                    float x = -13 + 26 * i / 12f;
+                    shield.Add(new Vector2(x, -13 + 2.5f * (1 - Mathf.Pow(x / 13, 2))));
+                }
+                for (int i = 1; i < 12; i++)
+                {
+                    float k = i / 12f;
+                    shield.Add(new Vector2(13 * (1 - k) * Mathf.Cos(k * 0.9f), -2 + 17 * Mathf.Sin(k * Mathf.Pi / 2)));
+                }
+                shield.Add(new Vector2(0, 15));
+                for (int i = 11; i >= 1; i--)
+                {
+                    float k = i / 12f;
+                    shield.Add(new Vector2(-13 * (1 - k) * Mathf.Cos(k * 0.9f), -2 + 17 * Mathf.Sin(k * Mathf.Pi / 2)));
+                }
+                var pts = shield.Select(p => c + p.Rotated(sway)).ToArray();
+                DrawColoredPolygon(Shapes.Offset(pts, new Vector2(2, 2)), shadow);
+                DrawColoredPolygon(pts, ink);
+                var boss = c + new Vector2(0, 0).Rotated(sway);
+                DrawLine(c + new Vector2(0, -11).Rotated(sway), c + new Vector2(0, 12).Rotated(sway), col with { A = 0.7f }, 2.5f, true);
+                DrawCircle(boss, 4, col, true, -1, true);
+                DrawCircle(boss + new Vector2(-1.2f, -1.2f), 1.4f, col.Lightened(0.7f), true, -1, true);
+                break;
+            }
             default:
                 DrawColoredPolygon(Shapes.Star(c + new Vector2(2, 2), 17, 7, 5, spin - Mathf.Pi / 2), shadow);
                 DrawColoredPolygon(Shapes.Star(c, 17, 7, 5, spin - Mathf.Pi / 2), ink);

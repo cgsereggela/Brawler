@@ -72,11 +72,12 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 - Each battle gets a newly generated arena.
 
 ## Cards
-There are 69 cards in four categories. Strong cards come with a tradeoff (less damage, HP, ammo, speed, ...). The full list with exact numbers is in `godot/scripts/Logic/Cards.cs`.
+There are 81 cards in five categories. Strong cards come with a tradeoff (less damage, HP, ammo, speed, ...). The full list with exact numbers is in `godot/scripts/Logic/Cards.cs`.
 - **Gun** (orange): more, bigger, faster or slower bullets. For example Sniper, Minigun, Twin Shot, Hail Storm, Cannonball, Needles, Ricochet, plus the originals (Bouncy, Big Bullet, Pierce, Splitter, Homing, Explosive, Shotgun, Burst, ...).
 - **Body** (green): size and toughness. Giant (huge, tanky, very slow), Tiny (small, fast, fragile), Armor Plating, Regeneration, Anchor, Rubber Body, Juggernaut, Second Wind (one revive per battle), Thorns, Adrenaline, ...
 - **Movement** (blue): Double Jump, Cloud Walker, Spring Legs, Rocket Boots, Sprinter, Afterburner, Traction, Ice Skates, Glider (hold jump), Wall Runner, Parkour, Dash (on block), Jetpack (jump in mid-air and hold), Feather, Speedy.
 - **Chaos** (purple): cards that change how you play. Bullet Hell (a ring of 12 bullets), Upside Down (bullets fall up), Boomerang, Ghost Rounds (through walls), Kamikaze, Recoil Jet (shooting propels you), Warp Rounds (teleport to where your bullets land), Sticky Mines, Chain Lightning, Berserk, One Shot, Wild Rounds, Pinball (you bounce off surfaces), Mind Control (bullets follow your crosshair), Leech Field, plus Vampire, Blink and Glass Cannon.
+- **Block** (gold): cards that change what your block does, or trade it away. Reflector (blocked bullets fly back at the shooter), Shield Bash (blocking slams enemies next to you), Shockwave (blocking erases nearby enemy bullets), Spiked Shield, Absorb (blocked hits heal you), Riposte (bonus damage after a block), Reactive Reload, Momentum (blocked hits refund cooldown), Bulwark, Quick Guard, plus Iron Will and All In, which give up blocking for HP or damage.
 
 ## Arenas
 - The arena is 1000×562 (`MapLayout.Width/Height`). Each battle's seed picks a **layout style**:
@@ -161,7 +162,7 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 **Built in, from source:**
 1. Add a line to `CardRegistry` in `godot/scripts/Logic/Cards.cs`:
    ```csharp
-   Add(70, "Longshot", "+80% bullet speed\n+30% damage\n+50% fire cooldown", CardCategory.Gun,
+   Add(82, "Longshot", "+80% bullet speed\n+30% damage\n+50% fire cooldown", CardCategory.Gun,
        M(Stat.BulletSpeed, 1.8f), M(Stat.Damage, 1.3f), M(Stat.FireCooldown, 1.5f));
    ```
    `A(...)` adds and `M(...)` multiplies. Adds always apply before multipliers, so pick order doesn't matter.
