@@ -57,10 +57,12 @@ public static class AvatarArt
     // Top of each hair style and hat in sprite space, for placing the HP bar.
     private static readonly float[] HairTop = { -9.5f, -11.3f, -16.2f, -16.4f, -11.5f, -11.8f, -11.3f, -18.8f };
     private static readonly float[] HatTop = { -9.5f, -14.6f, -21.6f, -18.5f, -17.7f, -22f, -9.5f, -19f, -17.4f, -16.4f, -22.6f };
+    // How far each hat sits below where it is drawn, so it is worn over the top of the mask rather than perched on it.
+    private static readonly float[] HatDrop = { 0, 2.2f, 2.2f, 2f, 2.2f, 2.2f, 1.2f, 2f, 1f, 2.2f, 2.2f };
 
     /// <summary>Topmost point used by this look (hair and hat), for placing the HP bar.</summary>
     public static float TopY(Appearance look)
-        => Mathf.Min(HairTop[Math.Clamp(look.Hair, 0, HairTop.Length - 1)], HatTop[Math.Clamp(look.Hat, 0, HatTop.Length - 1)]);
+        => Mathf.Min(HairTop[Math.Clamp(look.Hair, 0, HairTop.Length - 1)], HatTop[Math.Clamp(look.Hat, 0, HatTop.Length - 1)] + HatDrop[Math.Clamp(look.Hat, 0, HatDrop.Length - 1)]);
 
     /// <summary>
     /// Muzzle position relative to the body center, matching what Draw renders with no recoil. The geometry lives in
@@ -139,7 +141,10 @@ public static class AvatarArt
         DrawNose(c, look.Nose);
         DrawMouth(c, look.Mouth, bodyOrigin, scale);
         DrawHair(c, look.Hair);
+        // Hats are drawn with their brim on the crown; HatDrop pulls each one down so it fits over the mask.
+        ci.DrawSetTransform(bodyOrigin + new Vector2(0, HatDrop[Math.Clamp(look.Hat, 0, HatDrop.Length - 1)] * s), 0, scale);
         DrawHat(c, look.Hat);
+        ci.DrawSetTransform(bodyOrigin, 0, scale);
 
         if (p.Gun) DrawGun(c, bodyOrigin, s, facing);
         ci.DrawSetTransformMatrix(Transform2D.Identity);
