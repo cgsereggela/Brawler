@@ -1,4 +1,3 @@
 issues to fix:
 
 features to add:
-- the current music is good, add some more songs that have the same theme / vibe

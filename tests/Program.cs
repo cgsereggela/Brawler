@@ -439,7 +439,7 @@ void Check(bool cond, string name, string detail = "")
     Check(sfxOk, "Every sound effect renders finite, unclipped and audible", string.Join("; ", detail));
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
-    foreach (var song in new[] { Brawler.Logic.Synth.MusicGen.Lobby(), Brawler.Logic.Synth.MusicGen.Battle() })
+    foreach (var song in Brawler.Logic.Synth.MusicGen.All())
     {
         var buf = Brawler.Logic.Synth.MusicGen.Render(song);
         var (p, rms, finite) = Measure(buf);
