@@ -118,7 +118,7 @@ void Check(bool cond, string name, string detail = "")
     Check(same, "Same seed produces identical map");
 
     int seeds = 3000;
-    foreach (int players in new[] { 2, 3, 4 })
+    foreach (int players in new[] { 2, 3, 4, 5, 6, 7, 8 })
     {
         int fallbacks = 0, totalAttempts = 0, maxAttempts = 0, bad = 0;
         for (int s = 0; s < seeds; s++)
@@ -902,7 +902,7 @@ void Check(bool cond, string name, string detail = "")
     // Everything solid a body can stand on or bonk into: solids, mover lanes (their whole travel) and glass.
     int seeds = 2000, fallbacks = 0, pairs = 0, bad = 0, minGap = int.MaxValue;
     var why = new List<string>();
-    foreach (int players in new[] { 2, 3, 4 })
+    foreach (int players in new[] { 2, 3, 4, 5, 6, 7, 8 })
         for (int s = 0; s < seeds; s++)
         {
             int seed = s * 6151 + players * 17;

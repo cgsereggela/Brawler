@@ -1,6 +1,5 @@
 issues to fix:
 
 features to add:
-- handle up to 8 players
 - the current music is good, add some more songs that have the same theme / vibe
 - need a streamer mode that doesn't expose the persons IP but still allows people to share / join their friends lobbies

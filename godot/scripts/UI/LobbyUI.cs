@@ -15,7 +15,7 @@ public partial class LobbyUI : Control
     private Label _info, _internet;
     private Button _copy;
     private HBoxContainer _inviteRow;
-    private HBoxContainer _players;
+    private GridContainer _players;
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
@@ -43,8 +43,10 @@ public partial class LobbyUI : Control
         _inviteRow.AddChild(_copy);
         body.AddChild(_inviteRow);
 
-        _players = UiKit.HBox(8);
-        _players.Alignment = BoxContainer.AlignmentMode.Center;
+        _players = new GridContainer { Columns = 4 };
+        _players.AddThemeConstantOverride("h_separation", 8);
+        _players.AddThemeConstantOverride("v_separation", 8);
+        _players.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
         body.AddChild(_players);
 
 
@@ -174,7 +176,7 @@ public partial class LobbyUI : Control
     /// <summary>One player slot: a little glass card with the character on a pedestal.</summary>
     private Control SlotCard(PlayerInfo p, bool host)
     {
-        var card = new PanelContainer { CustomMinimumSize = new Vector2(122, 132) };
+        var card = new PanelContainer { CustomMinimumSize = new Vector2(122, 112) };
         var box = new StyleBoxFlat
         {
             BgColor = p == null ? new Color(1, 1, 1, 0.03f) : Palette.Player(p.ColorIdx) with { A = 0.14f },
@@ -194,7 +196,7 @@ public partial class LobbyUI : Control
             v.AddChild(empty);
             return card;
         }
-        var preview = new AvatarPreview(p.Look, p.ColorIdx, 2.6f, alive: p.PeerId == _net.LocalPeer && !p.IsBot) { ShowGun = false, Pedestal = true };
+        var preview = new AvatarPreview(p.Look, p.ColorIdx, 2.1f, alive: p.PeerId == _net.LocalPeer && !p.IsBot) { ShowGun = false, Pedestal = true };
         var pc = new CenterContainer();
         pc.AddChild(preview);
         v.AddChild(pc);

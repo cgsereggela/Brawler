@@ -97,6 +97,12 @@ public static class MapGenerator
     public const int MaxGapFalling = 130;
     public const int Headroom = 26;
     public const int MinSpawnDistance = 220;
+
+    /// <summary>
+    /// How far apart spawns must be. Up to four players get the full <see cref="MinSpawnDistance"/>; past that the
+    /// arena can't fit everyone that far apart, so each extra player shaves some off (eight players: 140 px).
+    /// </summary>
+    public static int SpawnDistance(int playerCount) => MinSpawnDistance - Math.Max(0, playerCount - 4) * 20;
     public const int TierSpacing = 50;
     /// <summary>
     /// Least clear air between the bottom of anything solid (platforms, movers, glass, the ceiling) and the top of
@@ -652,6 +658,7 @@ public static class MapGenerator
         }
         if (candidates.Count < playerCount) return false;
 
+        int minD = SpawnDistance(playerCount);
         for (int tries = 0; tries < 40; tries++)
         {
             map.Spawns.Clear();
@@ -665,7 +672,7 @@ public static class MapGenerator
                 foreach (var o in map.Spawns)
                 {
                     int dx = o.X - sp.X, dy = o.Y - sp.Y;
-                    if (dx * dx + dy * dy < MinSpawnDistance * MinSpawnDistance) { farEnough = false; break; }
+                    if (dx * dx + dy * dy < minD * minD) { farEnough = false; break; }
                 }
                 if (farEnough) map.Spawns.Add(sp);
             }
@@ -932,7 +939,7 @@ public static class MapGenerator
         };
         map.Solids.AddRange(plats);
         BuildSurfaces(map, new List<(int, int)> { (Wall, Width - Wall) }, plats);
-        int[] xs = { 110, 890, 330, 670 };
+        int[] xs = { 110, 890, 330, 670, 220, 780, 440, 560 };
         for (int i = 0; i < playerCount; i++) map.Spawns.Add(new SpawnPoint(xs[i % xs.Length], FloorY));
         return map;
     }

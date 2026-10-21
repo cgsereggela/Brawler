@@ -55,7 +55,7 @@ public sealed class MatchSettings
 
 public sealed class LobbyState
 {
-    public const int MaxPlayers = 4;
+    public const int MaxPlayers = 8;
     public readonly List<PlayerInfo> Players = new();
     public MatchSettings Settings = new();
 

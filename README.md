@@ -1,6 +1,6 @@
 # Brawler
 
-A ROUNDS-style 2–4 player platform shooter: lose a round, pick a card, come back stronger.
+A ROUNDS-style 2–8 player platform shooter: lose a round, pick a card, come back stronger.
 Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
 <p align="center"><img src="docs/media/chaos.gif" alt="Four players trading homing, bouncing and exploding shots late in a match" width="720"></p>
@@ -77,6 +77,7 @@ Output goes to `dist/Brawler-<version>-<platform>.zip`. Pass `-Platforms windows
 When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in `Brawler.csproj` together.
 
 ## Rules
+- Up to **8 players**, humans and bots in any mix. With five or more, spawns sit a little closer together (`MapGenerator.SpawnDistance`), the HUD switches to compact player chips, and the match-over standings use two columns.
 - A **battle** ends when one player is left standing. Win *N battles* to take a **round**, and win *M rounds* to take the **match**. Both numbers are set in the lobby.
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - The host picks which cards can come up: **Cards** in the lobby opens the card pool, where cards can be switched off one by one or per category (at least 7 stay in). Everyone else can open it to see the pool. The host's choice is saved in the `[cards]` section of `settings.cfg`.
@@ -206,7 +207,7 @@ The host records every match to a log so card balance can be tuned from data ins
 **Generate data with bots.** A 4-player match takes about 5 seconds headless:
 ```bash
 GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
-"$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=200            # 2–4 players per match
+"$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=200            # 2–8 players per match
 "$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=200 --players=4
 ```
 
@@ -232,7 +233,7 @@ Covers RNG determinism, stat stacking order, card registry (12+ cards per catego
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
 GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
-"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest          # offline, 4 players
+"$GODOT" --headless --path godot --fixed-fps 60 -- --autotest          # offline, 4 players (--players=8 for eight)
 "$GODOT" --headless --path godot -- --autohost=24600 &                 # networked: host + bot...
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots

@@ -52,50 +52,30 @@ public partial class HudUI : Control
         var s = _game.Settings;
         var bold = Fonts.Bold;
 
-        // Player chips across the top.
-        float x = 10;
+        // Player chips across the top. They're laid out full size first; if that would run into the battle counter
+        // (five or more players), every chip goes compact: smaller head, names clipped, tighter pips.
         _chips.Clear();
-        foreach (var p in _game.Slots)
+        var widths = new System.Collections.Generic.List<(MatchPlayer P, float W)>();
+        bool compact = false;
+        for (int pass = 0; pass < 2; pass++)
         {
-            if (p == null) continue;
-            var col = p.Left ? Palette.TextDim : p.Color;
-            float nameW = bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 13).X;
-            float pipsW = s.RoundsToWin * 9;
-            float w = 44 + Mathf.Max(nameW, pipsW) + 14 + (p.Cards.Count > 0 ? 12 : 0);
-            var chip = new Rect2(x, 8, w, 38);
-            _chips.Add((chip, p));
-            DrawColoredPolygon(Shapes.RoundRect(chip, 12, 6), new Color(0.06f, 0.03f, 0.13f, 0.72f));
-            DrawColoredPolygon(Shapes.RoundRect(new Rect2(chip.Position, new Vector2(38, 38)), 12, 6), col with { A = 0.3f });
-            Shapes.DrawClosed(this, Shapes.RoundRect(chip, 12, 6), col with { A = 0.55f }, 1f);
-
-            // Mini character head.
-            AvatarArt.Draw(this, chip.Position + new Vector2(19, 27), new AvatarPose
+            widths.Clear();
+            float total = 10;
+            foreach (var p in _game.Slots)
             {
-                Body = col, Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = 1.15f, Time = _t, Grounded = true,
-            });
-
-            float tx = chip.Position.X + 44;
-            DrawString(bold, new Vector2(tx, 23), p.Info.Name, HorizontalAlignment.Left, -1, 13, p.Left ? Palette.TextDim : Colors.White);
-            for (int i = 0; i < s.RoundsToWin; i++)
-            {
-                var c = new Vector2(tx + 3.5f + i * 9, 32);
-                if (i < p.RoundWins)
-                {
-                    DrawCircle(c, 3.6f, Shapes.Hdr(col.Lightened(0.15f), 1.15f), true, -1, true);
-                    DrawCircle(c + new Vector2(-1, -1), 1.1f, new Color(1, 1, 1, 0.7f), true, -1, true);
-                }
-                else DrawCircle(c, 3.4f, new Color(1, 1, 1, 0.14f), true, -1, true);
+                if (p == null) continue;
+                float w = ChipWidth(p, compact);
+                widths.Add((p, w));
+                total += w + (compact ? 5 : 8);
             }
-            for (int i = 0; i < s.BattlesPerRound; i++)
-                DrawCircle(new Vector2(tx + 2 + i * 6, 40), 1.7f, i < p.BattleWins ? Colors.White : new Color(1, 1, 1, 0.18f), true, -1, true);
-            if (p.Cards.Count > 0)
-            {
-                string cards = p.Cards.Count.ToString();
-                var badge = new Rect2(chip.End.X - 20, chip.Position.Y - 4, 22, 15);
-                Pill(badge, Palette.Accent);
-                DrawString(Fonts.Heavy, badge.Position + new Vector2(0, 12), cards, HorizontalAlignment.Center, badge.Size.X, 11, new Color(0.15f, 0.08f, 0.02f));
-            }
-            x += w + 8;
+            if (compact || total <= vs.X - 130) break;
+            compact = true;
+        }
+        float x = 10;
+        foreach (var (p, w) in widths)
+        {
+            DrawChip(p, new Rect2(x, 8, w, compact ? 34 : 38), compact);
+            x += w + (compact ? 5 : 8);
         }
 
         // Battle counter.
@@ -128,6 +108,82 @@ public partial class HudUI : Control
                 DrawString(bold, r.Position + new Vector2(16, 13), c.Name, HorizontalAlignment.Left, -1, 11, Palette.Text);
                 bx += w + 5;
             }
+        }
+    }
+
+    private const float CompactName = 50; // compact chips clip names to this width
+
+    private float ChipWidth(MatchPlayer p, bool compact)
+    {
+        var s = _game.Settings;
+        float badge = p.Cards.Count > 0 ? (compact ? 10 : 12) : 0;
+        if (!compact)
+            return 44 + Mathf.Max(Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 13).X, s.RoundsToWin * 9) + 14 + badge;
+        float nameW = Mathf.Min(CompactName, Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 11).X);
+        return 35 + Mathf.Max(nameW, PipStep(true) * s.RoundsToWin) + 8 + badge;
+    }
+
+    /// <summary>The name cut down with an ellipsis until it fits in <paramref name="width"/>.</summary>
+    private static string Fit(string name, float width, int size)
+    {
+        var font = Fonts.Bold;
+        if (font.GetStringSize(name, HorizontalAlignment.Left, -1, size).X <= width) return name;
+        for (int n = name.Length - 1; n > 0; n--)
+        {
+            string s = name[..n].TrimEnd() + "…";
+            if (font.GetStringSize(s, HorizontalAlignment.Left, -1, size).X <= width) return s;
+        }
+        return "…";
+    }
+
+    /// <summary>Spacing of the round-win pips; compact chips squeeze long matches into the name's width.</summary>
+    private float PipStep(bool compact) => compact ? Mathf.Min(6, CompactName / Mathf.Max(1, _game.Settings.RoundsToWin)) : 9;
+
+    /// <summary>One player chip: a head, the name, round-win pips with battle-win dots under them, and a card count.</summary>
+    private void DrawChip(MatchPlayer p, Rect2 chip, bool compact)
+    {
+        var s = _game.Settings;
+        var bold = Fonts.Bold;
+        _chips.Add((chip, p));
+        var col = p.Left ? Palette.TextDim : p.Color;
+        float head = chip.Size.Y, radius = compact ? 11 : 12;
+        DrawColoredPolygon(Shapes.RoundRect(chip, radius, 6), new Color(0.06f, 0.03f, 0.13f, 0.72f));
+        DrawColoredPolygon(Shapes.RoundRect(new Rect2(chip.Position, new Vector2(head, head)), radius, 6), col with { A = 0.3f });
+        Shapes.DrawClosed(this, Shapes.RoundRect(chip, radius, 6), col with { A = 0.55f }, 1f);
+
+        // Mini character head.
+        AvatarArt.Draw(this, chip.Position + (compact ? new Vector2(17, 25) : new Vector2(19, 27)), new AvatarPose
+        {
+            Body = col, Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = compact ? 1f : 1.15f, Time = _t, Grounded = true,
+        });
+
+        float tx = chip.Position.X + (compact ? 38 : 44), y0 = chip.Position.Y;
+        var nameCol = p.Left ? Palette.TextDim : Colors.White;
+        if (compact) DrawString(bold, new Vector2(tx, y0 + 13), Fit(p.Info.Name, CompactName, 11), HorizontalAlignment.Left, -1, 11, nameCol);
+        else DrawString(bold, new Vector2(tx, y0 + 15), p.Info.Name, HorizontalAlignment.Left, -1, 13, nameCol);
+        float step = PipStep(compact), pipR = compact ? Mathf.Min(2.7f, step * 0.45f) : 3.6f;
+        float pipY = y0 + (compact ? 21 : 24);
+        for (int i = 0; i < s.RoundsToWin; i++)
+        {
+            var c = new Vector2(tx + pipR + i * step, pipY);
+            if (i < p.RoundWins)
+            {
+                DrawCircle(c, pipR, Shapes.Hdr(col.Lightened(0.15f), 1.15f), true, -1, true);
+                DrawCircle(c + new Vector2(-1, -1) * pipR / 3.6f, 1.1f * pipR / 3.6f, new Color(1, 1, 1, 0.7f), true, -1, true);
+            }
+            else DrawCircle(c, pipR * 0.94f, new Color(1, 1, 1, 0.14f), true, -1, true);
+        }
+        float dotStep = compact ? 5 : 6;
+        for (int i = 0; i < s.BattlesPerRound; i++)
+            DrawCircle(new Vector2(tx + 2 + i * dotStep, y0 + (compact ? 28 : 32)), compact ? 1.5f : 1.7f,
+                i < p.BattleWins ? Colors.White : new Color(1, 1, 1, 0.18f), true, -1, true);
+        if (p.Cards.Count > 0)
+        {
+            string cards = p.Cards.Count.ToString();
+            var badge = compact ? new Rect2(chip.End.X - 17, y0 - 4, 19, 13) : new Rect2(chip.End.X - 20, y0 - 4, 22, 15);
+            Pill(badge, Palette.Accent);
+            DrawString(Fonts.Heavy, badge.Position + new Vector2(0, compact ? 10.5f : 12), cards, HorizontalAlignment.Center, badge.Size.X,
+                compact ? 10 : 11, new Color(0.15f, 0.08f, 0.02f));
         }
     }
 

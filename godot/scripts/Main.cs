@@ -13,13 +13,14 @@ namespace Brawler;
 /// Root of the game. Builds every system in code and switches between screens.
 ///
 /// Automated test modes (pass after "--" on the command line):
-///   --autotest            offline match, local player + 3 bots all on autopilot; exits 0 when the match ends
+///   --autotest            offline match, local player + 3 bots (--players=N: N players) on autopilot; exits 0 when the match ends
 ///   --autohost[=port]     host a LAN game with 1 bot, autopilot, start once a client joins
 ///   --autojoin[=ip:port]  join a LAN game on autopilot
 ///                         (all three take some cards out of the pool and fail if a pick offers one; the joiner also
 ///                         checks it received the host's disabled list)
-///   --simulate=N          play N bot-only matches back to back (2–4 players) to fill the card stats log; exits 0
-///   --players=A[-B]       player count (or range) per simulated match, default 2-4
+///   --simulate=N          play N bot-only matches back to back (2–8 players) to fill the card stats log; exits 0
+///   --players=A[-B]       player count (or range) per simulated match, default 2-8; the screenshot modes and --autotest
+///                         take the top of it as their player count (default 4)
 ///   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
 ///   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
@@ -326,6 +327,7 @@ public partial class Main : Node
             else if (a.StartsWith("--players="))
             {
                 var r = a["--players=".Length..].Split('-');
+                _playersArg = true;
                 if (int.TryParse(r[0], out int lo)) _simMin = _simMax = lo;
                 if (r.Length > 1 && int.TryParse(r[1], out int hi)) _simMax = hi;
                 _simMin = Mathf.Clamp(_simMin, 2, LobbyState.MaxPlayers);
@@ -350,9 +352,7 @@ public partial class Main : Node
                 _game.DisableHitStop = true;
                 _net.LocalName = "Auto";
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3, DisabledCards = new(AutoDisabled) });
                 var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
                 if (!roundTrip.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: lobby round trip gave [{string.Join(",", roundTrip)}]"); return; }
@@ -405,9 +405,7 @@ public partial class Main : Node
                 _game.DisableHitStop = true;
                 DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
                 _game.HostStartMatch();
                 var tree = GetTree();
@@ -473,9 +471,7 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
                 _game.HostStartMatch();
                 var seeds = Enumerable.Range(1, 400)
@@ -500,9 +496,7 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 99, RoundsToWin = 9 });
                 _game.HostStartMatch();
                 var seeds = System.Enum.GetValues<MapStyle>()
@@ -521,21 +515,19 @@ public partial class Main : Node
             }
             else if (a == "--hudshots" && _shotDir != null)
             {
-                // A battle with 4 players holding cards (use --cards=), opening each player chip's hover card in turn.
+                // A battle with 4 players (or --players=) holding cards (use --cards=), opening each player chip's hover card in turn.
                 _autoMode = "arena";
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
                 _game.HostStartMatch();
                 var tree = GetTree();
                 int k = 0;
                 void Next()
                 {
-                    if (k >= 4) { tree.Quit(0); return; }
+                    if (k >= _net.Lobby.Players.Count) { tree.Quit(0); return; }
                     _hud.DebugHover = k++;
                     tree.CreateTimer(0.3, true, false, true).Timeout += () => { SaveShot(); Next(); };
                 }
@@ -548,9 +540,7 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _game.DisableHitStop = true;
                 _net.StartOffline();
-                _net.AddBot();
-                _net.AddBot();
-                _net.AddBot();
+                AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
                 _game.HostStartMatch();
                 var maps = Enumerable.Range(1, 600).Select(s => (Seed: s, M: MapGenerator.Generate(s, 4))).Where(x => x.M.Slopes.Count > 0).ToList();
@@ -580,7 +570,7 @@ public partial class Main : Node
                 _game.AutopilotLocal = true;
                 _pick.ShowAutopilotPick = true;
                 var rng = new Rng((ulong)System.DateTime.Now.Ticks);
-                var names = FunNames.Pick(rng, 4);
+                var names = FunNames.Pick(rng, _playersArg ? _simMax : 4);
                 _net.LocalName = names[0];
                 _net.LocalLook = Appearance.Random(rng);
                 _net.StartOffline();
@@ -799,9 +789,7 @@ public partial class Main : Node
                     () =>
                     {
                         _net.StartOffline();
-                        _net.AddBot();
-                        _net.AddBot();
-                        _net.AddBot();
+                        AddTestBots();
                         Show(_lobby);
                     },
                     () =>
@@ -849,6 +837,11 @@ public partial class Main : Node
     // ---------- --simulate: bot-only matches for the card stats log ----------
 
     private int _simTotal, _simDone, _simMin = 2, _simMax = LobbyState.MaxPlayers;
+    private bool _playersArg; // --players= given: also sets how many play in --autotest, --hudshots and the --menushots lobby
+
+    /// <summary>Bots to add beside the local player in the test modes that take --players= (default four players).</summary>
+    private void AddTestBots() { for (int i = 1; i < (_playersArg ? _simMax : 4); i++) _net.AddBot(); }
+
     private readonly Rng _simRng = new((ulong)System.DateTime.Now.Ticks);
     private readonly System.Diagnostics.Stopwatch _simClock = new();
     private long _battleFrames;
