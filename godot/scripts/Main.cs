@@ -41,6 +41,7 @@ namespace Brawler;
 ///                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
 ///                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
 ///                         you fight (not under the overlay or the card pick)
+///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
 {
@@ -164,7 +165,9 @@ public partial class Main : Node
         _menu.JoinLan += () =>
         {
             SaveProfile();
-            var (host, port) = NetAddress.Parse(_menu.AddressEdit.Text, _menu.Port);
+            // A streamer-mode invite code carries its own address and port.
+            var (host, port) = InviteCode.TryDecode(_menu.AddressEdit.Text, out var codeHost, out var codePort)
+                ? (codeHost, codePort) : NetAddress.Parse(_menu.AddressEdit.Text, _menu.Port);
             Profile.SaveLastAddress(_menu.AddressEdit.Text.Trim());
             _net.Join(host, port);
         };
@@ -319,6 +322,7 @@ public partial class Main : Node
         foreach (var a in args)
         {
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
+            else if (a == "--streamer") StreamerMode.SetForRun(true);
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
@@ -814,6 +818,13 @@ public partial class Main : Node
                         _net.AddBot();
                         Show(_lobby);
                     },
+                    () =>
+                    {
+                        // The Online tab, with the lobby still hosting behind it.
+                        OpenOptions(_lobby);
+                        foreach (var t in _options.FindChildren("*", "TabContainer", true, false).OfType<TabContainer>()) t.CurrentTab = 3;
+                    },
+                    () => { Show(_lobby); Log.Info($"MENUSHOTS copy button: {_lobby.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text.StartsWith("Copy"))?.Text}"); },
                     () => { _net.Leave(); Show(_menu); },
                 };
                 foreach (var part in Appearance.Editable)

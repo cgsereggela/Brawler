@@ -89,6 +89,7 @@ public partial class LobbyUI : Control
 
         _net.LobbyChanged += Refresh;
         _net.PortsChanged += Refresh;
+        StreamerMode.Changed += Refresh;
         Refresh();
     }
 
@@ -96,6 +97,7 @@ public partial class LobbyUI : Control
     {
         _net.LobbyChanged -= Refresh;
         _net.PortsChanged -= Refresh;
+        StreamerMode.Changed -= Refresh;
     }
 
     /// <summary>Opens or closes the card pool panel (the Cards button opens it too).</summary>
@@ -119,19 +121,30 @@ public partial class LobbyUI : Control
             PortState.Working => ("Internet: asking your router to open the port...", Palette.TextDim),
             PortState.Opened when ports.BehindCgnat =>
                 ($"Internet: your ISP shares your public address (CGNAT), so friends can't reach you directly. Use Tailscale or ZeroTier ({Guide}).", warn),
+            PortState.Opened when ports.PublicIp != "" && StreamerMode.On =>
+                ($"Internet: port {port} opened automatically. Address hidden (streamer mode): Copy gives an invite code to send privately.", Palette.Cool.Lightened(0.2f)),
             PortState.Opened when ports.PublicIp != "" =>
                 ($"Internet: {ports.PublicIp}:{port}  (port opened automatically)", Palette.Cool.Lightened(0.2f)),
             PortState.Opened => ($"Internet: port {port} opened, but the router didn't report your public IP. Search \"what is my IP\".", Palette.TextDim),
-            PortState.Idle => ("Copy your address and send it to friends on your network or VPN.", Palette.TextDim),
+            PortState.Idle => (StreamerMode.On ? "Copy an invite code and send it privately to friends on your network or VPN." : "Copy your address and send it to friends on your network or VPN.", Palette.TextDim),
             _ => ($"Internet: the router didn't open the port automatically. Forward UDP {port} by hand or use a VPN ({Guide}).", warn),
         };
         _internet.Text = text;
         _internet.AddThemeColorOverride("font_color", color);
+        _copy.Text = CopyLabel;
         _copy.Visible = InviteAddress() != "";
     }
 
-    /// <summary>The address a friend should paste: the public one when the port is open, else this machine's LAN/VPN address.</summary>
+    /// <summary>The address a friend should paste: the public one when the port is open, else this machine's LAN/VPN address. In streamer mode it comes as an invite code, so the address itself never shows.</summary>
     private string InviteAddress()
+    {
+        string address = RawInviteAddress();
+        if (!StreamerMode.On || address == "") return address;
+        var (host, port) = NetAddress.Parse(address, _net.Port);
+        return InviteCode.Encode(host, port);
+    }
+
+    private string RawInviteAddress()
     {
         var ports = _net.Ports;
         string port = _net.Port == NetworkManager.DefaultPort ? "" : $":{_net.Port}";
@@ -140,13 +153,15 @@ public partial class LobbyUI : Control
         return local.Length > 0 ? local[0] + port : "";
     }
 
+    private static string CopyLabel => StreamerMode.On ? "Copy invite" : "Copy";
+
     private void CopyInvite()
     {
         string address = InviteAddress();
         if (address == "") return;
         DisplayServer.ClipboardSet(address);
         _copy.Text = "Copied!";
-        GetTree().CreateTimer(1.5).Timeout += () => { if (IsInstanceValid(_copy)) _copy.Text = "Copy"; };
+        GetTree().CreateTimer(1.5).Timeout += () => { if (IsInstanceValid(_copy)) _copy.Text = CopyLabel; };
     }
 
     private SpinBox AddSpin(GridContainer grid, string label, int min, int max)
@@ -222,6 +237,7 @@ public partial class LobbyUI : Control
         _info.Text = _net.Mode switch
         {
             NetMode.Offline => "Offline match. Add bots and start.",
+            NetMode.Host when StreamerMode.On => $"Hosting on port {_net.Port}. Streamer mode: addresses are hidden.",
             NetMode.Host => $"Hosting on port {_net.Port}. Same network or VPN: {string.Join(" / ", NetworkManager.LocalAddresses())}",
             NetMode.Client => "Connected. Waiting for the host to start.",
             _ => "",

@@ -58,6 +58,10 @@ of seconds the lobby shows one of these:
 
 The game closes the port again when you leave the lobby or quit.
 
+Streaming? Turn on **Options → Online → Streamer mode** first. The lobby then says *port opened automatically* without
+the address, and **Copy invite** gives a code like `J71P-Z4HM-V2T0` to send privately; friends paste it into **Join a
+Friend** just like an address.
+
 ---
 
 ## Option C: manual port forwarding (host only)

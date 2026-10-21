@@ -91,7 +91,7 @@ public partial class NetworkManager : Node
         }
         Multiplayer.MultiplayerPeer = peer;
         Mode = NetMode.Client;
-        Status?.Invoke($"Connecting to {address}:{port}...");
+        Status?.Invoke(StreamerMode.On ? "Connecting..." : $"Connecting to {address}:{port}...");
         Log.Info($"joining {address}:{port}");
         return true;
     }

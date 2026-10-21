@@ -49,7 +49,10 @@ Options also has window mode (Windowed / Borderless / Fullscreen) and bloom stre
 ### Playing with friends
 - **Host:** Menu → *Host Game*. The lobby shows your LAN/VPN address(es) and the port (default `24565`). It also asks
   the router to forward the port via UPnP and, if that works, shows the public `ip:port` with a **Copy** button.
-- **Join:** type the host's address (`ip`, `ip:port` or `host:port`) and click *Join*. The last address is remembered.
+- **Join:** type the host's address (`ip`, `ip:port` or `host:port`) or invite code and click *Join*. The last address is remembered.
+- **Streamer mode** (Options → Online): no IP address is shown anywhere. The lobby hides them, *Copy invite* puts a
+  code like `J71P-Z4HM-V2T0` on the clipboard instead, and the join box is masked. Friends paste the code where an
+  address would go. The code only hides the address from viewers (it can be decoded), so send it privately.
 - Players must run the same version (`application/config/version`, shown in the menu); the host rejects mismatches.
 - Different home networks: see **[docs/PLAYING_ONLINE.md](docs/PLAYING_ONLINE.md)**.
 - **Test alone:** in Godot use *Debug → Customize Run Instances → 2*, host in one window and join `127.0.0.1` in the other.

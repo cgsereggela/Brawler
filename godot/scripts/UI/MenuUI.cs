@@ -58,7 +58,12 @@ public partial class MenuUI : Control
 
         body.AddChild(UiKit.Label("JOIN A FRIEND", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var joinRow = UiKit.HBox();
-        AddressEdit = new LineEdit { Text = Profile.LastAddress() is { Length: > 0 } last ? last : "127.0.0.1", PlaceholderText = "host IP or IP:port", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        AddressEdit = new LineEdit { Text = Profile.LastAddress() is { Length: > 0 } last ? last : "127.0.0.1", PlaceholderText = "IP, IP:port or invite code", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // Streamer mode masks the box, so a typed or remembered address never shows on stream.
+        void Mask() => AddressEdit.Secret = StreamerMode.On;
+        Mask();
+        StreamerMode.Changed += Mask;
+        TreeExiting += () => StreamerMode.Changed -= Mask;
         PortEdit = new LineEdit { Text = NetworkManager.DefaultPort.ToString(), CustomMinimumSize = new Vector2(66, 0) };
         joinRow.AddChild(AddressEdit);
         joinRow.AddChild(PortEdit);

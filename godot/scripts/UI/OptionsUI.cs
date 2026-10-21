@@ -6,8 +6,8 @@ using Godot;
 namespace Brawler.UI;
 
 /// <summary>
-/// Settings, in tabs: Audio (volume sliders), Video (window mode, bloom) and Controls (key bindings). Each tab's
-/// rows are built by their own class (DisplayOptions, BloomOptions, ControlsOptions). Audio applies live and is
+/// Settings, in tabs: Audio (volume sliders), Video (window mode, bloom), Controls (key bindings) and Online (streamer mode). Each tab's
+/// rows are built by their own class (DisplayOptions, BloomOptions, ControlsOptions, PrivacyOptions). Audio applies live and is
 /// saved on Done.
 /// In overlay mode (Esc during a match) it dims the still-running game behind it and adds a Leave match button
 /// with a confirm step.
@@ -51,6 +51,7 @@ public partial class OptionsUI : Control
         DisplayOptions.Build(video);
         BloomOptions.Build(video);
         ControlsOptions.Build(Tab(tabs, "Controls"));
+        PrivacyOptions.Build(Tab(tabs, "Online"));
 
         var grid = new GridContainer { Columns = 3 };
         grid.AddThemeConstantOverride("h_separation", 12);
