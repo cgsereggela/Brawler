@@ -38,6 +38,8 @@ public partial class GameManager : Node2D
 
     public readonly MatchPlayer[] Slots = new MatchPlayer[LobbyState.MaxPlayers];
     public MatchSettings Settings = new();
+    /// <summary>Test runs (--lava=SECS): when 0 or more, overrides the lobby's sudden-death lava setting for matches this peer hosts.</summary>
+    public int LavaOverride = -1;
     public Phase Phase { get; private set; } = Phase.Idle;
     public float CountdownLeft { get; private set; }
     public MatchPlayer LocalMatchPlayer { get; private set; }
@@ -65,6 +67,7 @@ public partial class GameManager : Node2D
     /// <summary>A pick unlocked a card combo for this slot (on every peer, right after <see cref="CardWasPicked"/>).</summary>
     public event Action<int, ComboDef> ComboFound;
     public event Action<string, Color, float> Banner;
+    public void ShowBanner(string text, Color color, float seconds) => Banner?.Invoke(text, color, seconds);
 
     private Node2D _avatars;
     private Camera2D _cam;
@@ -97,6 +100,7 @@ public partial class GameManager : Node2D
         AddChild(Arena);
         AddChild(_avatars);
         AddChild(Bullets);
+        AddChild(new LavaNode { Name = "Lava", Game = this });
         AddChild(Fx);
         AddChild(_cam);
         _cam.MakeCurrent();
@@ -147,6 +151,7 @@ public partial class GameManager : Node2D
         if (!IsHost || Net.Lobby.Players.Count < 2) return;
         Net.InMatch = true;
         if (Stats.Mode != "sim") Stats.Mode = Net.Mode == NetMode.Host ? "host" : "offline";
+        if (LavaOverride >= 0) Net.Lobby.Settings.LavaAfter = LavaOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         HostStartBattle();
     }

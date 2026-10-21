@@ -93,10 +93,18 @@ public sealed class BotBrain : IInputSource
         _airT = onFloor ? 0 : _airT + dt;
         if (_airT > 1f && SurfaceUnder(map, feet) is int below and >= 0 && below != _surface) { _surface = below; _navT = 0; }
         _navT -= dt;
+        // Lava coming up under our surface: climb to one well above it, whatever the target is doing.
+        float lava = _game.Arena.LavaY;
+        bool flee = _surface >= 0 && map.Surfaces[_surface].Y > lava - LavaMargin;
         bool navigating = false, dropping = false;
-        if ((!los || Mathf.Abs(to.Y) > 75) && _surface >= 0)
+        if ((flee || !los || Mathf.Abs(to.Y) > 75) && _surface >= 0)
         {
-            if (_navT <= 0)
+            if (flee && _navT <= 0)
+            {
+                _navT = 0.3f;
+                _hop = MapGenerator.NextHop(map, _surface, EscapeSurface(map, target, lava));
+            }
+            else if (_navT <= 0)
             {
                 _navT = 0.3f;
                 int goal = SurfaceUnder(map, target.GlobalPosition + new Vector2(0, target.HalfSize.Y));
@@ -195,6 +203,7 @@ public sealed class BotBrain : IInputSource
             if (Mathf.Abs(move) < 0.1f) move = _strafeDir;
         }
         if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 175)) move = -move; // falling into a pit: steer back
+        if (feet.Y > lava - 2) wantJump = true; // in the lava: jump out of it (it pops us up too)
         if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
 
         // Card abilities: spend air jumps or jetpack fuel to climb toward the target or out of a fall,
@@ -337,6 +346,31 @@ public sealed class BotBrain : IInputSource
             if (score < bestScore) { bestScore = score; best = i; }
         }
         return _vantage = best;
+    }
+
+    /// <summary>How far above the lava a surface must be for bots to feel safe on it.</summary>
+    private const float LavaMargin = 80;
+
+    /// <summary>
+    /// The reachable surface to escape rising lava to: the nearest one to the target (to keep fighting) among those
+    /// well above it, else simply the highest one we can get to.
+    /// </summary>
+    private int EscapeSurface(MapLayout map, Avatar target, float lava)
+    {
+        var reach = MapGenerator.ReachableFrom(map, _surface);
+        var tp = target.GlobalPosition;
+        int best = -1, highest = _surface;
+        float bestScore = float.MaxValue;
+        for (int i = 0; i < map.Surfaces.Count; i++)
+        {
+            if (!reach[i]) continue;
+            var s = map.Surfaces[i];
+            if (s.Y < map.Surfaces[highest].Y) highest = i;
+            if (s.Y > lava - LavaMargin * 1.5f) continue;
+            float score = new Vector2(Mathf.Clamp(tp.X, s.X1, s.X2), s.Y).DistanceTo(tp) - (lava - s.Y) * 0.3f; // higher buys more time
+            if (score < bestScore) { bestScore = score; best = i; }
+        }
+        return best >= 0 ? best : highest;
     }
 
     /// <summary>The surface whose top is at <paramref name="feet"/> (within <paramref name="tol"/> px), or -1.</summary>

@@ -19,6 +19,7 @@ public partial class LobbyUI : Control
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
+    private Button _lava;
 
     public LobbyUI(NetworkManager net) => _net = net;
     public LobbyUI() { }
@@ -58,6 +59,13 @@ public partial class LobbyUI : Control
         _rounds = AddSpin(grid, "Round wins to win", 1, 10);
         _loserCards = AddSpin(grid, "Card choices (losers)", 1, CardPool.MaxChoices);
         _winnerCards = AddSpin(grid, "Card choices (winner)", 0, CardPool.MaxChoices);
+        var lavaLabel = UiKit.Label("Lava rises after", UiKit.Small, Palette.Text);
+        lavaLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        lavaLabel.TooltipText = "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.";
+        lavaLabel.MouseFilter = MouseFilterEnum.Pass;
+        grid.AddChild(lavaLabel);
+        _lava = UiKit.Button("", CycleLava, 70, "Small");
+        grid.AddChild(_lava);
         body.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
@@ -184,8 +192,21 @@ public partial class LobbyUI : Control
             RoundsToWin = (int)_rounds.Value,
             LoserChoices = (int)_loserCards.Value,
             WinnerChoices = (int)_winnerCards.Value,
+            LavaAfter = _net.Lobby.Settings.LavaAfter,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
+    }
+
+    private static string LavaText(int after) => after <= 0 ? "Never" : $"{after} s";
+
+    /// <summary>Host: steps the sudden-death lava setting to its next choice (wrapping round to Never).</summary>
+    private void CycleLava()
+    {
+        if (!_net.IsHost) return;
+        var choices = RisingLava.Choices;
+        int i = Array.IndexOf(choices, RisingLava.Snap(_net.Lobby.Settings.LavaAfter));
+        _net.Lobby.Settings.LavaAfter = choices[(i + 1) % choices.Length];
+        PushSettings();
     }
 
     /// <summary>One player slot: a little glass card with the character on a pedestal.</summary>
@@ -254,6 +275,8 @@ public partial class LobbyUI : Control
         _loserCards.SetValueNoSignal(st.LoserChoices);
         _winnerCards.SetValueNoSignal(st.WinnerChoices);
         foreach (var s in new[] { _battles, _rounds, _loserCards, _winnerCards }) s.Editable = host;
+        _lava.Text = LavaText(st.LavaAfter);
+        _lava.Disabled = !host;
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
 
         _addBot.Visible = host;

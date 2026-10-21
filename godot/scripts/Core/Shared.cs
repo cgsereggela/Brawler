@@ -51,6 +51,7 @@ public sealed class MatchSettings
     public int RoundsToWin = 5;      // round wins needed to take the match
     public int LoserChoices = 5;     // cards offered to round losers
     public int WinnerChoices = 3;    // cards offered to the round winner (0 = winner doesn't pick)
+    public int LavaAfter = RisingLava.DefaultAfter; // seconds of fighting before lava rises (0 = never)
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
 }
 
@@ -80,7 +81,7 @@ public sealed class LobbyState
     public byte[] Serialize()
     {
         var w = new Wire();
-        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices);
+        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(Players.Count);
         foreach (var p in Players)
@@ -99,6 +100,7 @@ public sealed class LobbyState
         s.Settings.RoundsToWin = r.U8();
         s.Settings.LoserChoices = r.U8();
         s.Settings.WinnerChoices = r.U8();
+        s.Settings.LavaAfter = r.U8();
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)

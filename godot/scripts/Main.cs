@@ -41,6 +41,9 @@ namespace Brawler;
 ///                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
 ///                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
 ///                         you fight (not under the overlay or the card pick)
+///   --lava=SECS           sudden-death lava rises after SECS seconds of fighting (0 = off) in the matches this run hosts
+///   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
+///                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -295,6 +298,7 @@ public partial class Main : Node
                 else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
                 else if (ChatCheckProblem() is { } chat) Finish(1, chat);
                 else if (ComboCheckProblem() is { } combo) Finish(1, combo);
+                else if (LavaCheckProblem() is { } lava) Finish(1, lava);
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -327,6 +331,8 @@ public partial class Main : Node
         {
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
             else if (a == "--streamer") StreamerMode.SetForRun(true);
+            else if (a.StartsWith("--lava=") && int.TryParse(a["--lava=".Length..], out int lava)) _game.LavaOverride = lava;
+            else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
@@ -982,6 +988,7 @@ public partial class Main : Node
         if (_autoMode == null) return;
         if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
         if (_chatCheck) PollGhosts();
+        if (_lavaCheck) PollLava();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -1174,6 +1181,42 @@ public partial class Main : Node
             foreach (var combo in Combos.Active(p.Cards))
                 if (!_combosFound.Contains((p.Slot, combo)))
                     return $"combocheck: {p.Info.Name} holds {combo.Name} but it was never announced";
+        return null;
+    }
+
+    // ---------- lava check (--lavacheck with --autotest, --autohost, --autojoin) ----------
+
+    private bool _lavaCheck;
+    private readonly System.Collections.Generic.HashSet<int> _lavaBattles = new(), _lavaShots = new();
+    private readonly System.Collections.Generic.Dictionary<int, float> _inLava = new();
+    private float _lavaWorst;
+
+    private void PollLava()
+    {
+        if (_game.Phase != Phase.Fighting || _game.Map == null) return;
+        float y = _game.Arena.LavaY;
+        int battle = _game.BattleNumber;
+        if (y < MapGenerator.FloorY - 40) _lavaBattles.Add(battle);
+        if (_shotDir != null && y < MapGenerator.FloorY - 120 && _lavaShots.Add(battle)) SaveShot($"lava_{battle:D2}");
+        // How long each fighter has stood in it without dying: lava that doesn't hurt (or a death that never synced) shows up here.
+        foreach (var a in _game.LiveAvatars())
+        {
+            int slot = a.Player.Slot;
+            bool inside = a.GlobalPosition.Y + a.HalfSize.Y - 2 > y;
+            float t = inside ? (_inLava.TryGetValue(slot, out float was) ? was : 0) + 1f / 60f : 0;
+            _inLava[slot] = t;
+            _lavaWorst = Mathf.Max(_lavaWorst, t);
+        }
+    }
+
+    /// <summary>Null when the check passed (or isn't running); otherwise what went wrong.</summary>
+    private string LavaCheckProblem()
+    {
+        if (!_lavaCheck) return null;
+        Log.Info($"LAVACHECK setting {_game.Settings.LavaAfter}s, lava over the floor in {_lavaBattles.Count}/{_game.BattleNumber} battles, longest anyone lived in it {_lavaWorst:0.00}s");
+        if (_game.Settings.LavaAfter != 3) return $"lavacheck: this peer got lava after {_game.Settings.LavaAfter}s, not 3";
+        if (_lavaBattles.Count == 0) return "lavacheck: the lava never rose over the floor";
+        if (_lavaWorst > 2.5f) return $"lavacheck: someone lived {_lavaWorst:0.0}s in the lava";
         return null;
     }
 

@@ -70,7 +70,7 @@ public partial class Arena : Node2D
     private MapLayout _map;
     private readonly List<AnimatableBody2D> _movers = new();
     private readonly List<int> _solidProp = new(); // per Solids entry: prop index, or -1
-    private readonly Dictionary<int, float> _poison = new(), _poolT = new(), _sawCd = new();
+    private readonly Dictionary<int, float> _poison = new(), _poolT = new(), _sawCd = new(), _lavaT = new();
     private DrawLayer _glow;
     private float _t;
 
@@ -89,6 +89,7 @@ public partial class Arena : Node2D
         _poison.Clear();
         _poolT.Clear();
         _sawCd.Clear();
+        _lavaT.Clear();
         Clock = 0;
         PushedTime = HazardDamage = 0;
         _map = map;
@@ -246,6 +247,12 @@ public partial class Arena : Node2D
         }
     }
 
+    /// <summary>The sudden-death lava's surface (y) right now; +∞ before it starts or when the lobby turned it off.</summary>
+    public float LavaY => _map == null ? float.PositiveInfinity : RisingLava.Level(FightTime, Game.Settings.LavaAfter);
+
+    /// <summary>Seconds since the countdown ended (negative during it): the battle clock lava runs off.</summary>
+    public float FightTime => Clock - GameManager.CountdownTime;
+
     /// <summary>Host: prop physics, then pools and saws (only while fighting).</summary>
     public void HostStep(float dt, bool fighting)
     {
@@ -263,6 +270,7 @@ public partial class Arena : Node2D
             p.Velocity = v;
             p.MoveAndSlide();
             if (p.GlobalPosition.Y > MapLayout.KillY) HostBreak(p, fell: true);
+            else if (p.Bounds.Position.Y > LavaY) HostBreak(p, fell: true); // swallowed by the lava
         }
         if (!fighting) return;
 
@@ -292,6 +300,18 @@ public partial class Arena : Node2D
                 else Game.HostHazardDamage(a, Hazard.DpsOf(HazardKind.Poison) * PoolTick, Vector2.Zero, a.GlobalPosition, GameManager.HazardHit.Poison);
             }
             _poolT[slot] = t;
+
+            // Sudden-death lava: burns while your feet are in it, and pops you up each tick so you can climb out.
+            float lavaT = _lavaT.GetValueOrDefault(slot) - dt;
+            if (a.GlobalPosition.Y + hs.Y - 2 > LavaY && lavaT <= 0)
+            {
+                lavaT = PoolTick;
+                var at = new Vector2(a.GlobalPosition.X, LavaY);
+                var kb = new Vector2(0, -RisingLava.Pop - Mathf.Max(0, a.Velocity.Y));
+                Game.HostHazardDamage(a, RisingLava.Dps * PoolTick, kb, at, GameManager.HazardHit.Magma);
+            }
+            _lavaT[slot] = lavaT;
+            if (!a.Alive) continue;
 
             // Saws: a hard hit and a shove away, then a moment's grace.
             float cd = _sawCd.GetValueOrDefault(slot) - dt;
