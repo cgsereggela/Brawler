@@ -338,6 +338,9 @@ void Check(bool cond, string name, string detail = "")
         .All(l => Enum.GetValues<LookPart>().All(p => l[p] >= 0 && l[p] < Appearance.Count(p)));
     Check(inRange, "Random looks stay within every part's options");
     Check(Appearance.Count(LookPart.HairColor) == Appearance.Dyes.Length, "Dye names match the dye palette");
+    var oldNose = Appearance.Decode("2,4,3,1,1,0,10");
+    Check(oldNose.Nose == 0 && oldNose.Eyes == 2 && oldNose.Mouth == 3 && !Appearance.Editable.Contains(LookPart.Nose),
+        "Noses are retired: old profiles load without one and the editor leaves the part out");
 }
 
 // ---------- Audio synthesis ----------

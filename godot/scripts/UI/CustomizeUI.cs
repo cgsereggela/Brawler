@@ -46,7 +46,7 @@ public partial class CustomizeUI : Control
         grid.AddChild(RowLabel("Body"));
         _bodySwatches = UiKit.HBox(5);
         grid.AddChild(_bodySwatches);
-        foreach (LookPart part in Enum.GetValues<LookPart>())
+        foreach (var part in Appearance.Editable)
         {
             var p = part;
             grid.AddChild(RowLabel(Appearance.PartLabel(p)));

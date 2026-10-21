@@ -595,11 +595,10 @@ public partial class Main : Node
                 canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
                 _menu.GetParent().AddChild(canvas);
                 var gun = GunLook.Default;
-                // Faces that reach furthest (beak, long nose, visor, big eyes, shades, mustache) to check the gun clears them.
+                // Faces that reach furthest (visor, big eyes, shades, mustache) to check the gun clears them.
                 Appearance Face(int k)
                 {
                     var look = Appearance.Default();
-                    look[LookPart.Nose] = new[] { 5, 3, 0, 6 }[k % 4];
                     look[LookPart.Eyes] = new[] { 1, 5, 7, 4 }[k / 4 % 4];
                     look[LookPart.Mouth] = new[] { 7, 3, 6 }[k % 3];
                     return look;
@@ -803,7 +802,7 @@ public partial class Main : Node
                     },
                     () => { _net.Leave(); Show(_menu); },
                 };
-                foreach (LookPart part in System.Enum.GetValues<LookPart>())
+                foreach (var part in Appearance.Editable)
                 {
                     var p = part;
                     steps.Add(() => ShowGallery(p));

@@ -132,7 +132,7 @@ Every card you hold makes your shots, hits and kills flashier. Your **power** is
 Everything is computed from the card list every peer already has, so nothing extra goes over the network. The mapping lives in `godot/scripts/Game/FxStyle.cs`.
 
 ## Characters
-- **Customize Character** (in the menu or lobby) opens the editor: body color, eyes, nose, mouth, hair, hair color, hat and hat color, plus *Randomize*. The preview follows your mouse.
+- **Customize Character** (in the menu or lobby) opens the editor: body color, eyes, mouth, hair, hair color, hat and hat color, plus *Randomize*. The preview follows your mouse.
 - Your name, color and look are saved to `%APPDATA%\Godot\app_userdata\Brawler\profile.cfg` and sent to everyone in the lobby. Bots get a random look.
 - Looks are cosmetic only. A hat is drawn above the hitbox and never takes a hit.
 - Characters hold the gun out at arm's length, and it swings around the front of the body as they aim, so it never covers the face. Bullets leave from the drawn muzzle: the arm and gun geometry lives in `godot/scripts/Logic/GunRig.cs`, shared by the art and the host's bullet origin, and the unit tests sweep every aim to check the gun stays clear of every face option.
@@ -184,8 +184,8 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 
 ## Adding a face part, hairstyle or hat
 Character art is vector shapes drawn in code, so there are no image files to manage.
-1. Add the option name to the end of its list in `godot/scripts/Logic/Appearance.cs` (`EyeNames`, `NoseNames`, `MouthNames`, `HairNames`, `HatNames` or `Dyes`). Saved profiles store indices, so append; don't reorder.
-2. Add a `case` with the same index to the matching `Draw…` method in `godot/scripts/Game/AvatarArt.cs` (`DrawEyes`, `DrawNose`, `DrawMouth`, `DrawHair`, `DrawHat`).
+1. Add the option name to the end of its list in `godot/scripts/Logic/Appearance.cs` (`EyeNames`, `MouthNames`, `HairNames`, `HatNames` or `Dyes`). Saved profiles store indices, so append; don't reorder.
+2. Add a `case` with the same index to the matching `Draw…` method in `godot/scripts/Game/AvatarArt.cs` (`DrawEyes`, `DrawMouth`, `DrawHair`, `DrawHat`).
    - Shapes come from `Shapes` (`Ellipse`, `RoundRect`, `Capsule`, `Star`, or a point list). Draw them with `Shapes.Fill(ci, points, fill, outline, width)`.
    - Use `c.Hair` / `c.Hat` for dye colors, and wrap colors in `c.H(...)` so they flash white when hit.
    - For hair and hats, also add the shape's top y to `HairTop` / `HatTop`, so the HP bar clears it.

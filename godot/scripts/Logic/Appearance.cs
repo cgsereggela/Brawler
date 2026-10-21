@@ -19,7 +19,8 @@ public enum LookPart { Eyes, Nose, Mouth, Hair, HairColor, Hat, HatColor }
 public sealed class Appearance
 {
     public static readonly string[] EyeNames = { "Round", "Big", "Dots", "Sleepy", "Angry", "Visor", "Cyclops", "Shades", "Happy" };
-    public static readonly string[] NoseNames = { "None", "Dot", "Button", "Long", "Pig", "Beak", "Clown" };
+    // Noses were retired: the part keeps its slot so saved profiles and lobby data still line up, and every look reads "None".
+    public static readonly string[] NoseNames = { "None" };
     public static readonly string[] MouthNames = { "Smile", "Flat", "Open", "Grin", "Frown", "Fangs", "Tongue", "Mustache", "Cat" };
     public static readonly string[] HairNames = { "Bald", "Short", "Spiky", "Mohawk", "Long", "Bowl", "Ponytail", "Afro" };
     public static readonly string[] HatNames = { "None", "Cap", "Top Hat", "Beanie", "Crown", "Party", "Headband", "Viking", "Halo", "Propeller", "Chef" };
@@ -36,6 +37,9 @@ public sealed class Appearance
     private static readonly string[][] Options = { EyeNames, NoseNames, MouthNames, HairNames, DyeNames, HatNames, DyeNames };
 
     public static readonly int PartCount = Options.Length;
+
+    /// <summary>The parts the character editor offers (everything with more than one option).</summary>
+    public static readonly LookPart[] Editable = Enum.GetValues<LookPart>().Where(p => Count(p) > 1).ToArray();
     public static int Count(LookPart p) => Options[(int)p].Length;
     public static string PartLabel(LookPart p) => p switch
     {
