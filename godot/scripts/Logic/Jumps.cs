@@ -10,7 +10,7 @@ public enum JumpKind { None, Ground, Wall, Ledge, Air, Jet }
 /// </summary>
 public struct JumpCharges
 {
-    /// <summary>The ground jump: spent by jumping from the ground, a ledge jump, or a jump pad launch.</summary>
+    /// <summary>The ground jump: spent by jumping from the ground or a ledge jump (a jump pad launch keeps it).</summary>
     public bool Ground;
     /// <summary>Extra mid-air jumps left (Stat.AirJumps).</summary>
     public int Air;
@@ -25,10 +25,12 @@ public struct JumpCharges
     /// <summary>
     /// Spends the jump a press becomes, in priority order: a ground jump while on (or just off) the floor, a wall
     /// jump while on (or just off) a wall, the kept ledge jump, an air jump, then (on a fresh press only) the jetpack.
-    /// Wall jumps cost nothing.
+    /// Wall jumps cost nothing. While <paramref name="risingFaster"/> (going up faster than a jump would push, e.g.
+    /// just launched by a jump pad) nothing is spent: the press waits in the buffer instead of slowing the climb.
     /// </summary>
-    public JumpKind Use(bool coyote, bool wallCoyote, bool hasFuel, bool freshPress)
+    public JumpKind Use(bool coyote, bool wallCoyote, bool hasFuel, bool freshPress, bool risingFaster = false)
     {
+        if (risingFaster) return JumpKind.None;
         if (coyote && Ground) { Ground = false; return JumpKind.Ground; }
         if (wallCoyote) return JumpKind.Wall;
         if (Ground) { Ground = false; return JumpKind.Ledge; }

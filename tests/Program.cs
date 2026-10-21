@@ -102,6 +102,12 @@ void Check(bool cond, string name, string detail = "")
     Check(j.Use(false, false, true, false) == JumpKind.None && j.Use(false, false, true, true) == JumpKind.Jet, "Jetpack after jumps, fresh press only");
     j.Land(2);
     Check(j.Ground && j.Air == 2 && j.Left == 3, "Landing restores ground and air jumps");
+
+    // A jump pad launch keeps the ground jump: presses wait while the launch outpaces a jump, then it's a full ledge jump.
+    j = new JumpCharges(); j.Land(1);
+    Check(j.Use(false, false, true, true, risingFaster: true) == JumpKind.None && j.Left == 2
+          && j.Use(false, false, false, true) == JumpKind.Ledge && j.Use(false, false, false, true) == JumpKind.Air,
+        "Pad launch keeps the ground jump until landing");
 }
 
 // ---------- Map generation ----------

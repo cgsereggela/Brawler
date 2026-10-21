@@ -301,10 +301,18 @@ public partial class Avatar : CharacterBody2D
             v.Y = Mathf.MoveToward(v.Y, -JetClimb, 2200 * dt);
         }
 
+        // Jump pads launch anyone standing on them (runs on the host and in client prediction alike). The launch keeps
+        // the ground jump, so it can still be used any time before landing.
+        if (onFloor && v.Y >= 0 && Game.Map != null && MapGenerator.OnPad(Game.Map, GlobalPosition.X, GlobalPosition.Y + HalfSize.Y))
+        {
+            v.Y = -MapGenerator.PadVelocity;
+            _coyote = 0;
+        }
+
         if (_jumpBuffer > 0)
         {
             float jv = S[Stat.JumpVelocity];
-            var kind = _jumps.Use(_coyote > 0, _wallCoyote > 0, _fuel > 0, jumpPressed);
+            var kind = _jumps.Use(_coyote > 0, _wallCoyote > 0, _fuel > 0, jumpPressed, risingFaster: v.Y < -jv);
             if (kind == JumpKind.Ground)
             {
                 v.Y = -jv;
@@ -333,14 +341,6 @@ public partial class Avatar : CharacterBody2D
                 _jetting = true;
                 _jumpBuffer = 0;
             }
-        }
-
-        // Jump pads launch anyone standing on them (runs on the host and in client prediction alike).
-        if (onFloor && v.Y >= 0 && Game.Map != null && MapGenerator.OnPad(Game.Map, GlobalPosition.X, GlobalPosition.Y + HalfSize.Y))
-        {
-            v.Y = -MapGenerator.PadVelocity;
-            _coyote = 0;
-            _jumps.Ground = false; // a pad launch counts as the ground jump
         }
 
         Velocity = v;
