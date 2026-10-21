@@ -24,6 +24,8 @@ public partial class GameManager : Node2D
 {
     public const float CountdownTime = 1.8f;
     public const float PickTimeout = 30f;
+    /// <summary>How long the host holds a match that drops below two players, for whoever dropped to rejoin.</summary>
+    public const float RejoinWait = 45f;
 
     public NetworkManager Net;
     public Sfx Sfx;
@@ -72,6 +74,8 @@ public partial class GameManager : Node2D
     private int _lastCountdownTick;
     private float _clock;        // simulated seconds, for "recently hit" checks
     private float _zoomPunch;    // brief camera zoom on big kills
+    private float _rejoinWaitT;  // host: seconds left holding a short-handed match (0 = not waiting)
+    private int _rejoinWaitShown;
 
     public override void _Ready()
     {
@@ -99,6 +103,7 @@ public partial class GameManager : Node2D
         };
         Visible = false;
         Net.PeerLeft += OnPeerLeft;
+        Net.TryRejoin = HostTryRejoin;
     }
 
     // =====================================================================
@@ -188,12 +193,7 @@ public partial class GameManager : Node2D
             HostStartBattle();
             return;
         }
-        w.U8(entries.Count);
-        foreach (var (slot, ids) in entries)
-        {
-            w.U8(slot).U8(ids.Count);
-            foreach (int id in ids) w.I16(id); // 16 bits: custom card ids start at 1000
-        }
+        WritePicks(w, entries);
         _hostPicked.Clear();
         _botPickT.Clear();
         _pickTimeoutT = PickTimeout;
@@ -245,12 +245,70 @@ public partial class GameManager : Node2D
         Rpc(MethodName.PlayerLeft, mp.Slot);
         if (Phase == Phase.CardPick) HostCheckPicksDone();
 
-        var remaining = Active().ToList();
-        if (remaining.Count < 2 && Phase != Phase.MatchOver)
+        // Too few left to play on: hold the match (see HostRejoinWaitTick) so whoever dropped can rejoin.
+        if (Active().Count() < 2 && Phase != Phase.MatchOver && _rejoinWaitT <= 0)
         {
+            _rejoinWaitT = RejoinWait;
+            _rejoinWaitShown = -1;
+        }
+    }
+
+    /// <summary>
+    /// Host: someone joined while the match is on. If they dropped out of it, they get their slot back with its cards and
+    /// score: matched by their game's rejoin key, or by name when exactly one dropped player has it (they restarted the
+    /// game). They sit out the rest of a battle already under way and play from the next one, or pick now if a card
+    /// pick is on.
+    /// </summary>
+    private bool HostTryRejoin(long peer, string key, string name)
+    {
+        if (Phase is Phase.Idle or Phase.MatchOver) return false;
+        var dropped = Slots.Where(p => p != null && p.Left && !p.Info.IsBot).ToList();
+        var mp = dropped.FirstOrDefault(p => key != null && p.Info.Key == key);
+        if (mp == null && dropped.Count(p => p.Info.Name == name) == 1) mp = dropped.First(p => p.Info.Name == name);
+        if (mp == null) return false;
+
+        mp.Info.PeerId = peer;
+        mp.Info.Key = key;
+        mp.Left = false;
+        mp.Input = new RemoteInput();
+        Net.SendCards(peer);
+        RpcId(peer, MethodName.Rejoined, RejoinBytes());
+        Rpc(MethodName.PlayerBack, mp.Slot, peer);
+        // Back in the lobby list too, for after the match.
+        if (Net.Lobby.BySlot(mp.Slot) == null)
+        {
+            Net.Lobby.Players.Add(new PlayerInfo { Slot = mp.Slot, PeerId = peer, Name = mp.Info.Name, ColorIdx = mp.Info.ColorIdx, Look = mp.Info.Look.Clone(), Key = key });
+            Net.Lobby.Players.Sort((a, b) => a.Slot.CompareTo(b.Slot));
+        }
+        Net.BroadcastLobby();
+        Log.Info($"{mp.Info.Name} rejoined slot {mp.Slot} with {mp.Cards.Count} cards");
+        return true;
+    }
+
+    /// <summary>Host, while a match is short-handed: count down, and end the match if nobody is back in time.</summary>
+    private void HostRejoinWaitTick(float dt)
+    {
+        if (Active().Count() >= 2 || Phase == Phase.MatchOver)
+        {
+            _rejoinWaitT = 0;
+            return;
+        }
+        _rejoinWaitT -= dt;
+        if (_rejoinWaitT <= 0)
+        {
+            _rejoinWaitT = 0;
             _hostNext = null;
-            Stats.MatchEnd(remaining.Count == 1 ? remaining[0].Slot : -1, false, Slots.Where(p => p != null));
-            Rpc(MethodName.BattleOver, remaining.Count == 1 ? remaining[0].Slot : -1, ScoresBytes(), true, true);
+            var remaining = Active().ToList();
+            int winner = remaining.Count == 1 ? remaining[0].Slot : -1;
+            Stats.MatchEnd(winner, false, Slots.Where(p => p != null));
+            Rpc(MethodName.BattleOver, winner, ScoresBytes(), true, true);
+            return;
+        }
+        int secs = Mathf.CeilToInt(_rejoinWaitT);
+        if (secs != _rejoinWaitShown)
+        {
+            _rejoinWaitShown = secs;
+            Rpc(MethodName.WaitingForRejoin, secs);
         }
     }
 
@@ -274,7 +332,8 @@ public partial class GameManager : Node2D
         float dt = (float)delta;
         _clock += dt;
         if (IsHost) Stats.Tick(dt, Phase);
-        if (IsHost && _hostNext != null)
+        if (IsHost && _rejoinWaitT > 0) HostRejoinWaitTick(dt);
+        if (IsHost && _hostNext != null && _rejoinWaitT <= 0) // the match flow holds while waiting for a rejoin
         {
             _hostNextT -= dt;
             if (_hostNextT <= 0)
@@ -910,6 +969,7 @@ public partial class GameManager : Node2D
         foreach (var info in lobby.Players)
         {
             var mp = new MatchPlayer { Info = info };
+            if (IsHost) info.Key = Net.Lobby.BySlot(info.Slot)?.Key; // keys aren't sent, so take them from our own lobby
             bool isMine = !info.IsBot && info.PeerId == me;
             if (isMine)
             {
@@ -1016,21 +1076,71 @@ public partial class GameManager : Node2D
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void BeginCardPick(byte[] data)
     {
-        var r = new WireReader(data);
-        PickOptions = new Dictionary<int, List<int>>();
-        int n = r.U8();
-        for (int i = 0; i < n; i++)
-        {
-            int slot = r.U8();
-            int count = r.U8();
-            var ids = new List<int>();
-            for (int k = 0; k < count; k++) ids.Add(r.I16());
-            PickOptions[slot] = ids;
-        }
+        ReadPicks(data);
         Picked.Clear();
         Phase = Phase.CardPick;
         Bullets.Clear();
         CardPickBegan?.Invoke();
+    }
+
+    /// <summary>To a rejoining client only: the match as it stands (see <see cref="RejoinBytes"/>).</summary>
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void Rejoined(byte[] data)
+    {
+        var r = new WireReader(data);
+        var lobby = LobbyState.Deserialize(r.Blob());
+        Settings = lobby.Settings;
+        Array.Clear(Slots);
+        LocalMatchPlayer = null;
+        long me = Net.LocalPeer;
+        foreach (var info in lobby.Players)
+        {
+            var mp = new MatchPlayer { Info = info, Left = r.Bool(), RoundWins = r.U8(), BattleWins = r.U8() };
+            int cards = r.U8();
+            for (int k = 0; k < cards; k++) mp.Cards.Add(r.I16());
+            mp.RecomputeStats();
+            if (!info.IsBot && info.PeerId == me)
+            {
+                LocalMatchPlayer = mp;
+                mp.Input = AutopilotLocal ? new BotBrain(this) : new LocalInput(this);
+            }
+            Slots[info.Slot] = mp;
+        }
+        BattleNumber = r.I16();
+        MatchWinner = -1;
+        Phase = Phase.Idle; // until the next StartBattle, unless a card pick is on
+        Net.InMatch = true;
+        Visible = true;
+        Log.Info($"rejoined the match at battle {BattleNumber} with {LocalMatchPlayer?.Cards.Count ?? 0} cards | {ScoreLine()}");
+        MatchBegan?.Invoke();
+        ScoresChanged?.Invoke();
+        if (r.Bool())
+        {
+            ReadPicks(r.Blob());
+            Picked.Clear();
+            int n = r.U8();
+            for (int i = 0; i < n; i++) Picked.Add(r.U8());
+            Phase = Phase.CardPick;
+            CardPickBegan?.Invoke();
+        }
+        else Banner?.Invoke("REJOINED! YOU'RE IN FROM THE NEXT BATTLE", Palette.Accent, 2.5f);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void PlayerBack(int slot, long peer)
+    {
+        var p = Slots[slot];
+        if (p == null) return;
+        p.Info.PeerId = peer;
+        p.Left = false;
+        if (p != LocalMatchPlayer) Banner?.Invoke($"{p.Info.Name} is back", Palette.Player(p.Info.ColorIdx), 1.5f);
+        ScoresChanged?.Invoke();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void WaitingForRejoin(int seconds)
+    {
+        Banner?.Invoke($"WAITING FOR PLAYERS TO REJOIN  {seconds}", Palette.TextDim, 1.2f);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1329,6 +1439,61 @@ public partial class GameManager : Node2D
         ScoresChanged?.Invoke();
     }
 
+    private static void WritePicks(Wire w, IReadOnlyCollection<(int slot, List<int> ids)> entries)
+    {
+        w.U8(entries.Count);
+        foreach (var (slot, ids) in entries)
+        {
+            w.U8(slot).U8(ids.Count);
+            foreach (int id in ids) w.I16(id); // 16 bits: custom card ids start at 1000
+        }
+    }
+
+    private void ReadPicks(byte[] data)
+    {
+        var r = new WireReader(data);
+        PickOptions = new Dictionary<int, List<int>>();
+        int n = r.U8();
+        for (int i = 0; i < n; i++)
+        {
+            int slot = r.U8();
+            int count = r.U8();
+            var ids = new List<int>();
+            for (int k = 0; k < count; k++) ids.Add(r.I16());
+            PickOptions[slot] = ids;
+        }
+    }
+
+    /// <summary>
+    /// The match as it stands, for a rejoining client: every slot's player, whether they've left, their score and cards,
+    /// the battle number, and the card pick if one is on (offers and who has picked).
+    /// </summary>
+    private byte[] RejoinBytes()
+    {
+        var players = Slots.Where(p => p != null).ToList();
+        var lobby = new LobbyState { Settings = Settings };
+        lobby.Players.AddRange(players.Select(p => p.Info));
+        var w = new Wire();
+        w.Blob(lobby.Serialize());
+        foreach (var p in players)
+        {
+            w.Bool(p.Left).U8(p.RoundWins).U8(p.BattleWins).U8(p.Cards.Count);
+            foreach (int id in p.Cards) w.I16(id);
+        }
+        w.I16(BattleNumber);
+        bool picking = Phase == Phase.CardPick;
+        w.Bool(picking);
+        if (picking)
+        {
+            var picks = new Wire();
+            WritePicks(picks, PickOptions.Select(kv => (kv.Key, kv.Value)).ToList());
+            w.Blob(picks.Done());
+            w.U8(Picked.Count);
+            foreach (int s in Picked) w.U8(s);
+        }
+        return w.Done();
+    }
+
     private byte[] SnapshotBytes()
     {
         var w = new Wire();
@@ -1368,6 +1533,7 @@ public partial class GameManager : Node2D
         Picked.Clear();
         Phase = Phase.Idle;
         _hostNext = null;
+        _rejoinWaitT = 0;
         Visible = false;
         Engine.TimeScale = 1;
     }

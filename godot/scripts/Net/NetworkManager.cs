@@ -31,6 +31,16 @@ public partial class NetworkManager : Node
     public Appearance LocalLook = Appearance.Default();
     private readonly Rng _botLooks = new((ulong)System.DateTime.Now.Ticks);
 
+    /// <summary>Names this game process to a host, so if the connection drops mid-match the host can give us our slot back.</summary>
+    public readonly string RejoinKey = Guid.NewGuid().ToString("N");
+    private readonly System.Collections.Generic.Dictionary<long, string> _keys = new(); // host: each client's rejoin key
+
+    /// <summary>
+    /// Host: asked when someone joins while a match is on, with their peer, rejoin key and name. Returns true if it put
+    /// them back into a slot they dropped from; otherwise they're turned away.
+    /// </summary>
+    public Func<long, string, string, bool> TryRejoin;
+
     public bool IsHost => Mode is NetMode.Host or NetMode.Offline;
     public long LocalPeer => Multiplayer.GetUniqueId();
     public PlayerInfo LocalPlayer => Lobby.ByPeer(LocalPeer);
@@ -47,7 +57,9 @@ public partial class NetworkManager : Node
         Multiplayer.PeerDisconnected += OnPeerDisconnected;
         Multiplayer.ConnectedToServer += OnConnectedToServer;
         Multiplayer.ConnectionFailed += () => EndSession("Could not connect to host.");
-        Multiplayer.ServerDisconnected += () => EndSession("Host closed the game.");
+        Multiplayer.ServerDisconnected += () => EndSession(InMatch
+            ? "Lost the connection to the host. If the match is still on, press Join to get back in."
+            : "Host closed the game.");
     }
 
     // ---------- session control ----------
@@ -113,6 +125,7 @@ public partial class NetworkManager : Node
         Mode = NetMode.None;
         Lobby = new LobbyState();
         InMatch = false;
+        _keys.Clear();
         CustomCardLoader.RestoreLocal(); // a client may have been using the host's cards
     }
 
@@ -190,6 +203,8 @@ public partial class NetworkManager : Node
     private void OnConnectedToServer()
     {
         Status?.Invoke("Connected. Joining lobby...");
+        // A separate call ahead of RequestJoin, so a host on another version can still read RequestJoin and say so.
+        RpcId(1, MethodName.Identify, RejoinKey);
         RpcId(1, MethodName.RequestJoin, Version, LocalName, LocalColor, LocalLook.ToBytes());
     }
 
@@ -197,6 +212,7 @@ public partial class NetworkManager : Node
     {
         Log.Info($"peer disconnected {id}");
         if (!IsHost) return;
+        _keys.Remove(id);
         if (Lobby.ByPeer(id) == null) return;
         PeerLeft?.Invoke(id);
         Lobby.Players.RemoveAll(p => p.PeerId == id && !p.IsBot);
@@ -215,19 +231,31 @@ public partial class NetworkManager : Node
             RpcId(sender, MethodName.Rejected, $"Version mismatch: host has {Version}, you have {version}. Download the same release.");
             return;
         }
+        name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
+        if (name.Length > 12) name = name[..12];
+        _keys.TryGetValue(sender, out var key);
+        if (InMatch && TryRejoin?.Invoke(sender, key, name) == true) return;
         if (InMatch || Lobby.FreeSlot() < 0)
         {
             RpcId(sender, MethodName.Rejected, InMatch ? "A match is already in progress." : "Lobby is full.");
             return;
         }
         if (Lobby.Players.Exists(p => p.ColorIdx == color)) color = Lobby.FreeColor();
-        name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
-        if (name.Length > 12) name = name[..12];
-        // Everyone plays with the host's custom cards. Sent before the lobby on the same reliable channel, so the
-        // client has them long before any card pick.
-        RpcId(sender, MethodName.SyncCards, CustomCards.Serialize(CardRegistry.Custom));
-        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look) });
+        SendCards(sender);
+        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look), Key = key });
         BroadcastLobby();
+    }
+
+    /// <summary>
+    /// Host: everyone plays with the host's custom cards. Sent before the lobby (or a rejoin) on the same reliable
+    /// channel, so the client has them long before any card pick.
+    /// </summary>
+    public void SendCards(long peer) => RpcId(peer, MethodName.SyncCards, CustomCards.Serialize(CardRegistry.Custom));
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void Identify(string key)
+    {
+        if (IsHost) _keys[Multiplayer.GetRemoteSenderId()] = key;
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

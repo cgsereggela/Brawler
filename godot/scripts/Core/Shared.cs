@@ -42,6 +42,7 @@ public sealed class PlayerInfo
     public int ColorIdx;
     public bool IsBot;
     public Appearance Look = Appearance.Default();
+    public string Key; // host only, never sent: the player's rejoin key (see NetworkManager.RejoinKey)
 }
 
 public sealed class MatchSettings

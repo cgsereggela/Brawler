@@ -1,6 +1,5 @@
 issues to fix:
 - rematch vote / quick restart after a match, so the group can go again without going back through the lobby
-- rejoin after a disconnect: a player who drops can reconnect into the same slot and keep their cards and score
 
 features to add:
 - dynamic arena hazards: collapsing platforms, lava that rises late in a round, or a closing ring, so late rounds don't stall into camping

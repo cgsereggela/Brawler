@@ -127,7 +127,8 @@ Third-party antivirus suites (Norton, McAfee, Avast, ...) have their own firewal
 |---|---|
 | **"Could not connect to host."** | Check that the host is in the lobby (not mid-match) and that the address is right. Try each option's checks: is Tailscale connected on both ends? Is the firewall rule there? Is the forward set to **UDP**? Is the host behind CGNAT? |
 | **"Version mismatch"** | Everyone downloads the same release. The version is in the bottom-right of the menu. |
-| **"A match is already in progress."** | The host must finish or leave the current match. Joining happens in the lobby. |
+| **"A match is already in progress."** | New players join in the lobby, so wait for the host to finish or leave the match. If you dropped out of it, join again with the same name. |
+| **Dropped mid-match** | Press **Join** again (the address is still filled in). You get your slot back with your cards and score, and play from the next battle. If only one player is left, the host waits 45 seconds for someone to come back before ending the match. |
 | **"Lobby is full."** | A lobby holds 4 players. The host can remove a bot to free a slot. |
 | **"Could not host on port 24565"** | Another copy of Brawler (or another program) is using the port. Close it, or host on a different port. |
 | **Works on the same Wi-Fi but not over the internet** | The firewall is fine, so it's the router. Use Option A, or recheck Option C. |

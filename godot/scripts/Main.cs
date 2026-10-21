@@ -193,7 +193,7 @@ public partial class Main : Node
             _game.ResetWorld();
             Show(_menu);
             _menu.SetStatus(reason);
-            if (_autoMode != null) Finish(_matchFinished ? 0 : 1, $"session ended: {reason}");
+            if (_autoMode != null && !_dropping) Finish(_matchFinished ? 0 : 1, $"session ended: {reason}");
         };
 
         _lobby.StartPressed += () => _game.HostStartMatch();
@@ -291,6 +291,7 @@ public partial class Main : Node
             {
                 if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
                 else if (_poolCheck && _poolPicks == 0) Finish(1, "poolcheck: the match ended without a card pick");
+                else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -327,6 +328,8 @@ public partial class Main : Node
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
             else if (a == "--overlaycheck") _overlayCheck = true;
+            else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--nobots") _noBots = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
             else if (a.StartsWith("--players="))
             {
@@ -373,7 +376,7 @@ public partial class Main : Node
                 _net.LocalName = "AutoHost";
                 _net.UseUpnp = false;
                 if (!_net.Host(port)) { Finish(1, "could not host"); return; }
-                _net.AddBot();
+                if (!_noBots) _net.AddBot();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, DisabledCards = new(AutoDisabled) });
                 StartPoolCheck();
                 _net.LobbyChanged += AutoHostMaybeStart;
@@ -389,6 +392,8 @@ public partial class Main : Node
                 _net.LocalName = "AutoJoin";
                 StartPoolCheck();
                 _net.LobbyChanged += AutoJoinCheckPool;
+                (_joinHost, _joinPort) = (parts[0], port);
+                if (_dropAt > 0) _game.BattleStarted += AutoDropMaybe;
                 _net.Join(parts[0], port);
             }
             else if (a.StartsWith("--simulate"))
@@ -938,6 +943,40 @@ public partial class Main : Node
             SimMatchEnded(-1);
         }
         if (_shotDir != null && _autoMode != "readme" && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+    }
+
+    // ---------- --dropat=N (with --autojoin): leave in battle N, join again, and check the slot came back ----------
+
+    private int _dropAt, _dropCards, _joinPort;
+    private bool _noBots, _dropping, _rejoinChecked;
+    private string _joinHost;
+
+    private void AutoDropMaybe()
+    {
+        if (_dropping || _rejoinChecked || _game.BattleNumber != _dropAt) return;
+        _dropping = true;
+        _dropCards = _game.LocalMatchPlayer?.Cards.Count ?? -1;
+        GetTree().CreateTimer(1.5).Timeout += () =>
+        {
+            Log.Info($"DROPTEST leaving in battle {_dropAt} with {_dropCards} cards");
+            _net.Leave();
+            _game.MatchBegan += AutoRejoinCheck;
+            GetTree().CreateTimer(1.0).Timeout += () => _net.Join(_joinHost, _joinPort);
+        };
+    }
+
+    private void AutoRejoinCheck()
+    {
+        _game.MatchBegan -= AutoRejoinCheck;
+        _dropping = false;
+        var me = _game.LocalMatchPlayer;
+        if (me == null || me.Cards.Count != _dropCards)
+        {
+            Finish(1, $"droptest: rejoined with {me?.Cards.Count ?? -1} cards, had {_dropCards}");
+            return;
+        }
+        _rejoinChecked = true;
+        Log.Info($"DROPTEST rejoined slot {me.Slot} with all {_dropCards} cards");
     }
 
     // ---------- card pool check (--autotest, --autohost, --autojoin) ----------

@@ -239,6 +239,8 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest          # offline, 4 players (--players=8 for eight)
 "$GODOT" --headless --path godot -- --autohost=24600 &                 # networked: host + bot...
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
+"$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600 --dropat=1  # ...that leaves in battle 1, rejoins, and checks it got its slot and cards back
+                                                                       # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 "$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)
