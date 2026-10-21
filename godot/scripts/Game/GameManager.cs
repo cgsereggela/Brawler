@@ -50,6 +50,11 @@ public partial class GameManager : Node2D
 
     /// <summary>Host-only card balance log (see StatsRecorder).</summary>
     public readonly StatsRecorder Stats = new();
+    /// <summary>Host: the tallies behind the end-of-match awards.</summary>
+    public readonly AwardBook Book = new();
+    /// <summary>This match's awards, once it's over (every peer).</summary>
+    public readonly List<Award> MatchAwards = new();
+    private readonly float[] _airT = new float[LobbyState.MaxPlayers];
 
     public Dictionary<int, List<int>> PickOptions { get; private set; } = new();
     public readonly HashSet<int> Picked = new();
@@ -168,6 +173,7 @@ public partial class GameManager : Node2D
         }
         Stats.BattleEnd(winner, roundWon, Active());
         Log.Info($"arena: {Arena.Summary}");
+        if (matchWon) HostSendAwards(); // ahead of BattleOver, so the match-over screen has them
         Rpc(MethodName.BattleOver, winner, ScoresBytes(), roundWon, matchWon);
         if (matchWon)
         {
@@ -341,6 +347,7 @@ public partial class GameManager : Node2D
             var remaining = Active().ToList();
             int winner = remaining.Count == 1 ? remaining[0].Slot : -1;
             Stats.MatchEnd(winner, false, Slots.Where(p => p != null));
+            HostSendAwards();
             Rpc(MethodName.BattleOver, winner, ScoresBytes(), true, true);
             return;
         }
@@ -436,6 +443,9 @@ public partial class GameManager : Node2D
             if (a == null || !a.Alive) continue;
             var f = p.Input?.Next(a, dt) ?? new InputFrame { Aim = a.GlobalPosition + Vector2.Right };
             a.Step(f, dt, authority: true);
+            // Award tally: the longest stretch off the floor and walls.
+            _airT[p.Slot] = a.IsOnFloor() || a.IsOnWallOnly() || Phase != Phase.Fighting ? 0 : _airT[p.Slot] + dt;
+            Book.Max(p.Slot, AwardStat.Airtime, _airT[p.Slot]);
             if (a.GlobalPosition.Y > MapLayout.KillY)
             {
                 // Knocked into a pit: the last hitter gets the (cosmetic) credit.
@@ -528,6 +538,7 @@ public partial class GameManager : Node2D
         {
             OnShotFx(b);
             Stats.Shot(b.Owner);
+            Book.Add(b.Owner, AwardStat.Shots);
         }
     }
 
@@ -545,7 +556,7 @@ public partial class GameManager : Node2D
         knockback *= victim.S[Stat.KnockbackTaken];
         if (!victim.TakeHit(damage, knockback))
         {
-            if (victim.Alive) Stats.HitBlocked(victim.Player.Slot);
+            if (victim.Alive) { Stats.HitBlocked(victim.Player.Slot); Book.Add(victim.Player.Slot, AwardStat.HitsBlocked); }
             HostBlocked(victim, at);
             HostBlockedHit(victim, damage, at, attackerSlot, reflected);
             return;
@@ -557,8 +568,15 @@ public partial class GameManager : Node2D
             victim.LastHitBy = attackerSlot;
             victim.LastHitAt = _clock;
         }
-        Stats.Damage(attackerSlot, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
-        var attacker = attackerSlot >= 0 ? Slots[attackerSlot]?.Avatar : null;
+        float dealt = Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore));
+        Stats.Damage(attackerSlot, victim.Player.Slot, dealt);
+        Book.Add(victim.Player.Slot, AwardStat.DamageTaken, dealt);
+        if (attackerSlot >= 0 && attackerSlot != victim.Player.Slot)
+        {
+            Book.Add(attackerSlot, AwardStat.Hits);
+            Book.Add(attackerSlot, AwardStat.DamageDealt, dealt);
+        }
+        var attacker =attackerSlot >= 0 ? Slots[attackerSlot]?.Avatar : null;
         if (attacker != null && attacker != victim && attacker.Alive)
         {
             float steal = attacker.S[Stat.Lifesteal];
@@ -566,7 +584,7 @@ public partial class GameManager : Node2D
             {
                 float before = attacker.Hp;
                 attacker.Heal(damage * steal);
-                Stats.Healed(attacker.Player.Slot, attacker.Hp - before);
+                HostHealed(attacker.Player.Slot, attacker.Hp - before);
             }
             foreach (var e in attacker.Player.Effects) e.OnDealDamage(attacker, victim, damage, this);
         }
@@ -639,7 +657,7 @@ public partial class GameManager : Node2D
             {
                 float hp = a.Hp;
                 a.Heal(dealt);
-                Stats.Healed(a.Player.Slot, a.Hp - hp);
+                HostHealed(a.Player.Slot, a.Hp - hp);
             }
         }
     }
@@ -671,9 +689,11 @@ public partial class GameManager : Node2D
             return;
         }
         if (victim.Hp <= 0 && victim.TryRevive())
-        Stats.Damage(-1, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
+            HostFx(FxKind.Revive, victim.GlobalPosition, 0, victim.Player.Slot, victim.GlobalPosition);
         Arena.HazardDamage += damage;
-        Stats.Damage(-1, victim.Player.Slot, Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore)));
+        float dealt = Mathf.Clamp(damage, 0, Mathf.Max(0, hpBefore));
+        Stats.Damage(-1, victim.Player.Slot, dealt);
+        Book.Add(victim.Player.Slot, AwardStat.DamageTaken, dealt);
         Rpc(MethodName.HazardHurt, victim.Player.Slot, victim.Hp, knockback, at, damage, (int)kind);
         if (victim.Hp > 0) return;
         int slot = victim.Player.Slot;
@@ -683,12 +703,42 @@ public partial class GameManager : Node2D
 
     public void HostPropBroken(int index, Vector2 at, bool fell) => Rpc(MethodName.PropBroken, index, at, fell);
 
+    /// <summary>Host: pick the end-of-match awards from everyone who played (even if they left) and share them.</summary>
+    private void HostSendAwards()
+    {
+        var awards = Awards.Pick(Book, Slots.Where(p => p != null).Select(p => p.Slot), HostRng);
+        var w = new Wire().U8(awards.Count);
+        foreach (var a in awards) w.U8(a.Slot).U8(a.Id).F(a.Value);
+        Rpc(MethodName.SyncAwards, w.Done());
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncAwards(byte[] data)
+    {
+        var r = new WireReader(data);
+        MatchAwards.Clear();
+        int n = r.U8();
+        for (int i = 0; i < n; i++) MatchAwards.Add(new Award(r.U8(), r.U8(), r.F()));
+        Log.Info($"awards: {string.Join("; ", MatchAwards.Select(a => $"{a.Title} = {NameOf(a.Slot)} ({a.Blurb})"))}");
+    }
+
+    private void HostHealed(int slot, float amount)
+    {
+        Stats.Healed(slot, amount);
+        Book.Add(slot, AwardStat.Healed, amount);
+    }
+
     public void HostKill(Avatar a, KillCause cause = KillCause.Shot, int killer = -1)
     {
         if (!a.Alive) return;
         if (cause != KillCause.Left) Stats.Death(a.Player.Slot, fell: cause == KillCause.Fall);
         a.Alive = false;
         if (killer == a.Player.Slot) killer = -1;
+        if (cause != KillCause.Left)
+        {
+            Book.Add(killer >= 0 ? killer : a.Player.Slot, killer >= 0 ? AwardStat.Kills : AwardStat.SelfKills);
+            if (cause == KillCause.Fall) Book.Add(a.Player.Slot, AwardStat.Falls);
+        }
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
         // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
         float boom = a.S[Stat.Kamikaze];
@@ -718,6 +768,7 @@ public partial class GameManager : Node2D
     public void HostOnBlock(Avatar a)
     {
         Stats.BlockUsed(a.Player.Slot);
+        Book.Add(a.Player.Slot, AwardStat.Blocks);
         HostFx(FxKind.Block, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
 
         // Shockwave: starting a block erases enemy bullets around you.
@@ -771,7 +822,7 @@ public partial class GameManager : Node2D
         {
             float before = a.Hp;
             a.Heal(damage * s[Stat.BlockHeal]);
-            Stats.Healed(a.Player.Slot, a.Hp - before);
+            HostHealed(a.Player.Slot, a.Hp - before);
         }
         if (s[Stat.BlockReload] > 0) a.RefillAmmo();
         if (s[Stat.BlockRefund] > 0) a.BlockCd = Mathf.Max(0, a.BlockCd - s[Stat.BlockCooldown] * s[Stat.BlockRefund]);
@@ -1025,6 +1076,8 @@ public partial class GameManager : Node2D
         BattleNumber = 0;
         MatchWinner = -1;
         RematchVotes.Clear();
+        MatchAwards.Clear();
+        Book.Reset();
         Net.InMatch = true;
         Visible = true;
         if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
@@ -1592,6 +1645,7 @@ public partial class GameManager : Node2D
         PickOptions.Clear();
         Picked.Clear();
         RematchVotes.Clear();
+        MatchAwards.Clear();
         Phase = Phase.Idle;
         _hostNext = null;
         _rejoinWaitT = 0;

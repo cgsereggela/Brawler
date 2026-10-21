@@ -9,6 +9,5 @@ features to add:
 - card synergies: certain card pairs unlock a bonus effect (e.g. bouncy + explosive = explode on every bounce), with a "combo found!" popup
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
 - game modes: king of the hill, capture the flag, a "headhunter" mode where the leader is marked
-- end-of-match awards: funny titles like most self-kills, longest airtime, fewest blocks
 - emotes / taunts on a key
 - controller support and local couch co-op (several players on one machine)

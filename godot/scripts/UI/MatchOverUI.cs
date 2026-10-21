@@ -39,16 +39,33 @@ public partial class MatchOverUI : Control
         // Five or more players: the standings go in two columns on a wider panel, so the list still fits on screen.
         var players = _game.Slots.Where(p => p != null).OrderByDescending(p => p.RoundWins).ToList();
         bool crowded = players.Count > 4;
-        ((Control)_body.GetParent()).CustomMinimumSize = new Vector2(crowded ? 760 : 460, 0);
+        ((Control)_body.GetParent()).CustomMinimumSize = new Vector2(crowded ? 760 : _game.MatchAwards.Count > 0 ? 540 : 460, 0);
         var champCol = winner >= 0 ? Palette.Player(_game.ColorOf(winner)) : Palette.Text;
         _body.AddChild(new TitleText(winner >= 0 ? $"{_game.NameOf(winner).ToUpperInvariant()} WINS!" : "MATCH OVER", 34, 2.5f,
             champCol, champCol.Lightened(0.3f), Palette.Accent));
+        // The champion on a pedestal, with the awards either side of them.
+        var awards = _game.MatchAwards;
+        var stage = UiKit.HBox(12);
+        var left = UiKit.VBox(10);
+        var right = UiKit.VBox(10);
+        foreach (var col in new[] { left, right })
+        {
+            col.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            col.Alignment = BoxContainer.AlignmentMode.Center;
+        }
+        for (int i = 0; i < awards.Count; i++)
+            (i % 2 == 0 ? left : right).AddChild(AwardCard(awards[i], i % 2 == 0 ? HorizontalAlignment.Right : HorizontalAlignment.Left));
+        stage.AddChild(left);
         if (winner >= 0 && _game.Slots[winner] is { } champ)
         {
-            var podium = new CenterContainer();
-            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, crowded ? 2.2f : 3.2f, alive: true) { Pedestal = true });
-            _body.AddChild(podium);
+            // Wider than the figure, so the gun it holds out never reaches the awards beside it.
+            float zoom = crowded ? 2.2f : 3.2f;
+            var podium = new CenterContainer { CustomMinimumSize = new Vector2(56 * zoom, 0) };
+            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, zoom, alive: true) { Pedestal = true });
+            stage.AddChild(podium);
         }
+        stage.AddChild(right);
+        if (awards.Count > 0 || stage.GetChildCount() > 2) _body.AddChild(stage);
 
         Container standings = _body;
         if (crowded)
@@ -95,6 +112,20 @@ public partial class MatchOverUI : Control
         buttons.AddChild(UiKit.Button("Leave", () => LeavePressed?.Invoke()));
         _body.AddChild(buttons);
         ShowVotes();
+    }
+
+    /// <summary>One award: its title, who got it, and the number behind it.</summary>
+    private Control AwardCard(Award a, HorizontalAlignment align)
+    {
+        var box = UiKit.VBox(0);
+        var title = UiKit.Label(a.Title.ToUpperInvariant(), UiKit.Small, Palette.Accent, align, Fonts.Heavy);
+        title.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        box.AddChild(title);
+        box.AddChild(UiKit.Label(_game.NameOf(a.Slot), UiKit.Small, Palette.Player(_game.ColorOf(a.Slot)).Lightened(0.2f), align, Fonts.Bold));
+        var blurb = UiKit.Label(a.Blurb, UiKit.Tiny, Palette.TextDim, align);
+        blurb.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        box.AddChild(blurb);
+        return box;
     }
 
     private Label _votes;

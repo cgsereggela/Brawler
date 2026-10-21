@@ -85,6 +85,7 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - The host picks which cards can come up: **Cards** in the lobby opens the card pool, where cards can be switched off one by one or per category (at least 7 stay in). Everyone else can open it to see the pool. The host's choice is saved in the `[cards]` section of `settings.cfg`.
 - Each battle gets a newly generated arena.
+- The match-over screen hands out up to four **awards** beside the champion, such as *Own Worst Enemy* (most self-inflicted exits), *Frequent Flyer* (longest time in the air), *Brick Wall* and *Stormtrooper*. Everyone gets one before anyone gets a second, and a tie gives nobody the title. The list is in `godot/scripts/Logic/Awards.cs`.
 - When the match ends, press **Rematch** to go again with the same players and settings, from zero cards. It starts once every player still there has pressed it (bots always agree); press it again to take your vote back. The host can also take everyone back to the **Lobby** instead.
 
 ## Cards
