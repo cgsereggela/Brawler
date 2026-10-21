@@ -33,6 +33,8 @@ namespace Brawler;
 ///                         some with full recoil) into DIR, then quit
 ///   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
 ///   --walkshots=DIR       screenshot leg poses (walk cycle frames, idle, air, wall slide, landing, ramps) into DIR, then quit
+///   --lookshots=DIR       screenshot every eye, mouth, hair and hat option (some firing, some blinking) into DIR, then quit;
+///                         --lookscale=S draws them at size S (default 3.2; 1 is their size in a match)
 ///   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 ///   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 ///                         cards to each player every battle, to exercise the whole card pool
@@ -829,6 +831,59 @@ public partial class Main : Node
                 {
                     SaveShot();
                     if (++page * 8 >= poses.Count) { GetTree().Quit(0); return; }
+                    canvas.QueueRedraw();
+                    GetTree().CreateTimer(0.3).Timeout += NextPage;
+                }
+                GetTree().CreateTimer(0.5).Timeout += NextPage;
+            }
+            else if (a.StartsWith("--lookshots="))
+            {
+                // Every eye, mouth, hair and hat option on a default avatar, a page of 21 at a time (some firing, some
+                // mid-blink), to compare the art before and after a drawing change. Screenshot each page, then quit.
+                _shotDir = a["--lookshots=".Length..];
+                var scaleArg = OS.GetCmdlineUserArgs().FirstOrDefault(x => x.StartsWith("--lookscale="));
+                float lookScale = scaleArg != null && float.TryParse(scaleArg["--lookscale=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ls) ? ls : 3.2f;
+                Show();
+                var canvas = new Control();
+                canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+                _menu.GetParent().AddChild(canvas);
+                var looks = new System.Collections.Generic.List<(string Name, Appearance Look)>();
+                void Add(LookPart part, string[] names)
+                {
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        var look = Appearance.Default();
+                        look[part] = i;
+                        if (part == LookPart.Hat) look[LookPart.HatColor] = i;
+                        looks.Add(($"{part} {names[i]}", look));
+                    }
+                }
+                Add(LookPart.Eyes, Appearance.EyeNames);
+                Add(LookPart.Mouth, Appearance.MouthNames);
+                Add(LookPart.Hair, Appearance.HairNames);
+                Add(LookPart.Hat, Appearance.HatNames);
+                const int perPage = 21;
+                int page = 0;
+                canvas.Draw += () =>
+                {
+                    var font = Brawler.Fx.Fonts.Bold;
+                    for (int k = page * perPage; k < Mathf.Min(looks.Count, (page + 1) * perPage); k++)
+                    {
+                        int cell = k % perPage;
+                        var at = canvas.Size * new Vector2((cell % 7 + 0.5f) / 7, 0.24f + 0.31f * (cell / 7));
+                        AvatarArt.Draw(canvas, at, new AvatarPose
+                        {
+                            Body = Palette.Player(k % 4), Look = looks[k].Look, Facing = k % 5 == 4 ? -1 : 1,
+                            Aim = (k % 5 == 4 ? Vector2.Left : Vector2.Right).Rotated(-0.3f), Scale = lookScale, Time = 0.3f + k * 0.41f,
+                            Grounded = true, Gun = true, GunLook = GunLook.Default, Flash = k % 3 == 0 ? 1 : 0, Blink = k % 11 == 10,
+                        });
+                        canvas.DrawString(font, at + new Vector2(-60, -80), looks[k].Name, HorizontalAlignment.Left, -1, 12);
+                    }
+                };
+                void NextPage()
+                {
+                    SaveShot();
+                    if (++page * perPage >= looks.Count) { GetTree().Quit(0); return; }
                     canvas.QueueRedraw();
                     GetTree().CreateTimer(0.3).Timeout += NextPage;
                 }
