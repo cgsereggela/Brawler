@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Brawler.Core;
 using Godot;
 
@@ -68,6 +69,7 @@ public partial class FxLayer : Node2D
     private readonly List<Rays> _rays = new();
     private readonly List<Glow> _glows = new();
     private readonly List<Text> _texts = new();
+    private readonly List<Text> _pings = new(); // ping markers: Value is who pinged
     private readonly List<(Vector2[] Pts, Color Color, float Life, float MaxLife)> _bolts = new();
     private readonly RandomNumberGenerator _rng = new();
     private Color _screenColor;
@@ -144,8 +146,17 @@ public partial class FxLayer : Node2D
     public void Popup(Vector2 pos, string text, Color color, float size = 13, float life = 0.8f)
         => _texts.Add(new Text { Pos = pos, Value = text, Life = life, MaxLife = life, Color = color, Size = size });
 
+    /// <summary>A ping: a marker that bobs over a spot for a few seconds, with rings pulsing out from it and the pinger's name.</summary>
+    public void Ping(Vector2 pos, Color color, string name, float life)
+    {
+        _pings.Add(new Text { Pos = pos, Value = name, Life = life, MaxLife = life, Color = color });
+        for (float d = 0; d < life - 0.4f; d += 0.6f) RingFx(pos, 2, 18, Shapes.Hdr(color, 1.4f), 0.55f, 1.6f, d);
+        Flash(pos, 14, color with { A = 0.5f }, 0.25f);
+    }
+
     public void Clear()
     {
+        _pings.Clear();
         _parts.Clear();
         _rings.Clear();
         _rays.Clear();
@@ -199,6 +210,7 @@ public partial class FxLayer : Node2D
             t.Pos += new Vector2(0, -26 * d * Mathf.Clamp(t.Life / t.MaxLife * 2, 0, 1));
             return t.Life > 0;
         });
+        Tick(_pings, dt, (ref Text t, float d) => { t.Life -= d; t.Age += d; return t.Life > 0; });
         _screenLife = Mathf.Max(0, _screenLife - dt);
         _solid.QueueRedraw();
         _add.QueueRedraw();
@@ -340,6 +352,7 @@ public partial class FxLayer : Node2D
 
     private void DrawTop(DrawLayer l)
     {
+        foreach (var p in _pings) DrawPing(l, p);
         foreach (var t in _texts)
         {
             float k = t.Life / t.MaxLife;
@@ -353,6 +366,27 @@ public partial class FxLayer : Node2D
             l.DrawStringOutline(font, at, t.Value, HorizontalAlignment.Left, -1, size, Mathf.Max(2, size / 5), new Color(0.08f, 0.04f, 0.14f, alpha));
             l.DrawString(font, at, t.Value, HorizontalAlignment.Left, -1, size, t.Color with { A = alpha });
         }
+    }
+
+    private static void DrawPing(DrawLayer l, Text p)
+    {
+        // Pops in, bobs, and fades over its last half second.
+        float alpha = Mathf.Min(1, p.Life * 2) * Mathf.Min(1, p.Age * 8);
+        float pop = 1f + 0.6f * Mathf.Exp(-p.Age * 12f);
+        var tip = p.Pos + new Vector2(0, -4 - 2.5f * Mathf.Abs(Mathf.Sin(p.Age * 5)));
+        float w = 5 * pop, h = 7 * pop;
+        var arrow = new[] { tip, tip + new Vector2(-w, -h), tip + new Vector2(0, -h * 0.7f), tip + new Vector2(w, -h) };
+        var ink = new Color(0.08f, 0.04f, 0.14f, 0.8f * alpha);
+        l.DrawColoredPolygon(arrow.Select(v => v + new Vector2(0, 1.2f)).ToArray(), ink);
+        l.DrawColoredPolygon(arrow, p.Color.Lightened(0.2f) with { A = alpha });
+        l.DrawCircle(p.Pos, 1.6f, Colors.White with { A = alpha }, true, -1, true);
+        if (string.IsNullOrEmpty(p.Value)) return;
+        var font = Fonts.Bold;
+        const int size = 8;
+        float tw = font.GetStringSize(p.Value, HorizontalAlignment.Left, -1, size).X;
+        var at = tip + new Vector2(-tw / 2, -h - 3);
+        l.DrawStringOutline(font, at, p.Value, HorizontalAlignment.Left, -1, size, 3, ink);
+        l.DrawString(font, at, p.Value, HorizontalAlignment.Left, -1, size, p.Color.Lightened(0.35f) with { A = alpha });
     }
 
     private static Vector2[] Quad(Vector2 c, float w, float h, float rot)

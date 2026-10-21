@@ -22,10 +22,11 @@ public partial class ControlsPanel : VBoxContainer
 {
     internal static ControlsPanel Active;
 
-    private static readonly (string Action, string Name)[] Rows =
+    private static readonly (string Action, string Name)[] Rows = new[]
     {
         ("move_left", "Move left"), ("move_right", "Move right"), ("jump", "Jump"), ("shoot", "Shoot"), ("block", "Block"),
-    };
+    }.Concat(Enumerable.Range(0, Emotes.All.Length).Select(i => (Emotes.Action(i), $"Say {Emotes.All[i].Text}")))
+     .Append(("ping", "Ping")).ToArray();
 
     private readonly Dictionary<(string, int), Button> _slots = new();
     private readonly Dictionary<string, Label> _names = new();
@@ -34,13 +35,13 @@ public partial class ControlsPanel : VBoxContainer
 
     public override void _Ready()
     {
-        AddThemeConstantOverride("separation", 8);
+        AddThemeConstantOverride("separation", 6);
         AddChild(UiKit.Label("Click a slot, then press a key or mouse button.\nRight-click a slot to clear it. Esc cancels.",
             UiKit.Small, Palette.TextDim, HorizontalAlignment.Center));
 
         var grid = new GridContainer { Columns = 1 + BindTable.Slots };
         grid.AddThemeConstantOverride("h_separation", 6);
-        grid.AddThemeConstantOverride("v_separation", 6);
+        grid.AddThemeConstantOverride("v_separation", 3); // tight, so all ten rows fit the panel
         AddChild(grid);
         foreach (var (action, name) in Rows)
         {
@@ -52,7 +53,7 @@ public partial class ControlsPanel : VBoxContainer
             {
                 var key = (action, i);
                 var b = UiKit.Button("", () => StartCapture(key), 0, "Small");
-                b.CustomMinimumSize = new Vector2(0, 28);
+                b.CustomMinimumSize = new Vector2(0, 23);
                 b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 b.ClipText = true;
                 b.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;

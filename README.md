@@ -39,6 +39,8 @@ Defaults; rebind them in Options → Controls.
 | Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload |
 | Shoot | Left mouse (hold) |
 | Block | Right mouse / Shift |
+| Emotes | 1 GG, 2 HAHA!, 3 OOPS, 4 COME AT ME: a speech bubble over your head for everyone to see |
+| Ping | Q / middle mouse: marks the spot under your cursor for a few seconds |
 | Options in a match | Esc (an overlay; the game keeps running) |
 | Leave match | Esc → Leave match → Yes |
 | Windowed ⇄ full screen | Alt+Enter |
@@ -85,6 +87,7 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 - After every round, **everyone picks a card**. Losers choose from more options (default 5) than the winner (default 3, or 0 to skip).
 - The host picks which cards can come up: **Cards** in the lobby opens the card pool, where cards can be switched off one by one or per category (at least 7 stay in). Everyone else can open it to see the pool. The host's choice is saved in the `[cards]` section of `settings.cfg`.
 - Each battle gets a newly generated arena.
+- When you die you rise as a **ghost** until the next battle. It floats after your cursor, straight through walls, and can't touch anything, but you can still emote (a ghost says *BOO!* and *AVENGE ME!* instead of *HAHA!* and *COME AT ME*) and ping to point out where things are. Bot ghosts haunt the nearest player, and bots sometimes emote when they score a kill, die or win. Emotes and pings are limited to a burst of three, then one every 1.5 seconds; the host enforces this. The list is in `godot/scripts/Logic/Emotes.cs`.
 - The match-over screen hands out up to four **awards** beside the champion, such as *Own Worst Enemy* (most self-inflicted exits), *Frequent Flyer* (longest time in the air), *Brick Wall* and *Stormtrooper*. Everyone gets one before anyone gets a second, and a tie gives nobody the title. The list is in `godot/scripts/Logic/Awards.cs`.
 - When the match ends, press **Rematch** to go again with the same players and settings, from zero cards. It starts once every player still there has pressed it (bots always agree); press it again to take your vote back. The host can also take everyone back to the **Lobby** instead.
 
@@ -233,7 +236,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines) and the leg animation's ground, ramp and wall probes.
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines), the emote rate limit and the leg animation's ground, ramp and wall probes.
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -242,6 +245,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot -- --autohost=24600 &                 # networked: host + bot...
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600 --dropat=1  # ...that leaves in battle 1, rejoins, and checks it got its slot and cards back
+# every autopilot run also emotes and pings once a battle, checks they come back from the host, and checks every ghost floats (CHATCHECK in the log)
 # add --rematch to --autotest, or to both --autohost and --autojoin: everyone votes for a rematch at match end, and the run checks it starts fresh
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots

@@ -378,6 +378,7 @@ public partial class GameManager : Node2D
     {
         float dt = (float)delta;
         _clock += dt;
+        TickChatGuards(dt);
         if (IsHost) Stats.Tick(dt, Phase);
         if (IsHost && _rejoinWaitT > 0) HostRejoinWaitTick(dt);
         if (IsHost && _hostNext != null && _rejoinWaitT <= 0) // the match flow holds while waiting for a rejoin
@@ -440,7 +441,14 @@ public partial class GameManager : Node2D
         foreach (var p in Active())
         {
             var a = p.Avatar;
-            if (a == null || !a.Alive) continue;
+            if (a == null) continue;
+            if (!a.Alive)
+            {
+                // A ghost follows its player's cursor; a bot's haunts whoever is nearest.
+                var target = IsBotPlayer(p) ? BotGhostTarget(a) : p.Input?.Next(a, dt).Aim ?? a.GlobalPosition;
+                a.GhostStep(target, dt);
+                continue;
+            }
             var f = p.Input?.Next(a, dt) ?? new InputFrame { Aim = a.GlobalPosition + Vector2.Right };
             a.Step(f, dt, authority: true);
             // Award tally: the longest stretch off the floor and walls.
@@ -460,12 +468,14 @@ public partial class GameManager : Node2D
         foreach (var p in Active())
         {
             var a = p.Avatar;
-            if (a == null || !a.Alive) continue;
+            if (a == null) continue;
             if (p == LocalMatchPlayer && p.Input != null)
             {
-                var f = p.Input.Next(a, dt);
+                // Dead, the input still goes to the host: its Aim steers our ghost there too.
+                var f = a.Alive || !AutopilotLocal ? p.Input.Next(a, dt) : new InputFrame { Aim = BotGhostTarget(a) };
                 RpcId(1, MethodName.SubmitInput, f.ToBytes());
-                a.Step(f, dt, authority: false);
+                if (a.Alive) a.Step(f, dt, authority: false);
+                else a.GhostStep(f.Aim, dt);
             }
             else a.SmoothRemote(dt);
         }
@@ -485,6 +495,7 @@ public partial class GameManager : Node2D
         if (_endCheckT > 0) return;
         _endCheckT = -1;
         _pendingWinner = alive.Count == 1 ? alive[0].Player.Slot : -1;
+        HostBotChat(_pendingWinner, 0.45f, 0, 1);
         Phase = Phase.Intermission;
         HostAfter(0.8f, HostResolveBattle);
     }
@@ -740,6 +751,11 @@ public partial class GameManager : Node2D
             if (cause == KillCause.Fall) Book.Add(a.Player.Slot, AwardStat.Falls);
         }
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
+        if (cause != KillCause.Left)
+        {
+            HostBotChat(killer, 0.3f, 1, 3);
+            HostBotChat(a.Player.Slot, 0.3f, 2, 3);
+        }
         // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
         float boom = a.S[Stat.Kamikaze];
         if (boom > 0 && cause is KillCause.Shot or KillCause.Hazard) HostExplode(a.GlobalPosition, boom, 70, a.Player.Slot, 480);
@@ -1273,7 +1289,11 @@ public partial class GameManager : Node2D
     {
         if (Slots[slot] == null) return;
         Slots[slot].Left = true;
-        if (Slots[slot].Avatar != null) Slots[slot].Avatar.Alive = false;
+        if (Slots[slot].Avatar is { } a)
+        {
+            a.Alive = false;
+            a.SyncGhost();
+        }
         Banner?.Invoke($"{Slots[slot].Info.Name} left", Palette.TextDim, 1.2f);
         ScoresChanged?.Invoke();
     }
@@ -1492,6 +1512,127 @@ public partial class GameManager : Node2D
     }
 
     // =====================================================================
+    // Emotes, pings and ghosts
+    // =====================================================================
+
+    /// <summary>Every peer, after the host lets an emote or a ping through: (slot, emote id) and (slot, where).</summary>
+    public event Action<int, int> EmoteShown;
+    public event Action<int, Vector2> PingShown;
+
+    private readonly EmoteLimiter[] _emoteGuard = NewGuards(), _pingGuard = NewGuards();
+    private readonly EmoteLimiter _myEmotes = new(), _myPings = new();
+    private readonly Rng _chatRng = new((ulong)DateTime.Now.Ticks ^ 0x9e3779b97f4a7c15UL);
+
+    private static EmoteLimiter[] NewGuards() => Enumerable.Range(0, LobbyState.MaxPlayers).Select(_ => new EmoteLimiter()).ToArray();
+
+    /// <summary>Emotes and pings work while the arena is on screen, alive or as a ghost.</summary>
+    public bool CanChat => Phase is Phase.Countdown or Phase.Fighting or Phase.Intermission && Map != null;
+
+    public void LocalEmote(int id)
+    {
+        if (!CanChat || LocalMatchPlayer == null || !Emotes.Valid(id) || !_myEmotes.TryUse()) return;
+        if (IsHost) HostEmote(LocalMatchPlayer.Slot, id);
+        else RpcId(1, MethodName.RequestEmote, id);
+    }
+
+    public void LocalPing(Vector2 at)
+    {
+        if (!CanChat || LocalMatchPlayer == null || !_myPings.TryUse()) return;
+        if (IsHost) HostPing(LocalMatchPlayer.Slot, at);
+        else RpcId(1, MethodName.RequestPing, at);
+    }
+
+    private void HostEmote(int slot, int id)
+    {
+        if (!CanChat || !Emotes.Valid(id) || Slots[slot] is not { Left: false } || !_emoteGuard[slot].TryUse()) return;
+        Rpc(MethodName.ShowEmote, slot, id);
+    }
+
+    private void HostPing(int slot, Vector2 at)
+    {
+        if (!CanChat || Slots[slot] is not { Left: false } || !_pingGuard[slot].TryUse()) return;
+        at = new Vector2(Mathf.Clamp(at.X, 0, MapLayout.Width), Mathf.Clamp(at.Y, 0, MapLayout.Height));
+        Rpc(MethodName.ShowPing, slot, at);
+    }
+
+    /// <summary>Host: a bot sometimes says something when it scores, dies or wins (rate limits apply as for anyone).</summary>
+    private void HostBotChat(int slot, float chance, params int[] ids)
+    {
+        if (slot < 0 || Slots[slot] is not { } p || !p.Info.IsBot || !_chatRng.Chance(chance)) return;
+        HostEmote(slot, ids[_chatRng.Range(0, ids.Length - 1)]);
+    }
+
+    private void TickChatGuards(float dt)
+    {
+        foreach (var g in _emoteGuard) g.Tick(dt);
+        foreach (var g in _pingGuard) g.Tick(dt);
+        _myEmotes.Tick(dt);
+        _myPings.Tick(dt);
+    }
+
+    /// <summary>Reads the emote and ping keys for the person at this computer.</summary>
+    private void ReadChatKeys()
+    {
+        if (!CanChat || LocalMatchPlayer == null || LocalInput.Suppressed || AutopilotLocal) return;
+        for (int i = 0; i < Emotes.All.Length; i++)
+            if (Input.IsActionJustPressed(Emotes.Action(i))) LocalEmote(i);
+        if (Input.IsActionJustPressed("ping")) LocalPing(GetGlobalMousePosition());
+    }
+
+    /// <summary>Where a bot's ghost (or an autopiloted one) floats: circling over the nearest live player's head.</summary>
+    private Vector2 BotGhostTarget(Avatar ghost)
+    {
+        Avatar near = null;
+        float best = float.MaxValue;
+        foreach (var a in LiveAvatars())
+        {
+            float d = a.GlobalPosition.DistanceSquaredTo(ghost.GlobalPosition);
+            if (d < best) (best, near) = (d, a);
+        }
+        float t = _clock * 1.3f + ghost.Player.Slot * 1.7f;
+        var center = near?.GlobalPosition ?? new Vector2(MapLayout.Width / 2f, MapLayout.Height / 3f);
+        return center + new Vector2(Mathf.Cos(t) * 46, -46 + Mathf.Sin(t * 2) * 10);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestEmote(int id)
+    {
+        if (!IsHost) return;
+        long sender = Multiplayer.GetRemoteSenderId();
+        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
+        if (p != null) HostEmote(p.Slot, id);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestPing(Vector2 at)
+    {
+        if (!IsHost) return;
+        long sender = Multiplayer.GetRemoteSenderId();
+        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
+        if (p != null) HostPing(p.Slot, at);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void ShowEmote(int slot, int id)
+    {
+        if (Slots[slot]?.Avatar is not { } a || !Emotes.Valid(id)) return;
+        a.ShowEmote(id);
+        Sfx.Play("emote", 0.8f);
+        Log.Info($"emote: {NameOf(slot)} says {Emotes.Text(id, !a.Alive)}");
+        EmoteShown?.Invoke(slot, id);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void ShowPing(int slot, Vector2 at)
+    {
+        if (Slots[slot] == null || Map == null) return;
+        Fx.Ping(at, Palette.Player(ColorOf(slot)), NameOf(slot), Emotes.PingTime);
+        Sfx.Play("ping", 0.8f);
+        Log.Info($"ping: {NameOf(slot)} at ({at.X:0}, {at.Y:0})");
+        PingShown?.Invoke(slot, at);
+    }
+
+    // =====================================================================
     // RPCs: client → host
     // =====================================================================
 
@@ -1669,6 +1810,7 @@ public partial class GameManager : Node2D
 
     public override void _Process(double delta)
     {
+        ReadChatKeys();
         if (_hitStopUntil != 0 && Time.GetTicksMsec() >= _hitStopUntil)
         {
             Engine.TimeScale = 1;

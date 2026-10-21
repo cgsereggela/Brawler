@@ -293,6 +293,7 @@ public partial class Main : Node
                 if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
                 else if (_poolCheck && _poolPicks == 0) Finish(1, "poolcheck: the match ended without a card pick");
                 else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
+                else if (ChatCheckProblem() is { } chat) Finish(1, chat);
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -366,6 +367,7 @@ public partial class Main : Node
                 var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
                 if (!roundTrip.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: lobby round trip gave [{string.Join(",", roundTrip)}]"); return; }
                 StartPoolCheck();
+                StartChatCheck();
                 Log.Info("AUTOTEST offline starting");
                 _game.HostStartMatch();
             }
@@ -381,6 +383,7 @@ public partial class Main : Node
                 if (!_noBots) _net.AddBot();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, DisabledCards = new(AutoDisabled) });
                 StartPoolCheck();
+                StartChatCheck();
                 _net.LobbyChanged += AutoHostMaybeStart;
             }
             else if (a.StartsWith("--autojoin"))
@@ -393,6 +396,7 @@ public partial class Main : Node
                 _game.DisableHitStop = true;
                 _net.LocalName = "AutoJoin";
                 StartPoolCheck();
+                StartChatCheck();
                 _net.LobbyChanged += AutoJoinCheckPool;
                 (_joinHost, _joinPort) = (parts[0], port);
                 if (_dropAt > 0) _game.BattleStarted += AutoDropMaybe;
@@ -833,6 +837,12 @@ public partial class Main : Node
                     },
                     () =>
                     {
+                        // The Controls tab: every action, emotes and ping included, must fit on screen.
+                        OpenOptions(_lobby);
+                        foreach (var t in _options.FindChildren("*", "TabContainer", true, false).OfType<TabContainer>()) t.CurrentTab = 2;
+                    },
+                    () =>
+                    {
                         // The Online tab, with the lobby still hosting behind it.
                         OpenOptions(_lobby);
                         foreach (var t in _options.FindChildren("*", "TabContainer", true, false).OfType<TabContainer>()) t.CurrentTab = 3;
@@ -922,6 +932,7 @@ public partial class Main : Node
     {
         if (_autoMode == null) return;
         if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
+        if (_chatCheck) PollGhosts();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -1008,6 +1019,62 @@ public partial class Main : Node
         }
         _rematches++;
         Log.Info($"REMATCHTEST rematch started with {_game.Active().Count()} players");
+    }
+
+    // ---------- emote, ping and ghost check (--autotest, --autohost, --autojoin) ----------
+
+    private bool _chatCheck;
+    private int _myEmotes, _myPings, _otherChat;
+    // Each ghost seen (avatars are rebuilt every battle, so keyed by instance): who, how long it was up, how far it went.
+    private readonly System.Collections.Generic.Dictionary<ulong, (string Name, float Age, float Travel)> _ghosts = new();
+
+    /// <summary>
+    /// Two seconds into every fight, the autopilot emotes (a different one each battle) and pings above its head. Our
+    /// own emotes and pings must come back from the host, and every ghost that was up for a second must have moved.
+    /// </summary>
+    private void StartChatCheck()
+    {
+        _chatCheck = true;
+        _game.EmoteShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myEmotes++; else _otherChat++; };
+        _game.PingShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myPings++; else _otherChat++; };
+        _game.BattleStarted += () => GetTree().CreateTimer(GameManager.CountdownTime + 2.0, true, false, true).Timeout += () =>
+        {
+            var me = _game.LocalMatchPlayer?.Avatar;
+            if (me == null || _game.Phase != Phase.Fighting) return;
+            _game.LocalEmote(_game.BattleNumber % Emotes.All.Length);
+            _game.LocalPing(me.GlobalPosition + new Vector2(0, -40));
+        };
+        // With --shots: a few pictures of a ghost's bubble, once the ghost has risen.
+        if (_shotDir != null)
+            _game.EmoteShown += (slot, _) =>
+            {
+                if (_chatShots >= 3 || _game.Slots[slot]?.Avatar is not { Alive: false }) return;
+                int n = ++_chatShots;
+                GetTree().CreateTimer(Avatar.GhostDelay + 0.3, true, false, true).Timeout += () => SaveShot($"chat_{n}");
+            };
+    }
+
+    private int _chatShots;
+
+    private void PollGhosts()
+    {
+        foreach (var p in _game.Slots)
+            if (p?.Avatar is { GhostUp: true } a)
+                _ghosts[a.GetInstanceId()] = (p.Info.Name, a.GhostAge, a.GhostTravel);
+    }
+
+    /// <summary>Null when the check passed (or isn't running); otherwise what went wrong.</summary>
+    private string ChatCheckProblem()
+    {
+        if (!_chatCheck) return null;
+        var stuck = _ghosts.Values.Where(g => g.Age > 1f && g.Travel < 10f).ToList();
+        Log.Info($"CHATCHECK own emotes {_myEmotes}, own pings {_myPings}, others' {_otherChat}; ghosts {_ghosts.Count}, "
+            + $"floated {(_ghosts.Count > 0 ? _ghosts.Values.Average(g => g.Travel) : 0):0} px on average");
+        if (_myEmotes == 0) return "chatcheck: our emotes never came back from the host";
+        if (_myPings == 0) return "chatcheck: our pings never came back from the host";
+        if (_ghosts.Count == 0) return "chatcheck: no ghost ever rose";
+        if (stuck.Count > 0) return $"chatcheck: ghosts that never moved: {string.Join(", ", stuck.Select(g => g.Name))}";
+        return null;
     }
 
     // ---------- card pool check (--autotest, --autohost, --autojoin) ----------

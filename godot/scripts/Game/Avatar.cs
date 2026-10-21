@@ -500,7 +500,7 @@ public partial class Avatar : CharacterBody2D
         if (predicted)
         {
             // Own avatar on a client: trust local movement unless we've drifted (teleports, knockback misses).
-            if (GlobalPosition.DistanceTo(pos) > 24) GlobalPosition = pos;
+            if (GlobalPosition.DistanceTo(pos) > 24 && Alive) GlobalPosition = pos;
             return;
         }
         _netTarget = pos;
@@ -513,8 +513,129 @@ public partial class Avatar : CharacterBody2D
     {
         if (!_hasNetTarget) return;
         _netTarget += Velocity * dt; // extrapolate between snapshots
+        var from = GlobalPosition;
         GlobalPosition = GlobalPosition.Lerp(_netTarget, 0.5f);
-        Animate(dt);
+        if (!Alive) GhostTravel += from.DistanceTo(GlobalPosition);
+        if (Alive) Animate(dt);
+        else GhostTick(dt);
+    }
+
+    // ---------- ghost and emotes ----------
+
+    /// <summary>Seconds after dying before the ghost rises, so the death burst plays out first.</summary>
+    public const float GhostDelay = 0.7f;
+    private const float GhostSpeed = 260f, GhostMargin = 12f;
+    private float _deadT;
+    private Node2D _ghostArt;
+    private int _emote = -1;
+    private float _emoteT;
+    private bool _emoteAsGhost;
+    /// <summary>How far the ghost has floated (a test hook: --chatcheck checks ghosts really move, on every peer).</summary>
+    public float GhostTravel;
+
+    /// <summary>True once this dead player's ghost has risen. Players who left the game don't haunt it.</summary>
+    public bool GhostUp => !Alive && !Player.Left && _deadT >= GhostDelay;
+    public float GhostAge => GhostUp ? _deadT - GhostDelay : 0;
+
+    /// <summary>Hides the ghost straight away when its player leaves (left players get no more ghost ticks).</summary>
+    public void SyncGhost()
+    {
+        if (_ghostArt != null) _ghostArt.Visible = GhostUp;
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Dead: float toward <paramref name="target"/> (the player's cursor), through walls, anywhere in the arena. Run by
+    /// the host for everyone and by a client for its own ghost; ghosts touch nothing, so this never affects the fight.
+    /// </summary>
+    public void GhostStep(Vector2 target, float dt)
+    {
+        GhostTick(dt);
+        if (!GhostUp)
+        {
+            Velocity = Vector2.Zero;
+            return;
+        }
+        var want = ((target - GlobalPosition) * 5f).LimitLength(GhostSpeed);
+        Velocity = Velocity.Lerp(want, 1f - Mathf.Exp(-8f * dt));
+        var from = GlobalPosition;
+        var p = GlobalPosition + Velocity * dt;
+        GlobalPosition = new Vector2(Mathf.Clamp(p.X, GhostMargin, MapLayout.Width - GhostMargin), Mathf.Clamp(p.Y, GhostMargin, MapLayout.Height - GhostMargin));
+        GhostTravel += from.DistanceTo(GlobalPosition);
+    }
+
+    /// <summary>Ghost animation, on every peer: fade in, bob, face the way it drifts.</summary>
+    private void GhostTick(float dt)
+    {
+        _deadT += dt;
+        _animT += dt;
+        _emoteT = Mathf.Max(0, _emoteT - dt);
+        if (Mathf.Abs(Velocity.X) > 8) _facing = Velocity.X < 0 ? -1 : 1;
+        if (_ghostArt == null)
+        {
+            // Its own node so the whole figure fades as one, drawn under this node's emote bubble.
+            _ghostArt = new Node2D { ShowBehindParent = true };
+            _ghostArt.Draw += DrawGhostArt;
+            AddChild(_ghostArt);
+        }
+        _ghostArt.Visible = GhostUp;
+        float fade = Mathf.Clamp((_deadT - GhostDelay) / 0.5f, 0, 1);
+        _ghostArt.Modulate = new Color(0.85f, 0.95f, 1.15f, 0.5f * fade);
+        _ghostArt.Position = new Vector2(0, Mathf.Sin(_animT * 2.6f) * 2.5f);
+        _ghostArt.QueueRedraw();
+        QueueRedraw();
+    }
+
+    private void DrawGhostArt()
+    {
+        float size = S[Stat.Size];
+        GlowTex.Draw(_ghostArt, Vector2.Zero, 26 * size, Player.Color with { A = 0.4f });
+        AvatarArt.Draw(_ghostArt, Vector2.Zero, new AvatarPose
+        {
+            Body = Player.Color.Lightened(0.35f),
+            Look = Player.Info.Look,
+            Facing = _facing,
+            Aim = new Vector2(_facing, 0.4f).Normalized(),
+            Scale = size,
+            Time = _animT,
+            Air = 1, // legs dangle
+            Blink = true, // eyes shut
+            Gun = false,
+            GunLook = Gun,
+        });
+    }
+
+    /// <summary>Shows a speech bubble over this player (or their ghost) for a couple of seconds.</summary>
+    public void ShowEmote(int id)
+    {
+        _emote = id;
+        _emoteT = Emotes.BubbleTime;
+        _emoteAsGhost = !Alive;
+        QueueRedraw();
+    }
+
+    /// <summary>The emote bubble, its tail touching (0, <paramref name="bottom"/>).</summary>
+    private void DrawEmote(float bottom)
+    {
+        if (_emoteT <= 0 || !Emotes.Valid(_emote) || Player.Left) return;
+        string text = Emotes.Text(_emote, _emoteAsGhost);
+        float age = Emotes.BubbleTime - _emoteT;
+        float alpha = Mathf.Min(1, _emoteT * 4) * (_emoteAsGhost ? 0.85f : 1f);
+        float pop = Mathf.Min(1, age * 10) * (1f + 0.3f * Mathf.Exp(-age * 12f));
+        if (pop <= 0) return;
+        var font = Fonts.Heavy;
+        const int size = 9;
+        float w = font.GetStringSize(text, HorizontalAlignment.Left, -1, size).X + 9, h = 13;
+        DrawSetTransform(new Vector2(0, bottom), 0, Vector2.One * pop);
+        var box = new Rect2(-w / 2, -h - 3, w, h);
+        var paper = new Color("#f4efe4") with { A = alpha };
+        var edge = Player.Color.Darkened(0.2f) with { A = alpha };
+        DrawColoredPolygon(Shapes.RoundRect(box.Grow(1.2f), 5), edge);
+        DrawColoredPolygon(new[] { new Vector2(-3.5f, -3.6f), new Vector2(3.5f, -3.6f), new Vector2(0, 0.8f) }, edge);
+        DrawColoredPolygon(Shapes.RoundRect(box, 4), paper);
+        DrawColoredPolygon(new[] { new Vector2(-2.2f, -3.2f), new Vector2(2.2f, -3.2f), new Vector2(0, -0.6f) }, paper);
+        DrawString(font, new Vector2(-w / 2, -6.5f), text, HorizontalAlignment.Center, w, size, new Color("#17141f") with { A = alpha });
+        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
     }
 
     // ---------- animation and drawing ----------
@@ -558,6 +679,7 @@ public partial class Avatar : CharacterBody2D
         }
         _kick = Mathf.Max(0, _kick - dt * 9);
         _flash = Mathf.Max(0, _flash - dt * 14);
+        _emoteT = Mathf.Max(0, _emoteT - dt);
         _animT += dt;
         if (Mathf.Abs(AimDir.X) > 0.15f) _facing = AimDir.X < 0 ? -1 : 1;
         AnimateLegs(dt);
@@ -685,7 +807,12 @@ public partial class Avatar : CharacterBody2D
 
     public override void _Draw()
     {
-        if (!Alive) return;
+        if (!Alive)
+        {
+            // The ghost itself is _ghostArt; this node only adds its bubble.
+            if (GhostUp) DrawEmote(_ghostArt.Position.Y + AvatarArt.TopY(Player.Info.Look) * S[Stat.Size] - 3);
+            return;
+        }
         float size = S[Stat.Size];
         var pose = new AvatarPose
         {
@@ -755,6 +882,7 @@ public partial class Avatar : CharacterBody2D
             var tip = new Vector2(0, barPos.Y - 3 + bobY);
             DrawColoredPolygon(new[] { tip + new Vector2(-2.6f, -3.4f), tip + new Vector2(2.6f, -3.4f), tip }, Player.Color.Lightened(0.25f));
         }
+        DrawEmote(barPos.Y - (mine ? 8 : 3));
 
         if (BlockActive > 0)
         {

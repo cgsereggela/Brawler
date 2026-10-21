@@ -30,6 +30,11 @@ public static class Keybinds
         Set("jump", K(Key.W), K(Key.Space), K(Key.Up));
         Set("shoot", Binding.Mouse((int)MouseButton.Left));
         Set("block", K(Key.Shift), Binding.Mouse((int)MouseButton.Right));
+        Set("emote_1", K(Key.Key1));
+        Set("emote_2", K(Key.Key2));
+        Set("emote_3", K(Key.Key3));
+        Set("emote_4", K(Key.Key4));
+        Set("ping", K(Key.Q), Binding.Mouse((int)MouseButton.Middle));
         return t;
     }
 

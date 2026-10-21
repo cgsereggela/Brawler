@@ -1,3 +1,4 @@
+using System.Linq;
 using Brawler.Core;
 using Brawler.Fx;
 using Brawler.Game;
@@ -92,6 +93,7 @@ public partial class HudUI : Control
 
         DrawBanner(vs);
         DrawHoverCard(vs);
+        DrawGhostHint(vs);
 
         // Your loadout, bottom-left.
         var me = _game.LocalMatchPlayer;
@@ -251,6 +253,22 @@ public partial class HudUI : Control
             DrawString(Fonts.Regular, at, line.Label, HorizontalAlignment.Left, colW - 40, 11, Palette.TextDim);
             DrawString(bold, at, line.Value, HorizontalAlignment.Right, colW, 11, line.Changed ? Palette.Accent : Palette.Text);
         }
+    }
+
+    /// <summary>While you're a ghost: a reminder that you can still emote and ping until the next battle.</summary>
+    private void DrawGhostHint(Vector2 vs)
+    {
+        if (_game.LocalMatchPlayer?.Avatar is not { GhostUp: true } || _game.Phase != Phase.Fighting) return;
+        string emotes = string.Join("/", Enumerable.Range(0, Emotes.All.Length)
+            .Select(i => Keybinds.Current.Row(Emotes.Action(i)).FirstOrDefault(b => !b.IsNone))
+            .Where(b => !b.IsNone).Select(Keybinds.Label));
+        string text = $"YOU'RE A GHOST  ·  {(emotes.Length > 0 ? emotes + " emote  ·  " : "")}{Keybinds.Hint("ping")} ping";
+        var font = Fonts.Bold;
+        float w = font.GetStringSize(text, HorizontalAlignment.Left, -1, 12).X + 28;
+        var r = new Rect2((vs.X - w) / 2, 58, w, 24);
+        float pulse = 0.75f + 0.25f * Mathf.Sin(_t * 3);
+        Pill(r, new Color(0.06f, 0.03f, 0.13f, 0.7f), Palette.Cool with { A = 0.4f * pulse });
+        DrawString(font, r.Position + new Vector2(0, 17), text, HorizontalAlignment.Center, w, 12, Palette.Text with { A = 0.9f });
     }
 
     private void DrawBanner(Vector2 vs)
