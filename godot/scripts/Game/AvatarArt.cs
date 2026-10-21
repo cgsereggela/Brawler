@@ -472,33 +472,64 @@ public static class AvatarArt
 
     private static void DrawNose(Ctx c, int style)
     {
+        // Noses are part of the mask: carved into it, or sculpted out of the same bone with the mask's own light-to-shade
+        // gradient and ink line, lit from the upper left like the rest of the figure.
         var ci = c.Ci;
-        var bone = c.H(c.Mask);
+        var lit = c.H(c.Mask);
+        var shade = c.H(c.MaskShade);
+        var deep = c.H(c.MaskShade.Lerp(MaskDeep, 0.6f));
+        var hole = c.H(Hollow);
+        void Sculpt(Vector2[] pts, float line = 0.6f)
+        {
+            Shapes.Fill(ci, pts, lit, Ink, line);
+            Shapes.Gradient(ci, pts, lit, shade);
+        }
         switch (style)
         {
-            case 1: // Dot
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(3.8f, -1.7f), 0.6f, 0.45f, 10), c.H(MaskDeep));
+            case 1: // Dot: one small carved hole.
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(5.1f, -1.9f), 0.55f, 0.65f, 10), hole);
                 break;
-            case 2: // Button
-                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.7f, -1.6f), 1.25f, 1.1f, 14), bone, MaskDeep, 0.4f);
-                ci.DrawCircle(new Vector2(3.3f, -2f), 0.35f, new Color(1, 1, 1, 0.5f), true, -1, true);
+            case 2: // Button: a soft bump, read only by its shadow and a glint.
+                ci.DrawArc(new Vector2(5.1f, -1.7f), 1.1f, -0.3f, 2.4f, 10, deep, 0.6f, true);
+                ci.DrawArc(new Vector2(4.9f, -1.9f), 0.8f, 3.4f, 4.6f, 6, c.H(c.Mask.Lightened(0.25f)), 0.45f, true);
                 break;
-            case 3: // Long: a bone snout.
-                Shapes.Fill(ci, Shapes.Capsule(new Vector2(3f, -2f), new Vector2(8.6f, -1.3f), 1.05f), bone, Ink, 0.5f);
-                ci.DrawLine(new Vector2(4f, -1.1f), new Vector2(8.2f, -0.7f), c.H(c.MaskShade), 0.5f, true);
+            case 3: // Long: a tapering snout grown out of the mask, sinking into shade underneath.
+            {
+                Sculpt(new[]
+                {
+                    new Vector2(4.2f, -2.8f), new Vector2(5.8f, -2.6f), new Vector2(7.6f, -2.1f), new Vector2(8.6f, -1.6f),
+                    new Vector2(8.3f, -1.05f), new Vector2(6.6f, -0.85f), new Vector2(5.2f, -0.75f), new Vector2(4.3f, -0.9f),
+                });
+                ci.DrawLine(new Vector2(5f, -1.15f), new Vector2(7.6f, -1.25f), deep, 0.45f, true);
                 break;
-            case 4: // Pig: two nostril slits.
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(2.7f, -1.5f), 0.4f, 0.7f, 8), c.H(Hollow));
-                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(4.2f, -1.5f), 0.4f, 0.7f, 8), c.H(Hollow));
+            }
+            case 4: // Pig: a flat snout plate set into the mask, with two hollow nostrils.
+            {
+                var plate = Shapes.Ellipse(new Vector2(5f, -1.6f), 1.7f, 1.25f, 16);
+                Sculpt(plate, 0.45f);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(4.4f, -1.55f), 0.32f, 0.55f, 8), hole);
+                ci.DrawColoredPolygon(Shapes.Ellipse(new Vector2(5.6f, -1.55f), 0.32f, 0.55f, 8), hole);
                 break;
-            case 5: // Beak: bone, shaded below.
-                Shapes.Fill(ci, new[] { new Vector2(3.2f, -3.1f), new Vector2(9.4f, -1.6f), new Vector2(3.2f, -0.1f) }, bone, Ink, 0.5f);
-                ci.DrawColoredPolygon(new[] { new Vector2(3.4f, -1.6f), new Vector2(9.0f, -1.6f), new Vector2(3.4f, -0.3f) }, c.H(c.MaskShade));
+            }
+            case 5: // Beak: a short hooked point, bone above and shaded below its ridge.
+            {
+                Sculpt(new[]
+                {
+                    new Vector2(4.2f, -3.0f), new Vector2(5.9f, -2.8f), new Vector2(7.9f, -2.0f), new Vector2(9.0f, -0.9f),
+                    new Vector2(8.5f, -0.6f), new Vector2(6.6f, -0.6f), new Vector2(5.2f, -0.4f), new Vector2(4.3f, -0.6f),
+                });
+                ci.DrawColoredPolygon(new[] { new Vector2(4.8f, -1.45f), new Vector2(7.8f, -1.3f), new Vector2(8.6f, -0.85f), new Vector2(6.6f, -0.85f), new Vector2(4.8f, -0.75f) }, deep);
                 break;
-            case 6: // Clown
-                Shapes.Fill(ci, Shapes.Ellipse(new Vector2(3.9f, -1.6f), 1.7f, 1.7f, 16), c.H(new Color("#8e3a3c")), Ink, 0.5f);
-                ci.DrawCircle(new Vector2(3.4f, -2.2f), 0.45f, new Color(1, 1, 1, 0.4f), true, -1, true);
+            }
+            case 6: // Clown: a painted ball, matte like everything else.
+            {
+                var red = new Color("#8e3a3c");
+                var ball = Shapes.Ellipse(new Vector2(5f, -1.7f), 1.6f, 1.6f, 16);
+                Shapes.Fill(ci, ball, c.H(red), Ink, 0.55f);
+                Shapes.Gradient(ci, ball, c.H(red.Lightened(0.15f)), c.H(red.Darkened(0.3f)));
+                ci.DrawCircle(new Vector2(4.5f, -2.25f), 0.4f, c.H(red.Lightened(0.45f)), true, -1, true);
                 break;
+            }
         }
     }
 
