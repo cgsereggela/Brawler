@@ -25,6 +25,7 @@ namespace Brawler;
 ///   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
+///   --hudshots            (with --shots=DIR, and --cards=) screenshot each player chip's hover card (cards and stats)
 ///   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
 ///                         some with full recoil) into DIR, then quit
 ///   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
@@ -489,6 +490,28 @@ public partial class Main : Node
                     tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
                 }
                 tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+            }
+            else if (a == "--hudshots" && _shotDir != null)
+            {
+                // A battle with 4 players holding cards (use --cards=), opening each player chip's hover card in turn.
+                _autoMode = "arena";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var tree = GetTree();
+                int k = 0;
+                void Next()
+                {
+                    if (k >= 4) { tree.Quit(0); return; }
+                    _hud.DebugHover = k++;
+                    tree.CreateTimer(0.3, true, false, true).Timeout += () => { SaveShot(); Next(); };
+                }
+                tree.CreateTimer(3.0, true, false, true).Timeout += Next;
             }
             else if (a == "--terrainshots" && _shotDir != null)
             {

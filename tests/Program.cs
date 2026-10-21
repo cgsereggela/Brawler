@@ -1059,5 +1059,18 @@ void Check(bool cond, string name, string detail = "")
         "Jump pads still launch well past a jump", $"pad rise {MapGenerator.PadRise}, jump rise {MapGenerator.MaxRise}");
 }
 
+{
+    // HUD hover card: every stat has a readable line, base stats show only the core set, cards light up what they change.
+    var missing = Enum.GetValues<Stat>().Where(st => !StatSummary.Covers(st)).ToList();
+    Check(missing.Count == 0, "Every stat has a HUD summary line", string.Join(",", missing));
+    var baseLines = StatSummary.Lines(StatBlock.Base());
+    Check(baseLines.Count == 9 && baseLines.All(l => !l.Changed), "Base stats show the 9 core lines, none changed", $"{baseLines.Count}");
+    var bouncy = CardRegistry.All.First(c => c.Name == "Bouncy");
+    var bl = StatSummary.Lines(StatBlock.Compute([bouncy, bouncy]));
+    Check(bl.Any(l => l.Label == "Bounces" && l.Value == "4" && l.Changed), "Two Bouncy cards show 4 bounces", string.Join(", ", bl.Select(l => $"{l.Label}={l.Value}")));
+    var stacks = StatSummary.Stacks([bouncy.Id, 2, bouncy.Id]);
+    Check(stacks.Count == 2 && stacks[0].Card.Id == bouncy.Id && stacks[0].Count == 2, "Owned cards stack by id in pick order");
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

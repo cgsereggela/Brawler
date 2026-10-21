@@ -13,6 +13,9 @@ public partial class HudUI : Control
     private string _banner = "";
     private Color _bannerColor;
     private float _bannerT, _bannerMax, _t;
+    private readonly System.Collections.Generic.List<(Rect2 Chip, MatchPlayer P)> _chips = new();
+    /// <summary>Test hook (--hudshots): open this chip's hover card as if the mouse were over it.</summary>
+    public int DebugHover = -1;
 
     public HudUI(GameManager game) => _game = game;
     public HudUI() { }
@@ -51,6 +54,7 @@ public partial class HudUI : Control
 
         // Player chips across the top.
         float x = 10;
+        _chips.Clear();
         foreach (var p in _game.Slots)
         {
             if (p == null) continue;
@@ -59,6 +63,7 @@ public partial class HudUI : Control
             float pipsW = s.RoundsToWin * 9;
             float w = 44 + Mathf.Max(nameW, pipsW) + 14 + (p.Cards.Count > 0 ? 12 : 0);
             var chip = new Rect2(x, 8, w, 38);
+            _chips.Add((chip, p));
             DrawColoredPolygon(Shapes.RoundRect(chip, 12, 6), new Color(0.06f, 0.03f, 0.13f, 0.72f));
             DrawColoredPolygon(Shapes.RoundRect(new Rect2(chip.Position, new Vector2(38, 38)), 12, 6), col with { A = 0.3f });
             Shapes.DrawClosed(this, Shapes.RoundRect(chip, 12, 6), col with { A = 0.55f }, 1f);
@@ -106,6 +111,7 @@ public partial class HudUI : Control
         }
 
         DrawBanner(vs);
+        DrawHoverCard(vs);
 
         // Your loadout, bottom-left.
         var me = _game.LocalMatchPlayer;
@@ -122,6 +128,72 @@ public partial class HudUI : Control
                 DrawString(bold, r.Position + new Vector2(16, 13), c.Name, HorizontalAlignment.Left, -1, 11, Palette.Text);
                 bx += w + 5;
             }
+        }
+    }
+
+    /// <summary>Hovering a player chip opens a card under it: the cards they've picked, then their resulting stats.</summary>
+    private void DrawHoverCard(Vector2 vs)
+    {
+        var mouse = GetLocalMousePosition();
+        var hit = DebugHover >= 0 ? Mathf.Min(DebugHover, _chips.Count - 1) : _chips.FindIndex(c => c.Chip.Grow(2).HasPoint(mouse));
+        if (hit < 0) return;
+        var (chip, p) = _chips[hit];
+        var bold = Fonts.Bold;
+        var col = p.Left ? Palette.TextDim : p.Color;
+
+        var stacks = StatSummary.Stacks(p.Cards);
+        var stats = StatSummary.Lines(StatBlock.Compute(CardRegistry.Resolve(p.Cards)));
+        const float pad = 10, row = 15, colW = 118, gap = 12;
+        int cardCols = stacks.Count > 6 ? 2 : 1;
+        int cardRows = Mathf.Max(1, (stacks.Count + cardCols - 1) / cardCols);
+        int statRows = (stats.Count + 1) / 2;
+        float w = pad * 2 + colW * 2 + gap;
+        float h = pad + 18 + cardRows * row + 10 + 16 + statRows * row + pad - 2;
+        var r = new Rect2(Mathf.Clamp(chip.Position.X, 6, vs.X - w - 6), chip.End.Y + 6, w, h);
+
+        var poly = Shapes.RoundRect(r, 10, 6);
+        DrawColoredPolygon(poly, new Color(0.05f, 0.03f, 0.11f, 0.93f));
+        Shapes.DrawClosed(this, poly, col with { A = 0.6f }, 1f);
+        // A notch pointing up at the chip.
+        float nx = Mathf.Clamp(chip.Position.X + chip.Size.X / 2, r.Position.X + 14, r.End.X - 14);
+        DrawColoredPolygon(new[] { new Vector2(nx - 6, r.Position.Y + 0.5f), new Vector2(nx, r.Position.Y - 5), new Vector2(nx + 6, r.Position.Y + 0.5f) },
+            new Color(0.05f, 0.03f, 0.11f, 0.93f));
+        DrawPolyline(new[] { new Vector2(nx - 6, r.Position.Y), new Vector2(nx, r.Position.Y - 5), new Vector2(nx + 6, r.Position.Y) }, col with { A = 0.6f }, 1f, true);
+
+        float x0 = r.Position.X + pad, y = r.Position.Y + pad + 10;
+        DrawString(bold, new Vector2(x0, y), "CARDS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
+        if (stacks.Count > 0)
+        {
+            string count = $"{p.Cards.Count}";
+            DrawString(bold, new Vector2(r.End.X - pad - 60, y), count, HorizontalAlignment.Right, 60, 10, Palette.Accent);
+        }
+        y += 8;
+        if (stacks.Count == 0)
+            DrawString(Fonts.Regular, new Vector2(x0, y + 11), "No cards yet", HorizontalAlignment.Left, -1, 11, Palette.TextDim with { A = 0.7f });
+        for (int i = 0; i < stacks.Count; i++)
+        {
+            var (card, n) = stacks[i];
+            var at = new Vector2(x0 + i / cardRows * (colW + gap), y + i % cardRows * row);
+            DrawCircle(at + new Vector2(3.5f, 7.5f), 3.2f, UiKit.CategoryColor(card.Category), true, -1, true);
+            float maxW = (cardCols == 1 ? w - pad * 2 : colW) - 12 - (n > 1 ? 22 : 0);
+            DrawString(bold, at + new Vector2(11, 11.5f), card.Name, HorizontalAlignment.Left, maxW, 11, Palette.Text);
+            if (n > 1)
+            {
+                float nameW = Mathf.Min(maxW, bold.GetStringSize(card.Name, HorizontalAlignment.Left, -1, 11).X);
+                DrawString(Fonts.Heavy, at + new Vector2(15 + nameW, 11.5f), $"x{n}", HorizontalAlignment.Left, -1, 10, Palette.Accent);
+            }
+        }
+        y += cardRows * row + 6;
+        DrawLine(new Vector2(x0, y), new Vector2(r.End.X - pad, y), new Color(1, 1, 1, 0.1f), 1);
+        y += 14;
+        DrawString(bold, new Vector2(x0, y), "STATS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
+        y += 2;
+        for (int i = 0; i < stats.Count; i++)
+        {
+            var line = stats[i];
+            var at = new Vector2(x0 + i % 2 * (colW + gap), y + i / 2 * row + 11.5f);
+            DrawString(Fonts.Regular, at, line.Label, HorizontalAlignment.Left, colW - 40, 11, Palette.TextDim);
+            DrawString(bold, at, line.Value, HorizontalAlignment.Right, colW, 11, line.Changed ? Palette.Accent : Palette.Text);
         }
     }
 

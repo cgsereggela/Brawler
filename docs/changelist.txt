@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- I'd like to be able to hover over a player's panel at the top of the screen and see what cards they've picked, perhaps what they're stats are
 
 art style:
 - changed the art style to a procedural raster art style similar to hollow knight
