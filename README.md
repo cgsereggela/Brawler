@@ -3,6 +3,17 @@
 A ROUNDS-style 2–4 player platform shooter: lose a round, pick a card, come back stronger.
 Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
+<p align="center"><img src="docs/media/chaos.gif" alt="Four players trading homing, bouncing and exploding shots late in a match" width="720"></p>
+
+| | |
+|---|---|
+| <img src="docs/media/battle.gif" alt="An early battle in the Deep Reef arena"> | <img src="docs/media/card-pick.gif" alt="Picking a card after losing a round"> |
+| Every battle is on a freshly generated arena, in one of several themes. | Lose a round, pick a card. They stack, and your shots get flashier the more you hold. |
+| <img src="docs/media/frost-bite.png" alt="A battle in the Frost Bite arena"> | <img src="docs/media/stats-hover.png" alt="Hovering a player chip shows their cards and stats"> |
+| Block to stop a shot. Block cards let you reflect, heal or bash. | Hover any player to see their cards and how they changed their stats. |
+| <img src="docs/media/sunset-peaks.png" alt="A chaotic late-match fight in Sunset Peaks"> | <img src="docs/media/match-over.png" alt="The match-over screen with every player's cards"> |
+| Late in a match, most shots split, bounce or explode. | The first to win enough rounds takes the match. |
+
 ## Download and play
 
 **Just want to play?** Grab the zip for your system from the **[Releases](https://github.com/cgsereggela/Brawler/releases/latest)** page, extract it and run it.
@@ -238,6 +249,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --crosshairshots=C:/tmp/shots                 # the crosshair at several ammo/reload states over every arena theme
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
 "$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed
+"$GODOT" --path godot --fixed-fps 60 -- --readmeshots --shots=C:/tmp/shots  # the README media: a full match with generated names, a GIF + screenshot per battle and card pick (docs/media)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
 ```
 `--autotest`, `--autohost` and `--autojoin` also switch some cards off in the card pool and fail if a pick ever offers one; the client checks that it received the host's list.

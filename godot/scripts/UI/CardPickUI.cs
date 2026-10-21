@@ -18,6 +18,9 @@ public partial class CardPickUI : Control
     private Label _status;
     private readonly List<CardView> _views = new();
 
+    /// <summary>--readmeshots: under autopilot, show the cards undimmed and highlight the autopilot's pick as if clicked.</summary>
+    public bool ShowAutopilotPick;
+
     public CardPickUI(GameManager game) => _game = game;
     public CardPickUI() { }
 
@@ -42,7 +45,12 @@ public partial class CardPickUI : Control
         v.AddChild(_status);
 
         _game.CardPickBegan += Build;
-        _game.CardWasPicked += (_, _) => UpdateStatus();
+        _game.CardWasPicked += (slot, cardId) =>
+        {
+            UpdateStatus();
+            if (!ShowAutopilotPick || slot != _game.LocalMatchPlayer?.Slot) return;
+            foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
+        };
     }
 
     private void Build()
@@ -61,7 +69,7 @@ public partial class CardPickUI : Control
                 var card = CardRegistry.Get(opts[i]);
                 int owned = me.Cards.Count(id => id == card.Id);
                 float width = Mathf.Min(132, (760 - 12 * (opts.Count - 1)) / (float)opts.Count);
-                var view = new CardView(card, owned, i * 0.07f, width) { Locked = _game.AutopilotLocal }; // the bot picks for us
+                var view = new CardView(card, owned, i * 0.07f, width) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
                 int id = card.Id;
                 view.Picked += () =>
                 {
@@ -96,6 +104,7 @@ public partial class CardView : Control
     public bool Chosen;
 
     private readonly CardDef _card;
+    public CardDef Card => _card;
     private readonly int _owned;
     private float _delay, _appear, _hover, _t;
     private bool _mouseIn;

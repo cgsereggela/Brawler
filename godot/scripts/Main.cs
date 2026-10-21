@@ -26,6 +26,8 @@ namespace Brawler;
 ///   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
 ///   --hudshots            (with --shots=DIR, and --cards=) screenshot each player chip's hover card (cards and stats)
+///   --readmeshots         (with --shots=DIR, run with --fixed-fps 60) the README media: a match with generated names,
+///                         a GIF clip + screenshot per battle and card pick, hover cards and the match-over screen, then quit
 ///   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
 ///                         some with full recoil) into DIR, then quit
 ///   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
@@ -278,7 +280,7 @@ public partial class Main : Node
         Show(_hud, _over);
         _matchFinished = true;
         if (_autoMode == "sim") SimMatchEnded(winner);
-        else if (_autoMode != null)
+        else if (_autoMode is not (null or "readme")) // readme quits after its match-over shot
         {
             var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
             t.Timeout += () =>
@@ -333,7 +335,7 @@ public partial class Main : Node
         if (args.Any(a => a is "--autotest" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
             _game.Stats.Enabled = forceStats;
         if (_overlayCheck) _game.CardPickBegan += () => _ocSawPick = true;
-        if (_shotDir != null)
+        if (_shotDir != null && !args.Contains("--readmeshots")) // readme names its own shots
         {
             _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
             _game.MatchEnded += _ => GetTree().CreateTimer(0.3, true, false, true).Timeout += SaveShot;
@@ -542,6 +544,46 @@ public partial class Main : Node
                     tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(); Next(); };
                 }
                 tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+            }
+            else if (a == "--readmeshots" && _shotDir != null)
+            {
+                // README media: a 4-player match with generated names, played out naturally. Each battle gets a GIF clip
+                // and a screenshot (plus a hover card once cards are held), each card pick a clip and a screenshot, and
+                // the match-over screen a screenshot. Run with --fixed-fps 60 so clips play at game speed.
+                _autoMode = "readme";
+                _game.AutopilotLocal = true;
+                _pick.ShowAutopilotPick = true;
+                var rng = new Rng((ulong)System.DateTime.Now.Ticks);
+                var names = FunNames.Pick(rng, 4);
+                _net.LocalName = names[0];
+                _net.LocalLook = Appearance.Random(rng);
+                _net.StartOffline();
+                for (int i = 1; i < names.Count; i++) _net.AddBot();
+                for (int i = 1; i < names.Count; i++) _net.Lobby.Players[i].Name = names[i];
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 4, LoserChoices = 5, WinnerChoices = 3 });
+                var tree = GetTree();
+                int battle = 0, pick = 0;
+                _game.BattleStarted += () =>
+                {
+                    int n = ++battle;
+                    tree.CreateTimer(0.4, true, false, true).Timeout += () => RecordClip($"battle_{n:D2}", 6.0);
+                    tree.CreateTimer(4.0, true, false, true).Timeout += () => { if (_game.Phase == Phase.Fighting) SaveShot($"battle_{n:D2}"); };
+                    if (n < 3) return;
+                    tree.CreateTimer(6.6, true, false, true).Timeout += () =>
+                    {
+                        if (_game.Phase != Phase.Fighting) return;
+                        _hud.DebugHover = 0;
+                        tree.CreateTimer(0.2, true, false, true).Timeout += () => { SaveShot($"hover_{n:D2}"); _hud.DebugHover = -1; };
+                    };
+                };
+                _game.CardPickBegan += () =>
+                {
+                    int n = ++pick;
+                    RecordClip($"pick_{n:D2}", 2.5);
+                    tree.CreateTimer(2.0, true, false, true).Timeout += () => SaveShot($"pick_{n:D2}");
+                };
+                _game.MatchEnded += _ => tree.CreateTimer(3.0, true, false, true).Timeout += () => { SaveShot("match_over"); tree.Quit(0); };
+                _game.HostStartMatch();
             }
             else if (a.StartsWith("--aimshots="))
             {
@@ -860,7 +902,7 @@ public partial class Main : Node
             _frames = 0;
             SimMatchEnded(-1);
         }
-        if (_shotDir != null && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+        if (_shotDir != null && _autoMode != "readme" && _frames % 240 == 0 && _shotCount < 40) SaveShot();
     }
 
     // ---------- card pool check (--autotest, --autohost, --autojoin) ----------
@@ -1061,6 +1103,33 @@ public partial class Main : Node
         var img = GetViewport().GetTexture().GetImage();
         string path = $"{_shotDir}/shot_{_shotCount++:D2}_{_game.Phase}.png";
         img.SavePng(path);
+    }
+
+    private void SaveShot(string name) => GetViewport().GetTexture().GetImage().SavePng($"{_shotDir}/{name}.png");
+
+    // --readmeshots clips: every 3rd rendered frame (20 fps under --fixed-fps 60), scaled to 640 wide.
+    private const int ClipW = 640, ClipH = 360, ClipEvery = 3;
+
+    /// <summary>Records <paramref name="seconds"/> of the screen into DIR/name.gif.</summary>
+    private void RecordClip(string name, double seconds)
+    {
+        var frames = new System.Collections.Generic.List<byte[]>();
+        int frame = 0, total = (int)(seconds * 60);
+        void Grab()
+        {
+            if (frame++ % ClipEvery == 0)
+            {
+                var img = GetViewport().GetTexture().GetImage();
+                img.Convert(Image.Format.Rgb8);
+                img.Resize(ClipW, ClipH, Image.Interpolation.Lanczos);
+                frames.Add(img.GetData());
+            }
+            if (frame < total) return;
+            RenderingServer.FramePostDraw -= Grab;
+            System.IO.File.WriteAllBytes($"{_shotDir}/{name}.gif", Gif.Encode(frames, ClipW, ClipH, ClipEvery * 100 / 60));
+            Log.Info($"README clip {name}: {frames.Count} frames");
+        }
+        RenderingServer.FramePostDraw += Grab;
     }
 
     private void Finish(int code, string why)
