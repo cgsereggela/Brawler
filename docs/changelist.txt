@@ -1,6 +1,6 @@
 issues to fix:
+- hats sit too high on players heads and don't look good
+- noses don't match the current art style
 
 features to add:
-
-art style:
-- changed the art style to a procedural raster art style similar to hollow knight
+- add a pool of cards that enhance / modify the players ability to block, perhaps damage on block, more block, trading block for some other power, etc

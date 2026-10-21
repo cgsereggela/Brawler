@@ -94,7 +94,61 @@ public partial class MenuUI : Control
         version.OffsetBottom = -8;
         AddChild(version);
 
+        AddChild(TipCard());
+
         VisibilityChanged += RefreshPreview;
+    }
+
+    /// <summary>Top-right, out of the way of the menu: a PayPal QR code with a friendly, no-pressure ask for a tip.</summary>
+    private static Control TipCard()
+    {
+        var card = new PanelContainer();
+        card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.05f, 0.07f, 0.7f),
+            BorderColor = Palette.Accent with { A = 0.35f },
+            BorderWidthLeft = 1, BorderWidthTop = 1, BorderWidthRight = 1, BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10,
+            ContentMarginLeft = 10, ContentMarginTop = 10, ContentMarginRight = 12, ContentMarginBottom = 10,
+        });
+        card.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
+        card.GrowHorizontal = GrowDirection.Begin;
+        card.OffsetRight = -14;
+        card.OffsetTop = 14;
+        card.MouseFilter = MouseFilterEnum.Ignore;
+
+        var row = UiKit.HBox(12);
+        card.AddChild(row);
+
+        // The code sits on white so phones can read it against the dark menu.
+        var qrBack = new PanelContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        qrBack.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = Colors.White,
+            CornerRadiusTopLeft = 6, CornerRadiusTopRight = 6, CornerRadiusBottomLeft = 6, CornerRadiusBottomRight = 6,
+            ContentMarginLeft = 3, ContentMarginTop = 3, ContentMarginRight = 3, ContentMarginBottom = 3,
+        });
+        qrBack.AddChild(new TextureRect
+        {
+            Texture = GD.Load<Texture2D>("res://assets/ui/paypal_qr.png"),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(84, 84),
+            TextureFilter = TextureFilterEnum.LinearWithMipmaps,
+        });
+        row.AddChild(qrBack);
+
+        var text = UiKit.VBox(4);
+        text.Alignment = BoxContainer.AlignmentMode.Center;
+        text.AddChild(UiKit.Label("ENJOYING BRAWLER?", UiKit.Small, Palette.Accent, font: Fonts.Bold));
+        var ask = UiKit.Label("It's free and always will be. If it's brought you some fun, a small tip helps keep it growing. Thank you for playing!",
+            UiKit.Tiny, Palette.Text);
+        ask.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        ask.CustomMinimumSize = new Vector2(160, 0);
+        text.AddChild(ask);
+        text.AddChild(UiKit.Label("Scan to tip with PayPal", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
+        row.AddChild(text);
+        return card;
     }
 
     public int Port => int.TryParse(PortEdit.Text, out int p) && p > 0 && p < 65536 ? p : NetworkManager.DefaultPort;
