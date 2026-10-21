@@ -30,7 +30,8 @@ You don't need to install .NET, Godot or anything else. Everything the game need
 4. The first time you host a game, Windows Firewall asks whether Brawler may use the network. Tick
    **both Private and Public networks**, then click **Allow**. (Missed it? See *Firewall* in the online guide.)
 
-Keep `Brawler.exe` and the `data_Brawler_windows_x86_64` folder together. The game needs both.
+Keep `Brawler.exe` and the `data_Brawler_windows_x86_64` folder together. The game needs both. It draws with Vulkan and
+switches to DirectX 12 by itself if Vulkan isn't available.
 
 ### macOS
 1. Double-click the zip to unpack it, and drag **Brawler.app** into **Applications**.
