@@ -493,6 +493,32 @@ public partial class Main : Node
                 }
                 tree.CreateTimer(1.0, true, false, true).Timeout += Next;
             }
+            else if (a == "--layoutshots" && _shotDir != null)
+            {
+                // Screenshot battles on the first two seeds of each map style (MAPSHOT lines name them), then quit.
+                _autoMode = "arena";
+                _game.AutopilotLocal = true;
+                _game.DisableHitStop = true;
+                _net.StartOffline();
+                _net.AddBot();
+                _net.AddBot();
+                _net.AddBot();
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 99, RoundsToWin = 9 });
+                _game.HostStartMatch();
+                var seeds = System.Enum.GetValues<MapStyle>()
+                    .SelectMany(st => Enumerable.Range(1, 400).Where(s => MapGenerator.StyleFor(s) == st).Take(2)).ToList();
+                var tree = GetTree();
+                int k = 0;
+                void Next()
+                {
+                    if (k >= seeds.Count) { tree.Quit(0); return; }
+                    string name = $"layout_{k:D2}_{MapGenerator.StyleFor(seeds[k])}";
+                    Log.Info($"MAPSHOT {name} seed {seeds[k]} {ArenaTheme.ForSeed(seeds[k]).Name}");
+                    _game.DebugStartBattle(seeds[k++]);
+                    tree.CreateTimer(3.5, true, false, true).Timeout += () => { SaveShot(name); Next(); };
+                }
+                tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+            }
             else if (a == "--hudshots" && _shotDir != null)
             {
                 // A battle with 4 players holding cards (use --cards=), opening each player chip's hover card in turn.

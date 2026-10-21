@@ -4,5 +4,4 @@ features to add:
 - handle up to 8 players
 - add some more map themes like a dungeon, forest, inside of a computer
 - the current music is good, add some more songs that have the same theme / vibe
-- add some more arena layout styles, my ideas: cave, tunnel, add some other options too
 - need a streamer mode that doesn't expose the persons IP but still allows people to share / join their friends lobbies

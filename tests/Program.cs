@@ -154,6 +154,69 @@ void Check(bool cond, string name, string detail = "")
     Check(pads > 100 && badPads == 0, "Jump pads sit on surfaces, away from spawns", $"{pads} pads, {badPads} bad");
     Check(MapLayout.Width == 1000 && MapLayout.Height == 562, "Arena is 1000x562");
 
+    // Cave, tunnel and temple layouts: each builds without falling back, and its signature part is really there
+    // and in play (reachable from the spawns), not just scenery.
+    {
+        var made = new Dictionary<MapStyle, (int maps, int fallbacks, int bad)>();
+        var why = new List<string>();
+        for (int s = 0; s < 2100; s++)
+        {
+            int seed = s * 104729 + 11, players = 2 + s % 3;
+            var want = MapGenerator.StyleFor(seed);
+            if (want is not (MapStyle.Cave or MapStyle.Tunnel or MapStyle.Temple)) continue;
+            var m = MapGenerator.Generate(seed, players);
+            var st = made.GetValueOrDefault(want);
+            st.maps++;
+            if (m.UsedFallback) { st.fallbacks++; made[want] = st; continue; }
+            int spawn = MapGenerator.SurfaceIndexOf(m, m.Spawns[0]);
+            var reach = MapGenerator.ReachableFrom(m, spawn);
+            bool Reached(Func<Surface, bool> f) => m.Surfaces.Where((x, i) => reach[i] && f(x)).Any();
+            string fail = null;
+            var hanging = m.Solids.Where(r => r.Y < MapGenerator.Wall && r.X > 0 && r.Right < MapLayout.Width).ToList();
+            var standing = m.Solids.Where(r => r.Bottom == MapGenerator.FloorY && !m.Terrain.Contains(r)).ToList();
+            switch (want)
+            {
+                case MapStyle.Cave:
+                    // A ceiling all the way across, stalactites below it, stalagmites one hop tall.
+                    if (hanging.Sum(r => r.W) != MapLayout.Width - 2 * MapGenerator.Wall) fail = "ceiling has holes";
+                    else if (!m.Solids.Any(r => r.Y > 40 && r.Bottom < 260 && r.W <= 24)) fail = "no stalactites";
+                    else if (standing.Any(r => r.H > MapGenerator.MaxRise)) fail = "stalagmite too tall to hop onto";
+                    break;
+                case MapStyle.Tunnel:
+                {
+                    // Long slabs (two-tile-thick solids) split the arena; the top of the highest one is reachable.
+                    var slabs = m.Solids.Where(r => r.H == 16 && r.Y > MapGenerator.Wall && r.Bottom < MapGenerator.FloorY).GroupBy(r => r.Y)
+                        .Where(g => g.Sum(r => r.W) > 300).Select(g => g.Key).ToList();
+                    if (slabs.Count is < 1 or > 2) fail = $"{slabs.Count} slabs";
+                    else if (!Reached(x => x.Y == slabs.Min())) fail = "top corridor unreachable";
+                    else if (!Reached(x => x.Y == MapGenerator.FloorY)) fail = "bottom corridor unreachable";
+                    else if (hanging.Count == 0) fail = "no lowered ceiling";
+                    else
+                    {
+                        // Every corridor (floor or slab top up to the next slab's or the ceiling's bottom) is tall enough to jump in.
+                        var floors = slabs.Append(MapGenerator.FloorY).OrderBy(y => y).ToList();
+                        var roofs = slabs.Select(y => y + 16).Prepend(hanging.Max(r => r.Bottom)).OrderBy(y => y).ToList();
+                        if (floors.Zip(roofs).Any(p => p.First - p.Second < 134)) fail = "corridor too low";
+                    }
+                    break;
+                }
+                case MapStyle.Temple:
+                {
+                    // Steps rising to a flat top, which is reachable.
+                    int topY = standing.Count == 0 ? MapGenerator.FloorY : standing.Min(r => r.Y);
+                    if (standing.Count < 5) fail = $"only {standing.Count} steps";
+                    else if (!Reached(x => x.Y == topY)) fail = "temple top unreachable";
+                    break;
+                }
+            }
+            if (fail != null) { st.bad++; if (why.Count < 6) why.Add($"seed {seed} {want}: {fail}"); }
+            made[want] = st;
+        }
+        string counts = string.Join(", ", made.OrderBy(p => p.Key).Select(p => $"{p.Key} {p.Value.maps} ({p.Value.fallbacks} fallbacks)"));
+        Check(made.Count == 3 && made.Values.All(v => v.maps > 150 && v.fallbacks <= v.maps / 200), "Cave, tunnel and temple maps build", counts);
+        Check(made.Values.All(v => v.bad == 0), "Cave, tunnel and temple maps have their parts, in reach", string.Join("; ", why));
+    }
+
     // A pad launch still clears the planned climb under the softer gravity.
     float padApex = MapGenerator.PadVelocity * MapGenerator.PadVelocity / (2 * MapGenerator.BaseGravity);
     Check(padApex >= MapGenerator.PadRise + 5 && MapGenerator.BaseGravity == StatBlock.Base()[Stat.Gravity],
@@ -855,6 +918,10 @@ void Check(bool cond, string name, string detail = "")
                     if (a.Right <= b.X || b.Right <= a.X) continue; // no horizontal overlap
                     int gap = a.Bottom <= b.Y ? b.Y - a.Bottom : b.Bottom <= a.Y ? a.Y - b.Bottom : -1;
                     if (gap <= 0) continue; // touching (a tower on the floor, glass tiles in a row) or overlapping
+                    // Only open air counts: rock filling the gap (a cave's ceiling around a stalactite's root) joins them.
+                    int ox1 = Math.Max(a.X, b.X), ox2 = Math.Min(a.Right, b.Right);
+                    var air = new RectI(ox1, a.Bottom <= b.Y ? a.Bottom : b.Bottom, ox2 - ox1, gap);
+                    if (blocks.Any(o => o != a && o != b && o.Intersects(air))) continue;
                     pairs++;
                     minGap = Math.Min(minGap, gap);
                     if (gap < c) { bad++; if (why.Count < 5) why.Add($"seed {seed} {m.Style}: {a} / {b} gap {gap}"); }

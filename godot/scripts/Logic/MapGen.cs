@@ -27,7 +27,7 @@ public readonly record struct JumpPad(int X1, int X2, int Y)
     public int CenterX => (X1 + X2) / 2;
 }
 
-public enum MapStyle { Tiers, Mirror, Islands, Towers }
+public enum MapStyle { Tiers, Mirror, Islands, Towers, Cave, Tunnel, Temple }
 
 public sealed class MapLayout
 {
@@ -73,7 +73,7 @@ public sealed class MapLayout
 /// <summary>
 /// Seeded random arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
 /// Each seed picks a <see cref="MapStyle"/> (scattered tiers, a mirrored layout, floating islands over pits,
-/// or towers), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
+/// towers, a cave under a ragged rock ceiling, stacked tunnels joined by shafts, or a stepped temple), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
 /// spacing, mutual reachability between spawns) and rerolled on failure. Jump pads are added afterwards as extras: reachability never relies on them.
 /// </summary>
 public static class MapGenerator
@@ -112,10 +112,15 @@ public static class MapGenerator
     /// <summary>Base player gravity (StatBlock.Base), for planning pad launches.</summary>
     public const float BaseGravity = 650f;
 
+    /// <summary>The layout style a seed asks for (a map that falls back is a plain Mirror arena instead).</summary>
+    public static MapStyle StyleFor(int seed) => StyleFor(new Rng((ulong)(uint)seed));
+
+    private static MapStyle StyleFor(Rng rng) => (MapStyle)rng.Range(0, Enum.GetValues<MapStyle>().Length - 1);
+
     public static MapLayout Generate(int seed, int playerCount)
     {
         var rng = new Rng((ulong)(uint)seed);
-        var style = (MapStyle)rng.Range(0, 3);
+        var style = StyleFor(rng);
         for (int attempt = 1; attempt <= 300; attempt++)
         {
             var layout = TryBuild(rng, seed, playerCount, style);
@@ -138,18 +143,34 @@ public static class MapGenerator
         var map = new MapLayout { Seed = seed, Style = style };
         AddBorders(map);
 
+        var placed = new List<RectI>();
+        // The height of a layout's high point that must be in play (the temple's top, the top tunnel), or -1.
+        int summit = -1;
         var floor = style switch
         {
             MapStyle.Islands => IslandFloor(rng),
             MapStyle.Mirror => MirrorFloor(rng),
+            MapStyle.Temple => Temple(rng, placed, out summit),
+            MapStyle.Tunnel => PitFloor(rng, 0),
+            MapStyle.Cave => PitFloor(rng, rng.Range(0, 1)),
             _ => PitFloor(rng, rng.Range(0, 2)),
         };
         foreach (var s in floor)
             map.Solids.Add(new RectI(s.x1, FloorY, s.x2 - s.x1, Height - FloorY));
 
-        var placed = new List<RectI>();
         switch (style)
         {
+            case MapStyle.Cave:
+                CaveRock(rng, placed, floor);
+                TierPlatforms(rng, placed, rng.Range(4, 7), 3);
+                break;
+            case MapStyle.Tunnel:
+                summit = Tunnels(rng, placed);
+                if (summit < 0) return null;
+                break;
+            case MapStyle.Temple:
+                TierPlatforms(rng, placed, rng.Range(5, 8), 3);
+                break;
             case MapStyle.Mirror:
                 MirrorPlatforms(rng, placed);
                 break;
@@ -171,6 +192,16 @@ public static class MapGenerator
         BuildSurfaces(map, floor, placed);
         if (!PickSpawns(map, rng, playerCount)) return null;
         if (!SpawnsMutuallyReachable(map)) return null;
+        // Spawns can all reach each other and still miss half the arena (all of them on one side of a temple whose
+        // last step is overhung), so these layouts also need their high point in reach.
+        if (summit >= 0)
+        {
+            var reach = ReachableFrom(map, SurfaceIndexOf(map, map.Spawns[0]));
+            bool up = false;
+            for (int i = 0; i < map.Surfaces.Count; i++)
+                if (reach[i] && map.Surfaces[i].Y == summit) up = true;
+            if (!up) return null;
+        }
         AddPads(map, rng, style);
         return map;
     }
@@ -347,6 +378,170 @@ public static class MapGenerator
                 TryPlace(placed, new RectI(sx, TierY(1 + k), sw, Tile));
             }
         }
+    }
+
+    /// <summary>
+    /// A rock ceiling hanging down to <paramref name="bottom"/> (give or take two tiles, never lower), in chunks of
+    /// ragged depth across the arena. Each chunk tucks 4 px up into the border ceiling so it reads as one mass.
+    /// </summary>
+    private static void RaggedCeiling(Rng rng, List<RectI> placed, int bottom, int jag)
+    {
+        for (int x = Wall; x < Width - Wall;)
+        {
+            int w = rng.Range(6, 16) * Tile;
+            if (Width - Wall - x - w < 6 * Tile) w = Width - Wall - x;
+            int b = Math.Max(Wall + Tile, bottom - rng.Range(0, jag) * Tile);
+            placed.Add(new RectI(x, Wall - 4, w, b - Wall + 4));
+            x += w;
+        }
+    }
+
+    /// <summary>
+    /// A cave: a ragged rock ceiling, stalactites hanging from it (a thick root and a narrower tip) and a few short
+    /// stalagmites rising from the floor, each low enough to hop straight onto.
+    /// </summary>
+    private static void CaveRock(Rng rng, List<RectI> placed, List<(int x1, int x2)> floor)
+    {
+        RaggedCeiling(rng, placed, Wall + rng.Range(3, 7) * Tile, 3);
+        var ceiling = new List<RectI>(placed);
+
+        var tips = new List<RectI>();
+        int want = rng.Range(3, 6);
+        for (int i = 0; i < want * 8 && tips.Count < want; i++)
+        {
+            int w = rng.Range(3, 4) * Tile;
+            int x = rng.Range((Wall + 48) / Tile, (Width - Wall - 48 - w) / Tile) * Tile;
+            bool clash = false;
+            foreach (var t in tips)
+                if (x < t.Right + 64 && t.X < x + w + 64) clash = true;
+            if (clash) continue;
+            // Rooted in the shallowest chunk it spans (it overlaps the deeper ones), down to 56-136 px below it.
+            int top = Height;
+            foreach (var c in ceiling)
+                if (c.X < x + w && c.Right > x) top = Math.Min(top, c.Bottom);
+            int root = rng.Range(3, 7) * Tile, tip = rng.Range(4, 10) * Tile;
+            var r = new RectI(x, top - 4, w, root + 4);
+            var t2 = new RectI(x + Tile / 2, r.Bottom, w - Tile, tip);
+            placed.Add(r);
+            placed.Add(t2);
+            tips.Add(t2);
+        }
+
+        int mites = rng.Range(1, 3);
+        for (int i = 0; i < mites * 8 && mites > 0; i++)
+        {
+            var seg = floor[rng.Range(0, floor.Count - 1)];
+            int w = rng.Range(2, 4) * Tile, h = rng.Range(3, 7) * Tile; // 24-56 px: one hop up
+            int lo = (seg.x1 + 40) / Tile, hi = (seg.x2 - w - 40) / Tile;
+            if (hi <= lo) continue;
+            var r = new RectI(rng.Range(lo, hi) * Tile, FloorY - h, w, h);
+            bool clash = false;
+            foreach (var o in placed)
+                if (r.Grow(64, MinClearance).Intersects(o)) clash = true;
+            if (clash) continue;
+            placed.Add(r);
+            mites--;
+        }
+    }
+
+    /// <summary>
+    /// Stacked tunnels: one or two long rock slabs split the arena into corridors under a lowered ceiling. Each slab
+    /// has two or three shafts, none above another slab's, and each shaft holds a little climb: a ledge in the middle
+    /// one hop above the corridor floor, then a ledge at either side one more hop up, beside the slab's edge, from
+    /// which the slab's top is one more hop. Returns the top slab's height, or -1 if the shafts didn't fit.
+    /// </summary>
+    private static int Tunnels(Rng rng, List<RectI> placed)
+    {
+        const int thick = 2 * Tile;
+        int slabs = rng.Chance(0.6f) ? 2 : 1;
+        int f = FloorY; // the current corridor's floor
+        var below = new List<(int x1, int x2)>();
+        for (int k = 0; k < slabs; k++)
+        {
+            // Floor, then ledges one tier (a lowest-tier platform's climb) and two tiers up, then the slab top.
+            int lowY = f - MinClearance - Tile, highY = lowY - TierSpacing, top = highY - TierSpacing;
+            var holes = new List<(int x1, int x2, int sw, int mw)>();
+            int want = rng.Range(2, 3);
+            for (int i = 0; i < 40 && holes.Count < want; i++)
+            {
+                int sw = rng.Range(5, 6) * Tile, mw = rng.Range(5, 7) * Tile;
+                int w = 2 * sw + mw + 4 * 16;
+                int x = rng.Range((Wall + 64) / Tile, (Width - Wall - 64 - w) / Tile) * Tile;
+                bool clash = false;
+                foreach (var h in holes)
+                    if (x < h.x2 + 120 && h.x1 < x + w + 120) clash = true;
+                foreach (var (b1, b2) in below)
+                    if (x < b2 + 32 && b1 < x + w + 32) clash = true;
+                if (!clash) holes.Add((x, x + w, sw, mw));
+            }
+            if (holes.Count == 0) return -1;
+            holes.Sort((a, b) => a.x1.CompareTo(b.x1));
+
+            int cursor = Wall;
+            foreach (var (x1, x2, sw, mw) in holes)
+            {
+                placed.Add(new RectI(cursor, top, x1 - cursor, thick));
+                placed.Add(new RectI(x1 + 16, highY, sw, Tile));
+                placed.Add(new RectI(x2 - 16 - sw, highY, sw, Tile));
+                placed.Add(new RectI((x1 + x2 - mw) / 2 / Tile * Tile, lowY, mw, Tile));
+                cursor = x2;
+            }
+            placed.Add(new RectI(cursor, top, Width - Wall - cursor, thick));
+            CorridorCover(rng, placed, lowY);
+            below.Clear();
+            foreach (var h in holes) below.Add((h.x1, h.x2));
+            f = top;
+        }
+        // The top corridor: about as tall as the others with two slabs, taller with one.
+        int room = slabs == 2 ? rng.Range(18, 19) * Tile : rng.Range(22, 30) * Tile;
+        RaggedCeiling(rng, placed, f - room, 2);
+        CorridorCover(rng, placed, f - MinClearance - Tile);
+        return f;
+    }
+
+    /// <summary>One to three short platforms a hop above a corridor floor, where they fit, for cover.</summary>
+    private static void CorridorCover(Rng rng, List<RectI> placed, int y)
+    {
+        int count = rng.Range(1, 3);
+        for (int i = 0; i < count * 6 && count > 0; i++)
+        {
+            int w = rng.Range(4, 9) * Tile;
+            int x = rng.Range(4, (Width - w) / Tile - 4) * Tile;
+            if (TryPlace(placed, new RectI(x, y, w, Tile))) count--;
+        }
+    }
+
+    /// <summary>
+    /// A stepped temple in the middle of the arena: columns rising from the floor in steps of one hop each to a flat
+    /// top, mirrored either side; sometimes a pit by each wall. Returns the floor; <paramref name="top"/> is the top's height.
+    /// </summary>
+    private static List<(int x1, int x2)> Temple(Rng rng, List<RectI> placed, out int top)
+    {
+        int steps = rng.Range(3, 5);
+        int sw = rng.Range(5, 8) * Tile, sh = rng.Range(5, 7) * Tile, tw = rng.Range(4, 9) * Tile * 2;
+        while (steps > 2 && (steps - 1) * sw * 2 + tw > 640) steps--;
+        int cx = Width / 2 + rng.Range(-4, 4) * Tile;
+        for (int k = 1; k < steps; k++)
+        {
+            int h = k * sh, off = tw / 2 + (steps - k) * sw;
+            placed.Add(new RectI(cx - off, FloorY - h, sw, h));
+            placed.Add(new RectI(cx + off - sw, FloorY - h, sw, h));
+        }
+        top = FloorY - steps * sh;
+        placed.Add(new RectI(cx - tw / 2, top, tw, steps * sh));
+
+        var pits = new List<(int x1, int x2)>();
+        int foot = tw / 2 + (steps - 1) * sw;
+        if (rng.Chance(0.5f))
+        {
+            int w = rng.Range(8, 10) * Tile, x = Wall + rng.Range(8, 14) * Tile;
+            if (x + w + 80 < cx - foot && Width - x - w - 80 > cx + foot)
+            {
+                pits.Add((x, x + w));
+                pits.Add((Width - x - w, Width - x));
+            }
+        }
+        return FloorBetween(pits);
     }
 
     private static bool Fits(List<RectI> placed, RectI r)

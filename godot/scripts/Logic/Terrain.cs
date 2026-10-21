@@ -78,6 +78,8 @@ public static class TerrainGen
         MapStyle.Tiers => 0.6f,
         MapStyle.Mirror => 0.55f,
         MapStyle.Islands => 0.5f,
+        MapStyle.Cave => 0.85f,
+        MapStyle.Tunnel => 0.4f,
         _ => 0.45f,
     };
 
