@@ -294,6 +294,7 @@ public partial class Main : Node
                 else if (_poolCheck && _poolPicks == 0) Finish(1, "poolcheck: the match ended without a card pick");
                 else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
                 else if (ChatCheckProblem() is { } chat) Finish(1, chat);
+                else if (ComboCheckProblem() is { } combo) Finish(1, combo);
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -1035,6 +1036,7 @@ public partial class Main : Node
     private void StartChatCheck()
     {
         _chatCheck = true;
+        StartComboCheck();
         _game.EmoteShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myEmotes++; else _otherChat++; };
         _game.PingShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myPings++; else _otherChat++; };
         _game.BattleStarted += () => GetTree().CreateTimer(GameManager.CountdownTime + 2.0, true, false, true).Timeout += () =>
@@ -1074,6 +1076,56 @@ public partial class Main : Node
         if (_myPings == 0) return "chatcheck: our pings never came back from the host";
         if (_ghosts.Count == 0) return "chatcheck: no ghost ever rose";
         if (stuck.Count > 0) return $"chatcheck: ghosts that never moved: {string.Join(", ", stuck.Select(g => g.Name))}";
+        return null;
+    }
+
+    // ---------- combo check (with the chat check) ----------
+
+    private readonly System.Collections.Generic.List<(int Slot, ComboDef Combo)> _combosFound = new();
+
+    private void StartComboCheck()
+    {
+        _game.ComboFound += (slot, combo) => _combosFound.Add((slot, combo));
+        _game.MatchBegan += _combosFound.Clear; // a rematch starts everyone with no cards again
+        if (_shotDir == null) return;
+        // With --shots: an offer with a COMBO tag on it, and the "combo found" panel after our pick.
+        _game.CardPickBegan += () =>
+        {
+            var me = _game.LocalMatchPlayer;
+            if (_comboShots >= 4 || me == null || !_game.PickOptions.TryGetValue(me.Slot, out var opts)) return;
+            if (!opts.Any(id => Combos.Unlocks(me.Cards, id).Count > 0)) return;
+            int n = ++_comboShots;
+            GetTree().CreateTimer(0.6, true, false, true).Timeout += () => SaveShot($"combo_offer_{n}");
+        };
+        _game.ComboFound += (slot, _) =>
+        {
+            if (_comboShots >= 4 || slot != _game.LocalMatchPlayer?.Slot) return;
+            int n = ++_comboShots;
+            GetTree().CreateTimer(0.4, true, false, true).Timeout += () => SaveShot($"combo_found_{n}");
+        };
+    }
+
+    private int _comboShots;
+
+    /// <summary>
+    /// Every combo announced must really be active for that player at the end, and every combo a player ends with must
+    /// have been announced. Skipped with --cards, which replaces everyone's cards each battle, and after a rejoin.
+    /// </summary>
+    private string ComboCheckProblem()
+    {
+        if (!_chatCheck) return null;
+        bool dealt = _game.DebugCards != null || _dropAt > 0;
+        var players = _game.Slots.Where(p => p != null).ToList();
+        int held = players.Sum(p => Combos.Active(p.Cards).Count);
+        Log.Info($"COMBOCHECK combos found {_combosFound.Count}, held at the end {held}, bounce blasts {_game.Bullets.BounceBlasts}");
+        if (dealt) return null;
+        foreach (var (slot, combo) in _combosFound)
+            if (_game.Slots[slot] is { } p && !combo.ActiveFor(p.Cards))
+                return $"combocheck: {p.Info.Name} was told they found {combo.Name} but their cards don't make it";
+        foreach (var p in players)
+            foreach (var combo in Combos.Active(p.Cards))
+                if (!_combosFound.Contains((p.Slot, combo)))
+                    return $"combocheck: {p.Info.Name} holds {combo.Name} but it was never announced";
         return null;
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Brawler.Logic;
 
@@ -72,6 +73,8 @@ public enum Stat
     ShieldBash,      // damage to enemies next to you when you start a block
     Shockwave,       // radius in which starting a block erases enemy bullets
     BlockSpikes,     // fraction of a blocked hit's damage dealt back to the attacker
+    // Combos
+    BounceBlast,     // 1 = explosive bullets also explode on every bounce
 }
 
 public enum ModOp { Add, Mul }
@@ -132,18 +135,22 @@ public sealed class StatBlock
 
     /// <summary>
     /// Base stats + cards in pick order: all additive mods first, then all multipliers, then clamps.
-    /// The fixed order keeps stacking identical on every peer.
+    /// The fixed order keeps stacking identical on every peer. Combos the cards unlock add their mods after the
+    /// cards' own, in combo id order.
     /// </summary>
-    public static StatBlock Compute(IEnumerable<CardDef> cards)
+    public static StatBlock Compute(IEnumerable<CardDef> cards, bool combos = true)
     {
         var b = Base();
         var list = new List<CardDef>(cards);
-        foreach (var c in list)
-            foreach (var m in c.Mods)
-                if (m.Op == ModOp.Add) b[m.Stat] += m.Value;
-        foreach (var c in list)
-            foreach (var m in c.Mods)
-                if (m.Op == ModOp.Mul) b[m.Stat] *= m.Value;
+        var mods = new List<StatMod>();
+        foreach (var c in list) mods.AddRange(c.Mods);
+        if (combos)
+            foreach (var combo in Combos.Active(list.Select(c => c.Id)))
+                mods.AddRange(combo.Mods);
+        foreach (var m in mods)
+            if (m.Op == ModOp.Add) b[m.Stat] += m.Value;
+        foreach (var m in mods)
+            if (m.Op == ModOp.Mul) b[m.Stat] *= m.Value;
         Clamp(b);
         return b;
     }

@@ -16,6 +16,7 @@ public partial class CardPickUI : Control
     private TitleText _title;
     private HBoxContainer _cards;
     private Label _status;
+    private VBoxContainer _combo;
     private readonly List<CardView> _views = new();
 
     /// <summary>--readmeshots: under autopilot, show the cards undimmed and highlight the autopilot's pick as if clicked.</summary>
@@ -43,6 +44,10 @@ public partial class CardPickUI : Control
         v.AddChild(_cards);
         _status = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         v.AddChild(_status);
+        // Always in the layout with room for the panel, so the cards don't jump when a combo shows up.
+        _combo = UiKit.VBox(2);
+        _combo.CustomMinimumSize = new Vector2(0, 52);
+        v.AddChild(_combo);
 
         _game.CardPickBegan += Build;
         _game.CardWasPicked += (slot, cardId) =>
@@ -51,12 +56,20 @@ public partial class CardPickUI : Control
             if (!ShowAutopilotPick || slot != _game.LocalMatchPlayer?.Slot) return;
             foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
         };
+        _game.ComboFound += (slot, combo) =>
+        {
+            _found.Add(slot);
+            if (slot == _game.LocalMatchPlayer?.Slot) ShowCombo(combo);
+            UpdateStatus();
+        };
     }
 
     private void Build()
     {
         UiKit.ClearChildren(_cards);
         _views.Clear();
+        _found.Clear();
+        UiKit.ClearChildren(_combo);
         var me = _game.LocalMatchPlayer;
         bool canPick = me != null && _game.PickOptions.TryGetValue(me.Slot, out _);
 
@@ -69,7 +82,7 @@ public partial class CardPickUI : Control
                 var card = CardRegistry.Get(opts[i]);
                 int owned = me.Cards.Count(id => id == card.Id);
                 float width = Mathf.Min(132, (760 - 12 * (opts.Count - 1)) / (float)opts.Count);
-                var view = new CardView(card, owned, i * 0.07f, width) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
+                var view = new CardView(card, owned, i * 0.07f, width, Combos.Unlocks(me.Cards, card.Id)) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
                 int id = card.Id;
                 view.Picked += () =>
                 {
@@ -84,13 +97,24 @@ public partial class CardPickUI : Control
         UpdateStatus();
     }
 
+    private readonly HashSet<int> _found = new();
+
+    /// <summary>Your pick unlocked a combo: its name and what it does, under the cards.</summary>
+    private void ShowCombo(ComboDef combo)
+    {
+        var title = new TitleText($"COMBO FOUND!  {combo.Name.ToUpperInvariant()}", 22, 2f, Palette.Accent, Palette.Hot) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        _combo.AddChild(title);
+        _combo.AddChild(UiKit.Label(combo.Description.Replace("\n", ", "), UiKit.Small, Palette.Text, HorizontalAlignment.Center));
+    }
+
     private void UpdateStatus()
     {
         var parts = new List<string>();
         foreach (var (slot, _) in _game.PickOptions)
         {
             string n = _game.NameOf(slot);
-            parts.Add(_game.Picked.Contains(slot) ? $"{n}  ✓" : $"{n}  …");
+            string combo = _found.Contains(slot) ? "  COMBO!" : "";
+            parts.Add(_game.Picked.Contains(slot) ? $"{n}  ✓{combo}" : $"{n}  …");
         }
         _status.Text = string.Join("      ", parts);
     }
@@ -106,6 +130,7 @@ public partial class CardView : Control
     private readonly CardDef _card;
     public CardDef Card => _card;
     private readonly int _owned;
+    private readonly List<ComboDef> _combos;
     private float _delay, _appear, _hover, _t;
     private bool _mouseIn;
 
@@ -114,10 +139,13 @@ public partial class CardView : Control
 
     public CardView() { }
 
-    public CardView(CardDef card, int owned, float delay, float width = 132)
+    public CardView(CardDef card, int owned, float delay, float width = 132, List<ComboDef> combos = null)
     {
         _card = card;
         _owned = owned;
+        _combos = combos ?? new List<ComboDef>();
+        if (_combos.Count > 0)
+            TooltipText = string.Join("\n\n", _combos.Select(c => $"Completes the {c.Name} combo:\n{c.Description}"));
         W = width;
         _delay = delay;
         CustomMinimumSize = new Vector2(W, H);
@@ -202,6 +230,15 @@ public partial class CardView : Control
             var tag = new Rect2(W / 2 - 29, H - 10, 58, 20);
             DrawColoredPolygon(Shapes.RoundRect(tag, 10), Palette.Cool);
             DrawString(Fonts.Heavy, tag.Position + new Vector2(0, 14.5f), "CUSTOM", HorizontalAlignment.Center, tag.Size.X, 11, new Color(0.02f, 0.1f, 0.14f));
+        }
+
+        // Taking this card completes a combo you're one card away from: a pulsing tag on the top-left corner.
+        if (_combos.Count > 0)
+        {
+            var tag = new Rect2(-6, -12, 62, 18);
+            GlowTex.Draw(this, tag.GetCenter(), 30, Palette.Accent with { A = 0.35f + 0.25f * pulse });
+            DrawColoredPolygon(Shapes.RoundRect(tag, 10), Palette.Accent.Lerp(Palette.Hot, 0.35f * pulse));
+            DrawString(Fonts.Heavy, tag.Position + new Vector2(0, 13.5f), "COMBO", HorizontalAlignment.Center, tag.Size.X, 11, new Color(0.15f, 0.08f, 0.02f));
         }
 
         if (_owned > 0)

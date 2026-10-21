@@ -19,6 +19,8 @@ public sealed class Bullet
     // Chaos behaviors (simulated on every peer): fly back to the owner, pass through walls, stick as a mine,
     // steer toward the owner's crosshair. Child = a split fragment (no recoil or muzzle flash).
     public bool Boomerang, Phase, Child, Stuck;
+    // Bounce Bombs combo: an explosive bullet also blows up (smaller) each time it bounces.
+    public bool BounceBlast;
     public float Sticky, Guided;
     public readonly HashSet<int> Hit = new();
     public readonly Vector2[] Trail = new Vector2[TrailMax];
@@ -30,7 +32,7 @@ public sealed class Bullet
         w.I32(Id).U8(Owner).V2(Pos).V2(Vel)
          .F(Radius).F(Gravity).F(Damage).F(Homing).F(Explosion).F(Knockback).F(Life)
          .U8(Bounces).U8(Pierce).U8(Split)
-         .U8((Boomerang ? 1 : 0) | (Phase ? 2 : 0) | (Child ? 4 : 0)).F(Sticky).F(Guided);
+         .U8((Boomerang ? 1 : 0) | (Phase ? 2 : 0) | (Child ? 4 : 0) | (BounceBlast ? 8 : 0)).F(Sticky).F(Guided);
         return w.Done();
     }
 
@@ -47,6 +49,7 @@ public sealed class Bullet
         b.Boomerang = (flags & 1) != 0;
         b.Phase = (flags & 2) != 0;
         b.Child = (flags & 4) != 0;
+        b.BounceBlast = (flags & 8) != 0;
         b.Sticky = r.F();
         b.Guided = r.F();
         return b;
@@ -61,6 +64,8 @@ public partial class BulletSystem : Node2D
 {
     public GameManager Game;
     public readonly List<Bullet> Bullets = new();
+    /// <summary>Bounce Bombs explosions the host has set off (autotest COMBOCHECK).</summary>
+    public int BounceBlasts;
     private readonly List<Bullet> _spawnQueue = new();
 
     public static Bullet FromStats(int owner, Vector2 pos, Vector2 vel, StatBlock s) => new()
@@ -70,6 +75,7 @@ public partial class BulletSystem : Node2D
         Homing = s[Stat.Homing], Explosion = s[Stat.ExplosionRadius], Knockback = s[Stat.Knockback],
         Life = s[Stat.Lifetime], Bounces = s.Int(Stat.Bounces), Pierce = s.Int(Stat.Pierce), Split = s.Int(Stat.SplitCount),
         Boomerang = s[Stat.Boomerang] > 0, Phase = s[Stat.Phase] > 0, Sticky = s[Stat.Sticky], Guided = s[Stat.Guided],
+        BounceBlast = s[Stat.BounceBlast] > 0,
     };
 
     private const float BoomerangTurn = 0.45f; // seconds out before a boomerang bullet heads home
@@ -222,6 +228,11 @@ public partial class BulletSystem : Node2D
                 Game.Fx.Emit(b.Pos, PKind.Streak, bc.Lightened(0.3f), 4, 140, 0.2f, 0.9f, 0, n, 2.2f);
                 Game.Fx.RingFx(b.Pos, 1, 7 + b.Radius * 2, bc, 0.18f, 1.2f);
                 Game.Sfx.Play("bounce", 0.5f);
+                if (host && b.BounceBlast && b.Explosion > 0)
+                {
+                    BounceBlasts++;
+                    Game.HostExplode(b.Pos, b.Explosion * 0.7f, b.Damage * 0.5f, b.Owner, b.Knockback);
+                }
             }
             else if (b.Sticky > 0)
             {
@@ -324,7 +335,7 @@ public partial class BulletSystem : Node2D
             Owner = blocker.Player.Slot, Pos = b.Pos, Vel = dir * Mathf.Max(260, b.Vel.Length()),
             Radius = b.Radius, Gravity = b.Gravity, Damage = b.Damage, Homing = b.Homing, Explosion = b.Explosion,
             Knockback = b.Knockback, Life = Mathf.Max(1.5f, b.Life - b.Age), Bounces = b.Bounces, Pierce = b.Pierce,
-            Split = b.Split, Phase = b.Phase, Child = true,
+            Split = b.Split, Phase = b.Phase, BounceBlast = b.BounceBlast, Child = true,
         };
         r.Hit.Add(blocker.Player.Slot);
         Game.HostSpawnBullet(r, queued: true);

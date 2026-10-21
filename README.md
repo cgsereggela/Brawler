@@ -99,6 +99,24 @@ There are 81 cards in five categories. Strong cards come with a tradeoff (less d
 - **Chaos** (purple): cards that change how you play. Bullet Hell (a ring of 12 bullets), Upside Down (bullets fall up), Boomerang, Ghost Rounds (through walls), Kamikaze, Recoil Jet (shooting propels you), Warp Rounds (teleport to where your bullets land), Sticky Mines, Chain Lightning, Berserk, One Shot, Wild Rounds, Pinball (you bounce off surfaces), Mind Control (bullets follow your crosshair), Leech Field, plus Vampire, Blink and Glass Cannon.
 - **Block** (gold): cards that change what your block does, or trade it away. Reflector (blocked bullets fly back at the shooter), Shield Bash (blocking slams enemies next to you), Shockwave (blocking erases nearby enemy bullets), Spiked Shield, Absorb (blocked hits heal you), Riposte (bonus damage after a block), Reactive Reload, Momentum (blocked hits refund cooldown), Bulwark, Quick Guard, plus Iron Will and All In, which give up blocking for HP or damage.
 
+### Combos
+Some card pairs unlock a bonus on top of both cards: hold one card from each side and the combo switches on. A card in a pick that would complete one has a gold **COMBO** tag (hover it to see what it unlocks), taking it shows **COMBO FOUND!**, and the combos you hold sit in gold at the front of your card strip, in the scoreboard hover card and on the match-over screen. Bots usually take a combo card when one is offered. The list is in `godot/scripts/Logic/Combos.cs`:
+
+| Combo | Cards | Bonus |
+|---|---|---|
+| Bounce Bombs | Bouncy or Ricochet + Explosive | bullets explode (smaller) on every bounce |
+| Minefield | Sticky Mines + Explosive | mines last 3 s longer, +30% explosion size |
+| Blood Pact | Vampire + Leech Field | +15% lifesteal, +15 HP/s leech |
+| Deadeye | Sniper + Marksman or High Velocity | +1 pierce, +20% damage |
+| Moon Boots | Double Jump, Cloud Walker or Parkour + Feather or Rocket Boots | +1 mid-air jump |
+| Lead Storm | Shotgun or Hail Storm + Burst | -20% fire cooldown |
+| Seeker Swarm | Homing or Mind Control + Splitter | stronger homing |
+| Mirror Wall | Reflector + Spiked Shield or Bulwark | +50% block duration |
+| Rampage | Berserk + Adrenaline | +15% move speed, +15% lifesteal |
+| Returning Blade | Boomerang + Pierce | +1 pierce, +20% damage |
+| Troll Blood | Tank or Giant + Regeneration | +5 HP/s regen |
+| Iron Curtain | Quick Guard + Momentum | -20% block cooldown |
+
 ## Arenas
 - The arena is 1000×562 (`MapLayout.Width/Height`). Each battle's seed picks a **layout style**:
   - *Tiers*: scattered platforms with the odd pillar.
@@ -236,7 +254,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines), the emote rate limit and the leg animation's ground, ramp and wall probes.
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines), the emote rate limit, card combos (ids, unlock rules, stat stacking) and the leg animation's ground, ramp and wall probes.
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -246,6 +264,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600         # ...plus a joining client
 "$GODOT" --headless --path godot -- --autojoin=127.0.0.1:24600 --dropat=1  # ...that leaves in battle 1, rejoins, and checks it got its slot and cards back
 # every autopilot run also emotes and pings once a battle, checks they come back from the host, and checks every ghost floats (CHATCHECK in the log)
+# ...and checks every combo announced matches the cards that player ends with, and none went unannounced (COMBOCHECK in the log; --cards=1,6 shows bounce blasts)
 # add --rematch to --autotest, or to both --autohost and --autojoin: everyone votes for a rematch at match end, and the run checks it starts fresh
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots

@@ -43,7 +43,7 @@ public static class CustomCards
         [Stat.Boomerang] = 1, [Stat.Phase] = 1, [Stat.Sticky] = 10, [Stat.Guided] = 30, [Stat.Chain] = 2, [Stat.Berserk] = 5,
         [Stat.Wild] = 1, [Stat.Leech] = 200, [Stat.Kamikaze] = 300, [Stat.Pinball] = 1, [Stat.Warp] = 1,
         [Stat.Reflect] = 1, [Stat.BlockHeal] = 2, [Stat.BlockReload] = 1, [Stat.BlockRefund] = 1, [Stat.Counter] = 3,
-        [Stat.ShieldBash] = 200, [Stat.Shockwave] = 160, [Stat.BlockSpikes] = 3,
+        [Stat.ShieldBash] = 200, [Stat.Shockwave] = 160, [Stat.BlockSpikes] = 3, [Stat.BounceBlast] = 1,
     };
 
     public static float AddLimit(Stat s) => AddLimits.TryGetValue(s, out var v) ? v : DefaultAddLimit;

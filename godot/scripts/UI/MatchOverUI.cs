@@ -89,7 +89,8 @@ public partial class MatchOverUI : Control
             var info = UiKit.VBox(0);
             info.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             info.AddChild(UiKit.Label($"{p.Info.Name}{(p.Left ? "  (left)" : "")}", UiKit.Body, p.Color.Lightened(0.2f), font: Fonts.Bold));
-            var cards = string.Join("  ·  ", CardRegistry.Resolve(p.Cards).Select(c => c.Name));
+            var cards = string.Join("  ·  ", CardRegistry.Resolve(p.Cards).Select(c => c.Name)
+                .Concat(Combos.Active(p.Cards).Select(c => $"COMBO: {c.Name}")));
             var l = UiKit.Label(cards.Length > 0 ? cards : "no cards", UiKit.Tiny, Palette.TextDim);
             l.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             if (crowded) { l.MaxLinesVisible = 2; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }

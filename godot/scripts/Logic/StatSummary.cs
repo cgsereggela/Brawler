@@ -83,6 +83,7 @@ public static class StatSummary
         [Stat.ShieldBash] = ("Shield bash", v => N(v, "0")),
         [Stat.Shockwave] = ("Shockwave", v => N(v, "0") + "px"),
         [Stat.BlockSpikes] = ("Block spikes", Pct),
+        [Stat.BounceBlast] = ("Bounce blasts", _ => "yes"),
     };
 
     private static readonly StatBlock Base = StatBlock.Base();

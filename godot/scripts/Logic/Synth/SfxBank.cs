@@ -14,13 +14,13 @@ public static class SfxBank
     public static readonly string[] Names =
     {
         "shoot", "shoot_light", "shoot_heavy", "shoot_shotgun", "hit", "death", "explode", "block", "blocked",
-        "bounce", "jump", "blink", "pad", "tick", "go", "pick", "win", "crate", "glass", "saw", "sizzle", "emote", "ping",
+        "bounce", "jump", "blink", "pad", "tick", "go", "pick", "win", "crate", "glass", "saw", "sizzle", "emote", "ping", "combo",
     };
 
     /// <summary>Renders every take of one sound.</summary>
     public static List<float[]> Render(string name)
     {
-        int takes = name.StartsWith("shoot") || name is "hit" or "bounce" or "blocked" ? 4 : name is "tick" or "go" or "pick" or "win" or "emote" or "ping" ? 1 : 2;
+        int takes = name.StartsWith("shoot") || name is "hit" or "bounce" or "blocked" ? 4 : name is "tick" or "go" or "pick" or "win" or "emote" or "ping" or "combo" ? 1 : 2;
         var list = new List<float[]>();
         for (int k = 0; k < takes; k++)
         {
@@ -57,6 +57,7 @@ public static class SfxBank
         "sizzle" => 0.4f,
         "emote" => 0.4f,
         "ping" => 0.45f,
+        "combo" => 0.5f,
         _ => 0.8f,
     };
 
@@ -85,6 +86,7 @@ public static class SfxBank
         "sizzle" => Sizzle(seed),
         "emote" => Pluck(new[] { 72f, 79f, 84f }, 0.05f, 0.45f),
         "ping" => Pluck(new[] { 88f, 88f }, 0.11f, 0.5f),
+        "combo" => Stab(new[] { 64f, 68f, 71f, 76f, 80f }, 0.05f, 1.1f),
         _ => new float[1],
     };
 

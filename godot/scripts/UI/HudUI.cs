@@ -101,6 +101,16 @@ public partial class HudUI : Control
         {
             // Centered in the floor band (MapGenerator.FloorDepth), so the strip never covers the fight.
             float bx = 10, band = vs.Y * MapGenerator.FloorDepth / MapLayout.Height;
+            // Combos the loadout unlocked come first, in gold, so a long hand never pushes them off screen.
+            foreach (var combo in Combos.Active(me.Cards))
+            {
+                float w = bold.GetStringSize(combo.Name, HorizontalAlignment.Left, -1, 11).X + 24;
+                var r = new Rect2(bx, vs.Y - band / 2 - 9, w, 18);
+                Pill(r, new Color(0.16f, 0.09f, 0.02f, 0.8f), Palette.Accent with { A = 0.55f });
+                DrawColoredPolygon(Shapes.Star(r.Position + new Vector2(9, 9), 5, 2.2f, 5, -Mathf.Pi / 2), Palette.Accent);
+                DrawString(bold, r.Position + new Vector2(16, 13), combo.Name, HorizontalAlignment.Left, -1, 11, Palette.Accent);
+                bx += w + 5;
+            }
             foreach (var c in CardRegistry.Resolve(me.Cards))
             {
                 float w = bold.GetStringSize(c.Name, HorizontalAlignment.Left, -1, 11).X + 24;
@@ -200,13 +210,15 @@ public partial class HudUI : Control
         var col = p.Left ? Palette.TextDim : p.Color;
 
         var stacks = StatSummary.Stacks(p.Cards);
+        var combos = Combos.Active(p.Cards);
         var stats = StatSummary.Lines(StatBlock.Compute(CardRegistry.Resolve(p.Cards)));
         const float pad = 10, row = 15, colW = 118, gap = 12;
         int cardCols = stacks.Count > 6 ? 2 : 1;
         int cardRows = Mathf.Max(1, (stacks.Count + cardCols - 1) / cardCols);
         int statRows = (stats.Count + 1) / 2;
         float w = pad * 2 + colW * 2 + gap;
-        float h = pad + 18 + cardRows * row + 10 + 16 + statRows * row + pad - 2;
+        float comboH = combos.Count > 0 ? row : 0;
+        float h = pad + 18 + cardRows * row + comboH + 10 + 16 + statRows * row + pad - 2;
         var r = new Rect2(Mathf.Clamp(chip.Position.X, 6, vs.X - w - 6), chip.End.Y + 6, w, h);
 
         var poly = Shapes.RoundRect(r, 10, 6);
@@ -241,7 +253,14 @@ public partial class HudUI : Control
                 DrawString(Fonts.Heavy, at + new Vector2(15 + nameW, 11.5f), $"x{n}", HorizontalAlignment.Left, -1, 10, Palette.Accent);
             }
         }
-        y += cardRows * row + 6;
+        if (combos.Count > 0)
+        {
+            var at = new Vector2(x0, y + cardRows * row);
+            DrawColoredPolygon(Shapes.Star(at + new Vector2(3.5f, 7.5f), 4.5f, 2f, 5, -Mathf.Pi / 2), Palette.Accent);
+            DrawString(bold, at + new Vector2(11, 11.5f), "Combo: " + string.Join(", ", combos.Select(c => c.Name)), HorizontalAlignment.Left,
+                w - pad * 2 - 12, 11, Palette.Accent);
+        }
+        y += cardRows * row + comboH + 6;
         DrawLine(new Vector2(x0, y), new Vector2(r.End.X - pad, y), new Color(1, 1, 1, 0.1f), 1);
         y += 14;
         DrawString(bold, new Vector2(x0, y), "STATS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);

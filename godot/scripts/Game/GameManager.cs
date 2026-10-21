@@ -62,6 +62,8 @@ public partial class GameManager : Node2D
     public event Action MatchBegan, BattleStarted, ScoresChanged, CardPickBegan, ReturnedToLobby, RematchVotesChanged;
     public event Action<int> MatchEnded;
     public event Action<int, int> CardWasPicked;
+    /// <summary>A pick unlocked a card combo for this slot (on every peer, right after <see cref="CardWasPicked"/>).</summary>
+    public event Action<int, ComboDef> ComboFound;
     public event Action<string, Color, float> Banner;
 
     private Node2D _avatars;
@@ -223,10 +225,13 @@ public partial class GameManager : Node2D
         HostCheckPicksDone();
     }
 
+    private bool _lastPickCombo;
+
     private void HostCheckPicksDone()
     {
         bool done = PickOptions.Keys.All(s => _hostPicked.Contains(s) || Slots[s] == null || Slots[s].Left);
-        if (done && _hostNext == null) HostAfter(0.9f, HostStartBattle);
+        // A little longer when the last pick found a combo, so its popup can be read.
+        if (done && _hostNext == null) HostAfter(_lastPickCombo ? 1.8f : 0.9f, HostStartBattle);
     }
 
     public void HostReturnToLobby()
@@ -509,7 +514,7 @@ public partial class GameManager : Node2D
             if (_botPickT[slot] <= 0)
             {
                 _botPickT.Remove(slot);
-                HostApplyPick(slot, BotChooseCard(PickOptions[slot]));
+                HostApplyPick(slot, BotChooseCard(slot, PickOptions[slot]));
             }
         }
         if (_pickTimeoutT <= 0)
@@ -530,10 +535,19 @@ public partial class GameManager : Node2D
         _autoPickT -= dt;
         if (_autoPickT > 0) return;
         _autoPickT = -1;
-        LocalPick(opts[(int)(GD.Randi() % (uint)opts.Count)]);
+        // Like a bot: a combo card when there is one, mostly, so autotests see combos found.
+        var combos = opts.Where(id => Combos.Unlocks(LocalMatchPlayer.Cards, id).Count > 0).ToList();
+        var from = combos.Count > 0 && GD.Randf() < 0.75f ? combos : opts;
+        LocalPick(from[(int)(GD.Randi() % (uint)from.Count)]);
     }
 
-    private int BotChooseCard(List<int> opts) => opts[HostRng.Range(0, opts.Count - 1)];
+    /// <summary>Bots usually take a card that completes a combo when one is offered, otherwise any card.</summary>
+    private int BotChooseCard(int slot, List<int> opts)
+    {
+        var combos = opts.Where(id => Combos.Unlocks(Slots[slot].Cards, id).Count > 0).ToList();
+        if (combos.Count > 0 && HostRng.Range(0f, 1f) < 0.75f) return combos[HostRng.Range(0, combos.Count - 1)];
+        return opts[HostRng.Range(0, opts.Count - 1)];
+    }
 
     // =====================================================================
     // Host: combat resolution (called by Avatar / BulletSystem)
@@ -1259,11 +1273,19 @@ public partial class GameManager : Node2D
         var p = Slots[slot];
         if (p == null) return;
         Picked.Add(slot);
+        var unlocked = Combos.Unlocks(p.Cards, cardId);
+        _lastPickCombo = unlocked.Count > 0;
         p.Cards.Add(cardId);
         p.RecomputeStats();
         Sfx.Play("pick", 0.6f);
         Log.Info($"{p.Info.Name} picked {CardRegistry.Get(cardId)?.Name}");
         CardWasPicked?.Invoke(slot, cardId);
+        foreach (var combo in unlocked)
+        {
+            Log.Info($"combo: {p.Info.Name} found {combo.Name}");
+            if (p == LocalMatchPlayer) Sfx.Play("combo", 0.7f);
+            ComboFound?.Invoke(slot, combo);
+        }
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

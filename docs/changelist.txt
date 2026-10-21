@@ -1,11 +1,14 @@
 issues to fix:
+- add 'Unlucky' to the emote wheel, and add an on-kill text
+- the executable icon should be a simple player head instead of the godot logo
+- the E and T overlap slightly in the 'DELETED' text
+- the game framerate slows a lot when there's many particles on screen, we need some sort of dynamic culling to try and keep the game snappy when lots is going on
 
 features to add:
 - dynamic arena hazards: collapsing platforms, lava that rises late in a round, or a closing ring, so late rounds don't stall into camping
 - kill cam: replay the last 2-3 seconds of the final kill of each battle in slow motion
 - team modes: 2v2, 3v3, 4v4, with a lobby setting for friendly fire
 - rare card tier plus cursed cards: build-defining rare cards, and an option to take a curse in exchange for a stronger pick
-- card synergies: certain card pairs unlock a bonus effect (e.g. bouncy + explosive = explode on every bounce), with a "combo found!" popup
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
 - game modes: king of the hill, capture the flag, a "headhunter" mode where the leader is marked
 - controller support and local couch co-op (several players on one machine)
