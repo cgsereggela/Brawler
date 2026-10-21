@@ -820,6 +820,12 @@ public partial class Main : Node
                     },
                     () =>
                     {
+                        // The Video tab: window, bloom, shake and flashes.
+                        OpenOptions(_lobby);
+                        foreach (var t in _options.FindChildren("*", "TabContainer", true, false).OfType<TabContainer>()) t.CurrentTab = 1;
+                    },
+                    () =>
+                    {
                         // The Online tab, with the lobby still hosting behind it.
                         OpenOptions(_lobby);
                         foreach (var t in _options.FindChildren("*", "TabContainer", true, false).OfType<TabContainer>()) t.CurrentTab = 3;

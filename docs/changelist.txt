@@ -1,3 +1,16 @@
 issues to fix:
+- rematch vote / quick restart after a match, so the group can go again without going back through the lobby
+- rejoin after a disconnect: a player who drops can reconnect into the same slot and keep their cards and score
 
 features to add:
+- dynamic arena hazards: collapsing platforms, lava that rises late in a round, or a closing ring, so late rounds don't stall into camping
+- kill cam: replay the last 2-3 seconds of the final kill of each battle in slow motion
+- ghost spectating: dead players float around as ghosts and can taunt or ping while they wait
+- team modes: 2v2, 3v3, 4v4, with a lobby setting for friendly fire
+- rare card tier plus cursed cards: build-defining rare cards, and an option to take a curse in exchange for a stronger pick
+- card synergies: certain card pairs unlock a bonus effect (e.g. bouncy + explosive = explode on every bounce), with a "combo found!" popup
+- level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
+- game modes: king of the hill, capture the flag, a "headhunter" mode where the leader is marked
+- end-of-match awards: funny titles like most self-kills, longest airtime, fewest blocks
+- emotes / taunts on a key
+- controller support and local couch co-op (several players on one machine)

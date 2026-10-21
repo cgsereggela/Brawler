@@ -1394,9 +1394,9 @@ public partial class GameManager : Node2D
             _hitStopUntil = 0;
         }
         _trauma = Mathf.Max(0, _trauma - (float)delta * 2.2f);
-        float s = _trauma * _trauma * 6f;
+        float s = _trauma * _trauma * 6f * Accessibility.Shake;
         _cam.Offset = new Vector2((float)GD.RandRange(-s, s), (float)GD.RandRange(-s, s));
         _zoomPunch = Mathf.Max(0, _zoomPunch - (float)delta * 3f);
-        _cam.Zoom = Vector2.One * (1f + 0.06f * _zoomPunch * _zoomPunch);
+        _cam.Zoom = Vector2.One * (1f + 0.06f * _zoomPunch * _zoomPunch * Accessibility.Shake);
     }
 }

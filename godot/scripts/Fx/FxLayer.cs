@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Brawler.Core;
 using Godot;
 
 namespace Brawler.Fx;
@@ -135,6 +136,7 @@ public partial class FxLayer : Node2D
 
     public void ScreenFlash(Color color, float life = 0.12f)
     {
+        if (Accessibility.ReduceFlashes) return;
         _screenColor = color;
         _screenLife = _screenMax = life;
     }
@@ -276,13 +278,13 @@ public partial class FxLayer : Node2D
         foreach (var g in _glows)
         {
             float k = g.Life / g.MaxLife;
-            GlowTex.Draw(l, g.Pos, g.Radius * (1.2f - 0.4f * k), g.Color with { A = k * k });
+            GlowTex.Draw(l, g.Pos, g.Radius * (1.2f - 0.4f * k), g.Color with { A = k * k * Accessibility.FlashScale });
         }
         foreach (var b in _bolts)
         {
             float k = b.Life / b.MaxLife;
             l.DrawPolyline(b.Pts, b.Color with { A = 0.5f * k }, 4f, true);
-            l.DrawPolyline(b.Pts, Shapes.Hdr(Colors.White, 1.8f) with { A = k }, 1.3f, true);
+            l.DrawPolyline(b.Pts, Shapes.Hdr(Colors.White, 1.8f) with { A = k * Accessibility.FlashScale }, 1.3f, true);
         }
         foreach (var r in _rays)
         {

@@ -89,6 +89,9 @@ Open **Options** from the main menu or the lobby, or press **Esc** during a matc
   windowed and your last full-screen choice.
 - **Video → Bloom:** how strongly bright things glow (shots, explosions, lava, neon edges). Default 50%. 100% is the full
   glow and 0% turns it off, which also saves some GPU time.
+- **Video → Shake:** how much the camera shakes and punches in on hits and kills. 0% keeps the camera still.
+- **Video → Reduce flashes:** turns off full-screen flashes and the white flash on players who get hit, and dims the
+  glow bursts from hits, explosions and lightning.
 - **Controls:** each action has three slots. Click a slot, then press the key or mouse button you want (Esc cancels).
   Right-click a slot to clear it. If that key already belongs to another action it moves over, and the menu tells you.
   **Reset to defaults** puts everything back. The menu shows the letters printed on your own keyboard layout.

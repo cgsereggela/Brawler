@@ -708,7 +708,7 @@ public partial class Avatar : CharacterBody2D
             GroundSlope = _groundSlope,
             Land = _land,
             Blink = _blinkT > 0,
-            Hurt = _hurtFlash > 0,
+            Hurt = _hurtFlash > 0 && !Accessibility.ReduceFlashes,
             Gun = true,
             GunLook = Gun,
             Kick = _kick,
