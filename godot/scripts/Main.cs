@@ -284,6 +284,7 @@ public partial class Main : Node
         Show(_hud, _over);
         _matchFinished = true;
         if (_autoMode == "sim") SimMatchEnded(winner);
+        else if (_rematchTest && _rematches == 0 && _autoMode is "offline" or "host" or "join") AutoVoteRematch();
         else if (_autoMode is not (null or "readme")) // readme quits after its match-over shot
         {
             var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
@@ -330,6 +331,7 @@ public partial class Main : Node
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
             else if (a == "--nobots") _noBots = true;
+            else if (a == "--rematch") _rematchTest = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
             else if (a.StartsWith("--players="))
             {
@@ -977,6 +979,35 @@ public partial class Main : Node
         }
         _rejoinChecked = true;
         Log.Info($"DROPTEST rejoined slot {me.Slot} with all {_dropCards} cards");
+    }
+
+    // ---------- --rematch (with --autotest, --autohost or --autojoin): vote for a rematch, check it starts fresh ----------
+
+    private bool _rematchTest;
+    private int _rematches;
+
+    private void AutoVoteRematch()
+    {
+        // The host votes first and the client a second later, so the host has to wait for the second vote.
+        GetTree().CreateTimer(_autoMode == "join" ? 1.5 : 0.5, true, false, true).Timeout += () =>
+        {
+            Log.Info($"REMATCHTEST voting for a rematch ({_game.RematchVotes.Count} votes in so far)");
+            _game.MatchBegan += AutoRematchCheck;
+            _game.LocalVoteRematch(true);
+        };
+    }
+
+    private void AutoRematchCheck()
+    {
+        _game.MatchBegan -= AutoRematchCheck;
+        var stale = _game.Slots.Where(p => p != null && (p.Cards.Count > 0 || p.RoundWins > 0 || p.BattleWins > 0)).ToList();
+        if (stale.Count > 0 || _game.RematchVotes.Count > 0)
+        {
+            Finish(1, $"rematchtest: rematch didn't start fresh: {string.Join(", ", stale.Select(p => p.Info.Name))}, {_game.RematchVotes.Count} votes left");
+            return;
+        }
+        _rematches++;
+        Log.Info($"REMATCHTEST rematch started with {_game.Active().Count()} players");
     }
 
     // ---------- card pool check (--autotest, --autohost, --autojoin) ----------

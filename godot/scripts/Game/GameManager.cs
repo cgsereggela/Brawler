@@ -54,7 +54,7 @@ public partial class GameManager : Node2D
     public Dictionary<int, List<int>> PickOptions { get; private set; } = new();
     public readonly HashSet<int> Picked = new();
 
-    public event Action MatchBegan, BattleStarted, ScoresChanged, CardPickBegan, ReturnedToLobby;
+    public event Action MatchBegan, BattleStarted, ScoresChanged, CardPickBegan, ReturnedToLobby, RematchVotesChanged;
     public event Action<int> MatchEnded;
     public event Action<int, int> CardWasPicked;
     public event Action<string, Color, float> Banner;
@@ -230,6 +230,45 @@ public partial class GameManager : Node2D
         Net.BroadcastLobby();
     }
 
+    // ---------- rematch vote (match-over screen) ----------
+
+    /// <summary>Slots that voted for a rematch. Bots don't vote; the rematch starts once every human still here has.</summary>
+    public readonly HashSet<int> RematchVotes = new();
+
+    /// <summary>The humans whose vote a rematch waits on.</summary>
+    public IEnumerable<MatchPlayer> RematchVoters() => Active().Where(p => !p.Info.IsBot);
+
+    public bool CanRematch => Phase == Phase.MatchOver && Active().Count() >= 2;
+
+    public void LocalVoteRematch(bool yes)
+    {
+        if (LocalMatchPlayer == null || Phase != Phase.MatchOver) return;
+        if (IsHost) HostVoteRematch(LocalMatchPlayer.Slot, yes);
+        else RpcId(1, MethodName.RequestRematch, yes);
+    }
+
+    private void HostVoteRematch(int slot, bool yes)
+    {
+        if (Phase != Phase.MatchOver || _hostNext != null) return;
+        if (yes) RematchVotes.Add(slot);
+        else RematchVotes.Remove(slot);
+        HostSyncRematch();
+    }
+
+    /// <summary>Host: share the votes, and start the rematch once everyone still here is in.</summary>
+    private void HostSyncRematch()
+    {
+        RematchVotes.RemoveWhere(s => Slots[s] == null || Slots[s].Left);
+        var w = new Wire().U8(RematchVotes.Count);
+        foreach (var s in RematchVotes) w.U8(s);
+        Rpc(MethodName.SyncRematchVotes, w.Done());
+        if (CanRematch && RematchVoters().All(p => RematchVotes.Contains(p.Slot)))
+        {
+            Log.Info("rematch: everyone is in");
+            HostAfter(1.0f, HostStartMatch); // a beat to see the last vote land
+        }
+    }
+
     private void HostAfter(float seconds, Action a)
     {
         _hostNext = a;
@@ -244,6 +283,7 @@ public partial class GameManager : Node2D
         if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar, KillCause.Left);
         Rpc(MethodName.PlayerLeft, mp.Slot);
         if (Phase == Phase.CardPick) HostCheckPicksDone();
+        if (Phase == Phase.MatchOver) HostSyncRematch(); // their vote goes, and the rest may now all be in
 
         // Too few left to play on: hold the match (see HostRejoinWaitTick) so whoever dropped can rejoin.
         if (Active().Count() < 2 && Phase != Phase.MatchOver && _rejoinWaitT <= 0)
@@ -984,6 +1024,7 @@ public partial class GameManager : Node2D
         }
         BattleNumber = 0;
         MatchWinner = -1;
+        RematchVotes.Clear();
         Net.InMatch = true;
         Visible = true;
         if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
@@ -1154,6 +1195,16 @@ public partial class GameManager : Node2D
         Sfx.Play("pick", 0.6f);
         Log.Info($"{p.Info.Name} picked {CardRegistry.Get(cardId)?.Name}");
         CardWasPicked?.Invoke(slot, cardId);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncRematchVotes(byte[] data)
+    {
+        var r = new WireReader(data);
+        RematchVotes.Clear();
+        int n = r.U8();
+        for (int i = 0; i < n; i++) RematchVotes.Add(r.U8());
+        RematchVotesChanged?.Invoke();
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1410,6 +1461,15 @@ public partial class GameManager : Node2D
         if (p != null) HostApplyPick(p.Slot, cardId);
     }
 
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestRematch(bool yes)
+    {
+        if (!IsHost) return;
+        long sender = Multiplayer.GetRemoteSenderId();
+        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
+        if (p != null) HostVoteRematch(p.Slot, yes);
+    }
+
     // =====================================================================
     // Serialization helpers
     // =====================================================================
@@ -1531,6 +1591,7 @@ public partial class GameManager : Node2D
         LocalMatchPlayer = null;
         PickOptions.Clear();
         Picked.Clear();
+        RematchVotes.Clear();
         Phase = Phase.Idle;
         _hostNext = null;
         _rejoinWaitT = 0;

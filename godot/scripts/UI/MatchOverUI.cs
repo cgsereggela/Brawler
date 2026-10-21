@@ -29,6 +29,8 @@ public partial class MatchOverUI : Control
     {
         (_, _body) = UiKit.CenteredPanel(this, 460);
         _game.MatchEnded += Build;
+        _game.RematchVotesChanged += ShowVotes;
+        _game.ScoresChanged += ShowVotes; // someone left
     }
 
     private void Build(int winner)
@@ -81,20 +83,40 @@ public partial class MatchOverUI : Control
             standings.AddChild(row);
         }
 
+        _votes = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
+        _votes.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _body.AddChild(_votes);
+
         var buttons = UiKit.HBox(8);
-        if (_net.IsHost)
-        {
-            var back = UiKit.Primary("BACK TO LOBBY", () => BackToLobby?.Invoke());
-            back.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            buttons.AddChild(back);
-        }
-        else
-        {
-            var wait = UiKit.Label("Waiting for host...", UiKit.Body, Palette.TextDim);
-            wait.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            buttons.AddChild(wait);
-        }
+        _rematch = UiKit.Primary("REMATCH", () => _game.LocalVoteRematch(!_game.RematchVotes.Contains(_game.LocalMatchPlayer?.Slot ?? -1)));
+        _rematch.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        buttons.AddChild(_rematch);
+        if (_net.IsHost) buttons.AddChild(UiKit.Button("Lobby", () => BackToLobby?.Invoke()));
         buttons.AddChild(UiKit.Button("Leave", () => LeavePressed?.Invoke()));
         _body.AddChild(buttons);
+        ShowVotes();
+    }
+
+    private Label _votes;
+    private Button _rematch;
+
+    /// <summary>Who is in for a rematch. It starts once every human still here votes; bots always are.</summary>
+    private void ShowVotes()
+    {
+        if (_rematch == null || !IsInstanceValid(_rematch)) return;
+        var voters = _game.RematchVoters().ToList();
+        bool mine = _game.LocalMatchPlayer is { } me && _game.RematchVotes.Contains(me.Slot);
+        _rematch.Disabled = !_game.CanRematch || _game.LocalMatchPlayer == null;
+        _rematch.Text = mine ? "READY! (CLICK TO CANCEL)" : "REMATCH";
+        if (!_game.CanRematch)
+            _votes.Text = _net.IsHost ? "Not enough players left for a rematch." : "Not enough players left. Waiting for host...";
+        else if (voters.Count > 0 && voters.All(p => _game.RematchVotes.Contains(p.Slot)))
+            _votes.Text = "Everyone's in. Here we go!";
+        else
+        {
+            var waiting = voters.Where(p => !_game.RematchVotes.Contains(p.Slot)).Select(p => p.Info.Name);
+            _votes.Text = voters.Count <= 1 ? "" : $"Rematch: {voters.Count(p => _game.RematchVotes.Contains(p.Slot))}/{voters.Count} ready  ·  waiting for {string.Join(", ", waiting)}";
+        }
+        _votes.Visible = _votes.Text.Length > 0;
     }
 }
