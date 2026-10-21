@@ -11,19 +11,19 @@ namespace Brawler.UI;
 public struct CrosshairState
 {
     public Color Tint;        // the player's color
-    public bool Armed;        // alive in a battle: show the ammo ring (otherwise only the dimmed cross)
+    public bool Armed;        // alive in a battle: show the ammo pips (otherwise only the dimmed cross)
     public int Ammo, Mag;
     public bool Reloading;
     public float ReloadFrac;  // 0..1
     public float Kick;        // 1 right after a shot, decays to 0: the ticks spread
-    public float Ready;       // 1 right after a reload finishes, decays to 0: a ring pulses out
+    public float Ready;       // 1 right after a reload finishes, decays to 0: the full pips flash
     public float Time;
 }
 
 /// <summary>
 /// Replaces the OS mouse pointer during a match: a crosshair in the local player's color at the mouse, with the
-/// magazine as a ring of pips (one per bullet; a gauge plus a number for big magazines) and reload as a small
-/// dial above and to the right of the ring. Lives in its own CanvasLayer above the HUD, so it renders at the window's resolution and is redrawn
+/// magazine as small pips at its lower right (one per bullet; a gauge plus a number for big magazines, see
+/// <see cref="AmmoPips"/>) and reload as a small dial at its upper right. Lives in its own CanvasLayer above the HUD, so it renders at the window's resolution and is redrawn
 /// every frame. Every stroke sits on a dark under-stroke so it reads on any arena theme. Main decides when it is
 /// <see cref="Active"/> (in the arena, with no card pick, match-over screen or options overlay up); the OS cursor is
 /// hidden exactly while it is.
@@ -109,26 +109,19 @@ public partial class Crosshair : Node2D
 
     // ---------- art ----------
 
-    public const float Radius = 12f;
-    private const float RingW = 2.1f, Under = 1.9f; // ring stroke, and how much wider the dark under-stroke is
+    private const float Under = 1.9f; // how much wider the dark under-stroke is
+    private const float Top = -Mathf.Pi / 2;
     private static readonly Color Ink = new(0.04f, 0.02f, 0.09f, 0.72f);
-    private static readonly Color Empty = new(1, 1, 1, 0.2f);
+    private static readonly Color Empty = new(1, 1, 1, 0.22f);
     private static readonly Color Low = new("#ff4d6a");
-    /// <summary>The small reload dial: its radius, and its center relative to the crosshair (top right, clear of the ring).</summary>
+    /// <summary>The small reload dial: its radius, and its center relative to the crosshair (upper right, mirroring the pips).</summary>
     private const float ReloadDialR = 3.6f;
-    private static readonly Vector2 ReloadDialAt = new Vector2(1, -1).Normalized() * (Radius + RingW + ReloadDialR + 3.5f);
+    private static readonly Vector2 ReloadDialAt = new(AmmoPips.X0 + ReloadDialR, -AmmoPips.Y0 - ReloadDialR);
 
     private static void Arc(CanvasItem ci, Vector2 c, float r, float from, float to, Color col, float w)
     {
         int pts = Mathf.Clamp((int)(Mathf.Abs(to - from) * r / 2.2f) + 2, 3, 64);
         ci.DrawArc(c, r, from, to, pts, col, w, true);
-    }
-
-    /// <summary>Under-stroke, then the colored stroke.</summary>
-    private static void InkedArc(CanvasItem ci, Vector2 c, float r, float from, float to, Color col, float w)
-    {
-        Arc(ci, c, r, from, to, Ink, w + Under);
-        Arc(ci, c, r, from, to, col, w);
     }
 
     /// <summary>Draws a crosshair at <paramref name="at"/>. Static so test galleries can draw any state.</summary>
@@ -155,64 +148,46 @@ public partial class Crosshair : Node2D
         ci.DrawCircle(at, 1.2f, Colors.White with { A = alpha }, true, -1, true);
         if (!s.Armed) return;
 
-        const float r = Radius;
         int mag = Math.Max(1, s.Mag);
         if (s.Reloading)
         {
-            // Reload: a small dial up and to the right of the ring, filling clockwise from the top, so the crosshair
-            // itself stays calm (the ring below keeps showing the empty magazine).
+            // Reload: a small dial at the upper right, filling clockwise from the top, so the crosshair itself stays
+            // calm (the pips at the lower right keep showing the empty magazine).
             const float dr = ReloadDialR;
             var dial = at + ReloadDialAt;
             float frac = Mathf.Clamp(s.ReloadFrac, 0, 1);
             ci.DrawCircle(dial, dr + 1.6f, Ink, true, -1, true);
             Arc(ci, dial, dr, 0, Mathf.Tau, Empty with { A = 0.16f }, 1.7f);
-            if (frac > 0.002f) Arc(ci, dial, dr, AmmoRing.Top, AmmoRing.Top + Mathf.Tau * frac, Shapes.Hdr(Palette.Accent, 1.15f), 1.7f);
+            if (frac > 0.002f) Arc(ci, dial, dr, Top, Top + Mathf.Tau * frac, Shapes.Hdr(Palette.Accent, 1.15f), 1.7f);
         }
 
-        // Ammo: one pip per bullet, or a gauge for big magazines. The last bullet (of 3+) turns red.
+        // Ammo: small upright pips at the lower right, one per bullet, or a short gauge plus the count for big
+        // magazines. The last bullet (of 3+) turns red; just after a reload the full pips flash bright.
         int ammo = Math.Clamp(s.Ammo, 0, mag);
         var full = ammo <= 1 && mag >= 3 ? Low : tint;
-        if (AmmoRing.Continuous(mag))
+        if (s.Ready > 0) full = Shapes.Hdr(full.Lerp(Colors.White, 0.5f * s.Ready), 1 + 0.6f * s.Ready);
+        var corner = at + new Vector2(AmmoPips.X0, AmmoPips.Y0);
+        float w = AmmoPips.Width(mag);
+        // One dark plate behind the whole block, so it reads on any theme.
+        float h = AmmoPips.Rows(mag) * (AmmoPips.PipH + AmmoPips.GapY) - AmmoPips.GapY;
+        ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(corner - new Vector2(1.6f, 1.6f), new Vector2(w + 3.2f, h + 3.2f)), 1.8f), Ink);
+        if (AmmoPips.Continuous(mag))
         {
-            InkedArc(ci, at, r, 0, Mathf.Tau, Empty, RingW);
-            if (ammo > 0)
-            {
-                var (from, to) = AmmoRing.Gauge(ammo, mag);
-                Arc(ci, at, r, from, to, full, RingW);
-            }
-            for (int i = AmmoRing.TickEvery; i < mag; i += AmmoRing.TickEvery)
-            {
-                var d = Vector2.Right.Rotated(AmmoRing.Top + Mathf.Tau * i / mag);
-                ci.DrawLine(at + d * (r - RingW * 0.7f), at + d * (r + RingW * 0.7f), Ink, 0.9f, true);
-            }
+            var bar = new Rect2(corner, new Vector2(w, AmmoPips.PipH));
+            ci.DrawColoredPolygon(Shapes.RoundRect(bar, 0.8f), Empty);
+            float f = AmmoPips.Gauge(ammo, mag);
+            if (f > 0) ci.DrawColoredPolygon(Shapes.RoundRect(new Rect2(corner, new Vector2(Mathf.Max(1.6f, w * f), AmmoPips.PipH)), 0.8f), full);
+            var font = Fonts.Heavy;
+            var pos = corner + new Vector2(w + 3.5f, AmmoPips.PipH + 2.4f);
+            ci.DrawStringOutline(font, pos, ammo.ToString(), HorizontalAlignment.Left, -1, 9, 4, Ink);
+            ci.DrawString(font, pos, ammo.ToString(), HorizontalAlignment.Left, -1, 9, ammo <= 1 ? Low : Colors.White);
         }
         else
-        {
             for (int i = 0; i < mag; i++)
             {
-                var (from, to) = AmmoRing.Pip(i, mag, r);
-                Arc(ci, at, r, from, to, Ink, RingW + Under);
+                var (x, y) = AmmoPips.Pip(i);
+                var pip = Shapes.RoundRect(new Rect2(at + new Vector2(x, y), new Vector2(AmmoPips.PipW, AmmoPips.PipH)), 0.7f);
+                ci.DrawColoredPolygon(pip, i < ammo ? full : Empty);
             }
-            for (int i = 0; i < mag; i++)
-            {
-                var (from, to) = AmmoRing.Pip(i, mag, r);
-                Arc(ci, at, r, from, to, i < ammo ? full : Empty, RingW);
-            }
-        }
-        if (mag >= AmmoRing.NumberFrom)
-        {
-            // The count as a number, tucked at the lower right of the ring.
-            var font = Fonts.Heavy;
-            string txt = ammo.ToString();
-            var pos = at + new Vector2(r * 0.72f + 2.5f, r * 0.72f + 8.5f);
-            ci.DrawStringOutline(font, pos, txt, HorizontalAlignment.Left, -1, 9, 4, Ink);
-            ci.DrawString(font, pos, txt, HorizontalAlignment.Left, -1, 9, ammo <= 1 ? Low : Colors.White);
-        }
-        if (s.Ready > 0)
-        {
-            // Reload done: a ring pulses out and fades.
-            float k = 1 - s.Ready;
-            Arc(ci, at, r + 1 + 6 * k, 0, Mathf.Tau, Shapes.Hdr(Palette.Accent, 1.3f) with { A = s.Ready * 0.8f }, 1.4f * s.Ready + 0.3f);
-        }
     }
 }
