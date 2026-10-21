@@ -5,8 +5,9 @@ namespace Brawler.Fx;
 
 /// <summary>
 /// Collects many small shapes as triangles and draws them with one RenderingServer call per few thousand vertices,
-/// instead of one engine call per shape (each costs far more than the triangles it draws). The arrays are fixed-size
-/// and reused: unused index slots are degenerate triangles, so a flush allocates nothing. Shapes keep the order they
+/// instead of one engine call per shape (each costs far more than the triangles it draws). Shapes are collected in
+/// fixed-size arrays; a flush copies them into reused arrays a size up from what was drawn (unused index slots are
+/// degenerate triangles), so it allocates nothing and Godot only copies about what was drawn. Shapes keep the order they
 /// were added in. Drawn without line feathering; the project's 2D MSAA smooths the edges.
 /// </summary>
 public sealed class TriBatch
@@ -17,7 +18,7 @@ public sealed class TriBatch
     private readonly Color[] _cols = new Color[MaxVerts];
     private readonly Vector2[] _uvs;
     private readonly int[] _idx = new int[MaxIndices];
-    private int _n, _ni, _usedIdx;
+    private int _n, _ni;
     private CanvasItem _ci;
     private Rid _tex;
     private Transform2D _xform = Transform2D.Identity;
@@ -29,6 +30,13 @@ public sealed class TriBatch
     private static readonly int[] Tris = new int[(MaxPoly - 2) * 3];
     private static readonly Vector2[] Normals = new Vector2[MaxPoly];
     private static readonly Color[] Shades = new Color[MaxPoly];
+
+    // What a flush hands Godot, per size bucket: 64 << k vertices and 192 << k indices, k = 0..6 (up to the max).
+    private const int Buckets = 7;
+    private readonly Vector2[][] _outPts = new Vector2[Buckets][], _outUvs = new Vector2[Buckets][];
+    private readonly Color[][] _outCols = new Color[Buckets][];
+    private readonly int[][] _outIdx = new int[Buckets][];
+    private readonly int[] _outUsed = new int[Buckets]; // indices written into each bucket last time
 
     /// <param name="textured">Every shape samples a texture (given to <see cref="Begin"/>) over its 0..1 UV square.</param>
     public TriBatch(bool textured = false)
@@ -77,11 +85,31 @@ public sealed class TriBatch
     public void Flush()
     {
         if (_ni == 0 || _ci == null) { _n = _ni = 0; return; }
-        // Clear index slots used last time beyond this batch, so they stay degenerate (0,0,0).
-        if (_usedIdx > _ni) Array.Clear(_idx, _ni, _usedIdx - _ni);
-        _usedIdx = _ni;
-        RenderingServer.CanvasItemAddTriangleArray(_ci.GetCanvasItem(), _idx, _pts, _cols, _uvs, null, null, _tex);
+        int vb = Bucket(_n, 64), ib = Bucket(_ni, 192);
+        var pts = _outPts[vb] ??= new Vector2[64 << vb];
+        var cols = _outCols[vb] ??= new Color[64 << vb];
+        _pts.AsSpan(0, _n).CopyTo(pts);
+        _cols.AsSpan(0, _n).CopyTo(cols);
+        Vector2[] uvs = null;
+        if (_uvs != null)
+        {
+            uvs = _outUvs[vb] ??= new Vector2[64 << vb];
+            _uvs.AsSpan(0, _n).CopyTo(uvs);
+        }
+        var idx = _outIdx[ib] ??= new int[192 << ib];
+        _idx.AsSpan(0, _ni).CopyTo(idx);
+        // Clear index slots this bucket used last time beyond this batch, so they stay degenerate (0,0,0).
+        if (_outUsed[ib] > _ni) Array.Clear(idx, _ni, _outUsed[ib] - _ni);
+        _outUsed[ib] = _ni;
+        RenderingServer.CanvasItemAddTriangleArray(_ci.GetCanvasItem(), idx, pts, cols, uvs, null, null, _tex);
         _n = _ni = 0;
+    }
+
+    private static int Bucket(int count, int smallest)
+    {
+        int k = 0;
+        while (smallest << k < count) k++;
+        return k;
     }
 
     private int V(Vector2 p, Color c)
