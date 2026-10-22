@@ -1590,7 +1590,7 @@ static List<byte[]> DecodeGif(byte[] g)
 
 // ---------- Game modes ----------
 {
-    Check(GameModes.Next(GameMode.Elimination) == GameMode.KingOfTheHill && GameModes.Next(GameMode.Headhunter) == GameMode.GunGame && GameModes.Next(GameMode.GunGame) == GameMode.Elimination,
+    Check(GameModes.Next(GameMode.Elimination) == GameMode.KingOfTheHill && GameModes.Next(GameMode.Headhunter) == GameMode.GunGame && GameModes.Next(GameMode.GunGame) == GameMode.Survival && GameModes.Next(GameMode.Survival) == GameMode.Elimination,
         "Modes: the lobby button steps through every mode and wraps");
     Check(GameModes.All.All(m => GameModes.Parse(GameModes.Id(m)) == m) && GameModes.Parse("nope") == null, "Modes: ids parse back");
     Check(GameModes.From(99) == GameMode.Elimination && GameModes.From(2) == GameMode.CaptureTheFlag, "Modes: unknown wire values fall back to elimination");
@@ -1608,6 +1608,16 @@ static List<byte[]> DecodeGif(byte[] g)
     Check(GameModes.GunCard(-3) == GameModes.GunLadder[0] && GameModes.GunCard(99) == GameModes.GunLadder[^1], "Gun Game: levels clamp to the ladder");
     Check(GameModes.Problem(GameMode.GunGame, 2) != null && GameModes.Problem(GameMode.GunGame, 0) == null, "Gun Game: free-for-all only");
     Check(GameModes.LavaAfter(GameMode.GunGame, 45) == 0 && GameModes.Respawns(GameMode.GunGame), "Gun Game: respawns, and no sudden death");
+
+    // Survival: waves grow from one bot per human, one more every second wave, never past the lobby's bots.
+    Check(GameModes.WaveSize(1, 1, 7) == 1 && GameModes.WaveSize(3, 1, 7) == 2 && GameModes.WaveSize(1, 2, 6) == 2 && GameModes.WaveSize(10, 1, 7) == 5,
+          "Survival: waves start at one bot per human and grow every second wave");
+    Check(Enumerable.Range(1, GameModes.SurvivalWaves).All(w => GameModes.WaveSize(w, 3, 2) <= 2) && GameModes.WaveSize(1, 3, 2) == 2,
+          "Survival: a wave never needs more bots than the lobby has");
+    Check(GameModes.WaveSkill(1) == BotSkill.Easy && GameModes.WaveSkill(5) == BotSkill.Normal && GameModes.WaveSkill(GameModes.SurvivalWaves) == BotSkill.Hard
+          && GameModes.WaveCards(1) == 0 && GameModes.WaveCards(2) == 0 && GameModes.WaveCards(3) == 1 && GameModes.WaveCards(GameModes.SurvivalWaves) < GameModes.SurvivalWaves,
+          "Survival: bots get tougher, and gain cards slower than the humans' one a wave");
+    Check(GameModes.Problem(GameMode.Survival, 2) != null && GameModes.Problem(GameMode.Survival, 0) == null, "Survival: picks its own teams (free-for-all lobby)");
 
     // The hill: the side alone in it scores; contested or empty, nobody does.
     var hill = new Hill(100, 200, 300);

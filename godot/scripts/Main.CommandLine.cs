@@ -55,7 +55,7 @@ namespace Brawler;
 //                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
 //   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
 //   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
-//   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
+//   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf, headhunter, gungame or survival (ctf without --teams plays even teams)
 //   --arena=CODE          every battle of the matches this run hosts is played on this map code (see the map editor)
 //   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 //   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard

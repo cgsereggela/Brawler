@@ -177,7 +177,8 @@ public partial class GameManager : Node2D
 
     // ---------- teams (2v2, 3v3, 4v4) ----------
 
-    public bool TeamMode => Settings.TeamSize > 0;
+    /// <summary>A team mode: 2v2 and up, or Survival (humans against bots).</summary>
+    public bool TeamMode => Settings.TeamSize > 0 || Mode == GameMode.Survival;
 
     /// <summary>The slot's team in a team mode, else -1.</summary>
     public int TeamOf(int slot) => TeamMode && slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.Team : -1;
@@ -189,7 +190,14 @@ public partial class GameManager : Node2D
     public bool Spared(int attacker, int victim) => !Settings.FriendlyFire && Allies(attacker, victim);
 
     /// <summary>Who a win belongs to on screen: the slot's player, or their whole team.</summary>
-    public string WinnerName(int slot) => TeamOf(slot) is >= 0 and var t ? $"{Teams.Names[t].ToUpperInvariant()} TEAM" : NameOf(slot);
+    public string WinnerName(int slot) =>
+        Mode == GameMode.Survival && TeamOf(slot) is >= 0 and var s ? (s == 0 ? "THE SURVIVORS" : "THE BOTS")
+        : TeamOf(slot) is >= 0 and var t ? $"{Teams.Names[t].ToUpperInvariant()} TEAM" : NameOf(slot);
+
+    /// <summary>The match-over title: who won, or in Survival how the run went.</summary>
+    public string MatchTitle(int winner) =>
+        Mode == GameMode.Survival ? (TeamOf(winner) == 0 ? $"SURVIVED ALL {BattleNumber} WAVES!" : $"OVERRUN ON WAVE {BattleNumber}")
+        : winner >= 0 ? $"{WinnerName(winner).ToUpperInvariant()} WINS!" : "MATCH OVER";
 
     public Color WinnerColor(int slot) =>
         slot < 0 ? Palette.TextDim : TeamOf(slot) is >= 0 and var t ? Palette.Team(t) : Palette.Player(ColorOf(slot));

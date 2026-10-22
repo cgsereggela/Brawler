@@ -49,7 +49,7 @@ public partial class GameManager
         if (RareOverride >= 0) Net.Lobby.Settings.RareChance = RareOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         _arenaTurn = 0;
-        if (Settings.Draft && Mode != GameMode.GunGame) HostBeginDraft(); // Gun Game hands out its own cards
+        if (Settings.Draft && Mode is not (GameMode.GunGame or GameMode.Survival)) HostBeginDraft(); // Gun Game hands out its own cards, Survival deals the bots theirs
         else HostStartBattle();
     }
 
@@ -112,11 +112,21 @@ public partial class GameManager
     {
         int winner = _pendingWinner;
         bool roundWon = false, matchWon = false;
+        // Survival: unless the humans cleared the wave, the bots take it (everyone falling at once included).
+        if (Mode == GameMode.Survival && (winner < 0 || TeamOf(winner) != 0))
+            winner = Slots.FirstOrDefault(p => p != null && p.Info.IsBot)?.Slot ?? winner;
         if (winner >= 0 && Slots[winner] != null)
         {
             var w = Slots[winner];
             var side = SideOf(winner).ToList(); // in team modes the whole team scores together
-            if (Mode == GameMode.GunGame)
+            if (Mode == GameMode.Survival)
+            {
+                // Each wave cleared is a point for every human; clearing the last wins, and losing one ends the run.
+                roundWon = true;
+                if (TeamOf(winner) == 0) foreach (var p in side) p.RoundWins++;
+                matchWon = TeamOf(winner) != 0 || w.RoundWins >= (Net.TestRounds > 0 ? Net.TestRounds : GameModes.SurvivalWaves); // --rounds=N: a shorter test run
+            }
+            else if (Mode == GameMode.GunGame)
             {
                 // Finishing the ladder wins the whole match.
                 w.RoundWins++;
@@ -153,8 +163,9 @@ public partial class GameManager
         var entries = new List<PickEntry>();
         foreach (var p in Active())
         {
+            if (Mode == GameMode.Survival && p.Info.IsBot) continue; // the next wave deals the bots their cards
             bool won = p.Slot == roundWinner || Allies(p.Slot, roundWinner);
-            int count = won ? Settings.WinnerChoices : Settings.LoserChoices;
+            int count = Mode == GameMode.Survival ? Settings.LoserChoices : won ? Settings.WinnerChoices : Settings.LoserChoices;
             var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards, Settings.RareChance / 100f) : null;
             if (ids is not { Count: > 0 }) continue;
             var deal = Settings.CursedDeals ? CardRegistry.RollDeal(HostRng, Settings.DisabledCards, ids, Settings.RareChance / 100f) : null;
@@ -591,6 +602,7 @@ public partial class GameManager
         LocalGuests.Clear();
         foreach (var info in lobby.Players)
         {
+            if (Settings.Mode == GameMode.Survival) info.Team = info.IsBot ? 1 : 0; // the humans against the bots
             var mp = new MatchPlayer { Info = info };
             if (IsHost) info.Key = Net.Lobby.BySlot(info.Slot)?.Key; // keys aren't sent, so take them from our own lobby
             if (AttachLocal(mp)) { }
@@ -632,7 +644,8 @@ public partial class GameManager
                 p.RecomputeStats();
             }
 
-        var active = Active().OrderBy(p => p.Slot).ToList();
+        if (Mode == GameMode.Survival) SetupWave(seed);
+        var active = Active().Where(p => !p.Benched).OrderBy(p => p.Slot).ToList();
         var layout = LayoutFor(seed, active.Count, out var arenaName, out var custom);
         MapNode.Build(layout);
         ArenaName = arenaName ?? MapNode.Theme.Name;
@@ -697,13 +710,14 @@ public partial class GameManager
             Phase = Phase.MatchOver;
             MatchWinner = winner;
             Net.InMatch = false;
-            Banner?.Invoke(winner >= 0 ? $"{name} WINS THE MATCH!" : "MATCH OVER", col, 3f);
+            Banner?.Invoke(Mode == GameMode.Survival ? MatchTitle(winner) : winner >= 0 ? $"{name} WINS THE MATCH!" : "MATCH OVER", col, 3f);
             Sfx.Play("win");
             MatchEnded?.Invoke(winner);
             return;
         }
         Phase = Phase.Intermission;
-        if (winner < 0) Banner?.Invoke("DRAW", col, 1.2f);
+        if (Mode == GameMode.Survival) { Banner?.Invoke($"WAVE {BattleNumber} CLEARED!", col, 1.5f); Sfx.Play("win", 0.7f); }
+        else if (winner < 0) Banner?.Invoke("DRAW", col, 1.2f);
         else if (roundWon) { Banner?.Invoke($"{name} TAKES THE ROUND", col, 1.5f); Sfx.Play("win", 0.7f); }
         else Banner?.Invoke($"{name} wins the battle", col, 1.2f);
     }
@@ -730,6 +744,7 @@ public partial class GameManager
         LocalGuests.Clear();
         foreach (var info in lobby.Players)
         {
+            if (Settings.Mode == GameMode.Survival) info.Team = info.IsBot ? 1 : 0;
             var mp = new MatchPlayer { Info = info, Left = r.Bool(), RoundWins = r.U8(), BattleWins = r.U8() };
             int cards = r.U8();
             for (int k = 0; k < cards; k++) mp.Cards.Add(r.I16());

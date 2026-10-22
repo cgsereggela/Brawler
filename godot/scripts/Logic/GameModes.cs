@@ -6,7 +6,7 @@ using NVec = System.Numerics.Vector2;
 namespace Brawler.Logic;
 
 /// <summary>How a battle is won. Ids are on the wire and in the stats log, so never renumber them.</summary>
-public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, Headhunter = 3, GunGame = 4 }
+public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, Headhunter = 3, GunGame = 4, Survival = 5 }
 
 /// <summary>
 /// The game modes' rules that don't need the engine. A battle is still one point toward the round in every mode;
@@ -17,13 +17,14 @@ public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, H
 /// <item>Capture the Flag (team modes only): bring the other team's flag home while yours is there. Players respawn.</item>
 /// <item>Headhunter: elimination, but one player, the match leader, is marked, and whoever takes them out wins the battle on the spot.</item>
 /// <item>Gun Game (free-for-all only): everyone holds just one card, the first of <see cref="GunLadder"/>; each kill swaps yours for the next. A kill with the last card wins the whole match. Players respawn, and there is no lava.</item>
+/// <item>Survival (free-for-all lobbies with bots): the humans team up against the bots, one wave per battle. Each wave brings one more bot (up to the lobby's), tougher and with more cards (see <see cref="WaveSize"/>, <see cref="WaveSkill"/>, <see cref="WaveCards"/>). Clear <see cref="SurvivalWaves"/> waves to win; if every human falls, the run is over. No respawns.</item>
 /// </list>
 /// In the respawn modes (but Gun Game, which has none), sudden death starts twice as late as the lobby's lava setting says, and from then on nobody
 /// respawns, so a stalled battle still ends by elimination.
 /// </summary>
 public static class GameModes
 {
-    public static readonly GameMode[] All = { GameMode.Elimination, GameMode.KingOfTheHill, GameMode.CaptureTheFlag, GameMode.Headhunter, GameMode.GunGame };
+    public static readonly GameMode[] All = { GameMode.Elimination, GameMode.KingOfTheHill, GameMode.CaptureTheFlag, GameMode.Headhunter, GameMode.GunGame, GameMode.Survival };
 
     /// <summary>Gun Game: the cards in order (Minigun, Shotgun, Explosive, Bouncy, Homing, Sniper, Boomerang, One Shot). Card ids, so never reorder lightly.</summary>
     public static readonly int[] GunLadder = { 31, 10, 6, 1, 5, 30, 57, 65 };
@@ -43,6 +44,7 @@ public static class GameModes
         GameMode.CaptureTheFlag => "Capture the Flag",
         GameMode.Headhunter => "Headhunter",
         GameMode.GunGame => "Gun Game",
+        GameMode.Survival => "Survival",
         _ => "Elimination",
     };
 
@@ -53,6 +55,7 @@ public static class GameModes
         GameMode.CaptureTheFlag => "ctf",
         GameMode.Headhunter => "headhunter",
         GameMode.GunGame => "gungame",
+        GameMode.Survival => "survival",
         _ => "elimination",
     };
 
@@ -68,7 +71,20 @@ public static class GameModes
     /// <summary>Why a lobby can't start this mode with this team size, or null.</summary>
     public static string Problem(GameMode m, int teamSize) =>
         m == GameMode.CaptureTheFlag && teamSize <= 0 ? "Capture the Flag needs teams: pick 2v2, 3v3 or 4v4."
-        : m == GameMode.GunGame && teamSize > 0 ? "Gun Game is every player for themselves: pick Free-for-all." : null;
+        : m == GameMode.GunGame && teamSize > 0 ? "Gun Game is every player for themselves: pick Free-for-all."
+        : m == GameMode.Survival && teamSize > 0 ? "Survival teams the humans up against the bots by itself: pick Free-for-all." : null;
+
+    /// <summary>Survival: waves to clear to win.</summary>
+    public const int SurvivalWaves = 10;
+
+    /// <summary>Survival: bots in <paramref name="wave"/> (from 1): as many as there are humans, then one more every second wave, up to the lobby's <paramref name="bots"/>.</summary>
+    public static int WaveSize(int wave, int humans, int bots) => Math.Clamp(Math.Max(1, humans) + (wave - 1) / 2, Math.Min(1, bots), bots);
+
+    /// <summary>Survival: how well the bots in <paramref name="wave"/> play. Easy for four waves, then Normal for three, then Hard.</summary>
+    public static BotSkill WaveSkill(int wave) => wave <= 4 ? BotSkill.Easy : wave <= 7 ? BotSkill.Normal : BotSkill.Hard;
+
+    /// <summary>Survival: random cards each bot in <paramref name="wave"/> brings: none in the first two, then one more every second wave (the humans pick one every wave).</summary>
+    public static int WaveCards(int wave) => Math.Clamp((wave - 1) / 2, 0, SurvivalWaves);
 
     /// <summary>Gun Game: the card a player holds at <paramref name="level"/> kills (the last one stays once the ladder is done).</summary>
     public static int GunCard(int level) => GunLadder[Math.Clamp(level, 0, GunLadder.Length - 1)];

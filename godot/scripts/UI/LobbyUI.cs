@@ -78,7 +78,7 @@ public partial class LobbyUI : Control
         grid.AddThemeConstantOverride("h_separation", 10);
         grid.AddThemeConstantOverride("v_separation", 5);
         _arenas = AddToggle(grid, "Arenas", "Random: a freshly generated arena every battle. Or pick custom arenas from the Map Editor (or a friend's map code) to take turns.", () => _arenaPool.Open(), out _);
-        _gameMode = AddToggle(grid, "Game mode", "Elimination: last one standing wins the battle. King of the Hill: hold the glowing zone alone for 10 s in total. Capture the Flag (teams): bring the enemy flag to your base while yours is there. Headhunter: the leader wears a crown, and whoever takes them out wins the battle. Gun Game (free-for-all): one card at a time, and every kill swaps it for the next; a kill with the last card wins the match. In King of the Hill and Capture the Flag the fallen respawn until sudden death, which comes twice as late; in Gun Game they always respawn.", CycleGame, out _);
+        _gameMode = AddToggle(grid, "Game mode", "Elimination: last one standing wins the battle. King of the Hill: hold the glowing zone alone for 10 s in total. Capture the Flag (teams): bring the enemy flag to your base while yours is there. Headhunter: the leader wears a crown, and whoever takes them out wins the battle. Gun Game (free-for-all): one card at a time, and every kill swaps it for the next; a kill with the last card wins the match. Survival (free-for-all, add bots): the humans team up against waves of bots, one more each wave and tougher as they come; clear 10 waves to win. In King of the Hill and Capture the Flag the fallen respawn until sudden death, which comes twice as late; in Gun Game they always respawn.", CycleGame, out _);
         _mode = AddToggle(grid, "Teams", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
         // Only in team modes.
         _friendly = AddToggle(grid, "Friendly fire", "Whether your shots and blasts hurt your teammates. Off, they pass straight through.", ToggleFriendlyFire, out _friendlyLabel);
@@ -329,7 +329,7 @@ public partial class LobbyUI : Control
         if (!_net.IsHost) return;
         var s = _net.Lobby.Settings;
         s.Mode = GameModes.Next(s.Mode);
-        if (GameModes.Problem(s.Mode, s.TeamSize) != null) _net.SetTeamSize(s.Mode == GameMode.GunGame ? 0 : 2);
+        if (GameModes.Problem(s.Mode, s.TeamSize) != null) _net.SetTeamSize(s.Mode is GameMode.GunGame or GameMode.Survival ? 0 : 2);
         else PushSettings();
     }
 

@@ -30,6 +30,7 @@ public partial class Main
             case "botskill": await DemoBotSkill(); break;
             case "draft": await DemoDraft(); break;
             case "gungame": await DemoGunGame(); break;
+            case "survival": await DemoSurvival(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -188,5 +189,39 @@ public partial class Main
         DemoMark("end");
 
         Button _gameModeButton() => FindChild<Label>(_lobby, l => l.Text == "Game mode") is { } label ? label.GetParent().GetChild(label.GetIndex() + 1) as Button : null;
+    }
+
+    // Survival: two players at one screen pick Survival, then hold off the waves of bots together.
+    private async Task DemoSurvival()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        _pick.ShowAutopilotPick = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        _net.AddGuest(100);
+        while (_net.Lobby.Players.Count < 6) _net.AddBot();
+        await DemoWait(1.0);
+        DemoMark("lobby");
+        for (int i = 0; i < 7 && _net.Lobby.Settings.Mode != GameMode.Survival; i++)
+        {
+            (FindChild<Label>(_lobby, l => l.Text == "Game mode") is { } label ? label.GetParent().GetChild(label.GetIndex() + 1) as Button : null)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await DemoWait(0.45);
+        }
+        if (_net.Lobby.Settings.Mode != GameMode.Survival) { Finish(1, "demo survival: the Game mode button never reached Survival"); return; }
+        await DemoWait(1.6);
+        DemoMark("match");
+        _game.HostStartMatch();
+        int wave = 0;
+        double t = 0;
+        while (_game.Phase != Phase.MatchOver && t < 240)
+        {
+            if (_game.BattleNumber != wave && _game.Phase == Phase.Countdown) DemoMark($"wave {wave = _game.BattleNumber} bots {_game.WaveBots}");
+            await DemoWait(0.1);
+            t += 0.1;
+        }
+        DemoMark("over");
+        await DemoWait(5.0);
+        DemoMark("end");
     }
 }

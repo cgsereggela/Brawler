@@ -91,6 +91,7 @@ public partial class HudUI : Control
             h.Add(p.Info.Name);
             h.Add(p.Color);
             h.Add(p.Left);
+            h.Add(p.Benched);
             h.Add(p.RoundWins);
             h.Add(p.BattleWins);
             h.Add(p.Cards.Count);
@@ -181,7 +182,7 @@ public partial class HudUI : Control
             foreach (var c in CardRegistry.Resolve(me.Cards)) Add(c.Name, UiKit.CategoryColor(c.Category), false);
         }
 
-        string label = $"BATTLE {_game.BattleNumber}";
+        string label = $"{(_game.Mode == GameMode.Survival ? "WAVE" : "BATTLE")} {_game.BattleNumber}";
         float lw = bold.GetStringSize(label, HorizontalAlignment.Left, -1, 12).X + 22;
         var counter = new Rect2(vs.X - 10 - lw, 10, lw, 22);
 
@@ -306,7 +307,7 @@ public partial class HudUI : Control
 
     private const float CompactName = 50; // compact chips clip names to this width
 
-    private static Color ChipColor(MatchPlayer p) => p.Left ? Palette.TextDim : p.Color;
+    private static Color ChipColor(MatchPlayer p) => (p.Left || p.Benched) ? Palette.TextDim : p.Color;
 
     private float ChipWidth(MatchPlayer p, bool compact)
     {
@@ -334,8 +335,8 @@ public partial class HudUI : Control
     /// <summary>Spacing of the round-win pips; compact chips squeeze long matches into the name's width.</summary>
     private float PipStep(bool compact) => compact ? Mathf.Min(6, CompactName / Mathf.Max(1, Pips)) : 9;
 
-    /// <summary>Pips on a chip: round wins to take the match, or in Gun Game the ladder's cards.</summary>
-    private int Pips => _game.Mode == GameMode.GunGame ? GameModes.GunLadder.Length : _game.Settings.RoundsToWin;
+    /// <summary>Pips on a chip: round wins to take the match, in Gun Game the ladder's cards, in Survival the waves.</summary>
+    private int Pips => _game.Mode switch { GameMode.GunGame => GameModes.GunLadder.Length, GameMode.Survival => GameModes.SurvivalWaves, _ => _game.Settings.RoundsToWin };
 
     /// <summary>Pips lit: round wins, or in Gun Game the kills up the ladder so far.</summary>
     private int PipsLit(MatchPlayer p) => _game.Mode == GameMode.GunGame ? GameManager.GunLevel(p) : p.RoundWins;
@@ -359,7 +360,7 @@ public partial class HudUI : Control
         _batch.Stroke(outline, 1f, col with { A = 0.55f }, closed: true);
         if (_game.TeamOf(p.Slot) is >= 0 and var team)
             _batch.Polygon(Shapes.RoundRect(new Rect2(chip.Position.X + head + 2, chip.End.Y + 2, chip.Size.X - head - 6, 2.5f), 1.2f),
-                p.Left ? Palette.TextDim : Palette.Team(team));
+                (p.Left || p.Benched) ? Palette.TextDim : Palette.Team(team));
 
         float tx = chip.Position.X + (compact ? 38 : 44), y0 = chip.Position.Y;
         float step = PipStep(compact), pipR = compact ? Mathf.Min(2.7f, step * 0.45f) : 3.6f;
@@ -375,7 +376,7 @@ public partial class HudUI : Control
             else Dot(c, pipR * 0.94f, new Color(1, 1, 1, 0.14f));
         }
         float dotStep = compact ? 5 : 6;
-        for (int i = 0; i < (_game.Mode == GameMode.GunGame ? 0 : s.BattlesPerRound); i++)
+        for (int i = 0; i < (_game.Mode is GameMode.GunGame or GameMode.Survival ? 0 : s.BattlesPerRound); i++)
             Dot(new Vector2(tx + 2 + i * dotStep, y0 + (compact ? 28 : 32)), compact ? 1.5f : 1.7f,
                 i < p.BattleWins ? Colors.White : new Color(1, 1, 1, 0.18f));
         if (Badge(p)) Pill(BadgeRect(chip), Palette.Accent);
@@ -387,7 +388,7 @@ public partial class HudUI : Control
     private void ChipName(CanvasItem ci, Rect2 chip, MatchPlayer p)
     {
         float tx = chip.Position.X + (_compact ? 38 : 44), y0 = chip.Position.Y;
-        var nameCol = p.Left ? Palette.TextDim : Colors.White;
+        var nameCol = (p.Left || p.Benched) ? Palette.TextDim : Colors.White;
         if (_compact) ci.DrawString(Fonts.Bold, new Vector2(tx, y0 + 13), Fit(p.Info.Name, CompactName, 11), HorizontalAlignment.Left, -1, 11, nameCol);
         else ci.DrawString(Fonts.Bold, new Vector2(tx, y0 + 15), p.Info.Name, HorizontalAlignment.Left, -1, 13, nameCol);
     }

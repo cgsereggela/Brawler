@@ -46,14 +46,14 @@ public partial class MatchOverUI : Control
         UiKit.ClearChildren(_body);
         // Five or more players: the standings go in two columns on a wider panel, so the list still fits on screen.
         // Team modes: the winning team first, then the rest; both share a place.
-        int champTeam = _game.TeamOf(winner);
+        int champTeam = _game.Mode == GameMode.Survival ? 0 : _game.TeamOf(winner); // Survival lists the humans first, win or lose
         var players = _game.Slots.Where(p => p != null)
             .OrderBy(p => champTeam >= 0 && _game.TeamOf(p.Slot) != champTeam ? 1 : 0)
             .ThenByDescending(p => p.RoundWins).ToList();
         bool crowded = players.Count > 4;
         ((Control)_body.GetParent()).CustomMinimumSize = new Vector2(crowded ? 760 : _game.MatchAwards.Count > 0 ? 540 : 460, 0);
         var champCol = winner >= 0 ? _game.WinnerColor(winner) : Palette.Text;
-        _body.AddChild(new TitleText(winner >= 0 ? $"{_game.WinnerName(winner).ToUpperInvariant()} WINS!" : "MATCH OVER", 34, 2.5f,
+        _body.AddChild(new TitleText(_game.MatchTitle(winner), 34, 2.5f,
             champCol, champCol.Lightened(0.3f), Palette.Accent));
         // The champion on a pedestal, with the awards either side of them.
         var awards = _game.MatchAwards;

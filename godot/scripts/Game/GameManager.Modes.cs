@@ -74,6 +74,7 @@ public partial class GameManager
             GameMode.Headhunter when HeadSlot >= 0 && Allies(HeadSlot, me) => $"PROTECT {NameOf(HeadSlot).ToUpperInvariant()}!",
             GameMode.Headhunter when HeadSlot >= 0 => $"HUNT {NameOf(HeadSlot).ToUpperInvariant()}!",
             GameMode.GunGame => $"GUN GAME: {GameModes.GunLadder.Length} KILLS TO WIN!",
+            GameMode.Survival => $"WAVE {BattleNumber}: {WaveBots} BOT{(WaveBots == 1 ? "" : "S")}!",
             _ => "FIGHT!",
         };
     }
@@ -431,5 +432,34 @@ public partial class GameManager
                 f.Pos = new NVec(r.F(), r.F());
                 f.DroppedT = r.U8() / 10f;
             }
+    }
+
+    // ---------- Survival ----------
+
+    /// <summary>Survival: bots fighting in this wave.</summary>
+    public int WaveBots { get; private set; }
+
+    /// <summary>
+    /// Survival, on every peer at the start of a wave: which bots fight it (the rest sit it out, with no avatar), how well
+    /// they play, and the random cards they bring. Seeded by the battle, so every peer deals the same.
+    /// </summary>
+    private void SetupWave(int seed)
+    {
+        var bots = Active().Where(p => p.Info.IsBot).OrderBy(p => p.Slot).ToList();
+        int wave = BattleNumber;
+        WaveBots = GameModes.WaveSize(wave, Active().Count(p => !p.Info.IsBot), bots.Count);
+        var skill = GameModes.WaveSkill(wave);
+        var rng = new Rng((ulong)(uint)seed + 991);
+        for (int i = 0; i < bots.Count; i++)
+        {
+            var b = bots[i];
+            b.Benched = i >= WaveBots;
+            b.Cards.Clear();
+            if (!b.Benched && GameModes.WaveCards(wave) > 0)
+                b.Cards.AddRange(CardRegistry.RollOptions(rng, GameModes.WaveCards(wave), Settings.DisabledCards, Settings.RareChance / 100f) ?? new());
+            b.RecomputeStats();
+            b.Info.Skill = skill;
+            if (IsHost) b.Input = new BotBrain(this, skill);
+        }
     }
 }

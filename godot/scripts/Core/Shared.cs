@@ -101,7 +101,8 @@ public sealed class LobbyState
     /// <summary>Why the match can't start yet, or null when it can.</summary>
     public string StartProblem() =>
         Players.Count < 2 ? "Needs at least two players."
-        : Teams.Problem(Players.Select(p => p.Team), Settings.TeamSize) ?? GameModes.Problem(Settings.Mode, Settings.TeamSize);
+        : Teams.Problem(Players.Select(p => p.Team), Settings.TeamSize) ?? GameModes.Problem(Settings.Mode, Settings.TeamSize)
+        ?? (Settings.Mode == Brawler.Logic.GameMode.Survival && !Players.Any(p => p.IsBot) ? "Survival needs bots to fight: add at least one." : null);
 
     /// <summary>The team a newcomer joins: the emptier one.</summary>
     public int NewcomerTeam() => TeamMode ? System.Math.Max(0, Teams.Emptier(Players.Select(p => p.Team), Settings.TeamSize)) : 0;

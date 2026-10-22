@@ -17,6 +17,7 @@ public sealed class MatchPlayer
     public readonly List<ICardEffect> Effects = new();
     public int RoundWins, BattleWins;
     public bool Left; // disconnected mid-match
+    public bool Benched; // Survival: a bot sitting out this wave (no avatar)
     public Avatar Avatar;
     public IInputSource Input;
     /// <summary>How flashy this player's effects are, from their cards (cosmetic).</summary>
