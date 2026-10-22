@@ -27,7 +27,15 @@ public partial class MatchOverUI : Control
 
     public override void _Ready()
     {
+        // Dim the arena behind, and make the panel nearly solid, so the fight behind doesn't show through the standings.
+        var dim = new ColorRect { Color = new Color(0.02f, 0.01f, 0.05f, 0.6f), MouseFilter = MouseFilterEnum.Ignore };
+        AddChild(dim);
+        dim.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         (_, _body) = UiKit.CenteredPanel(this, 460);
+        var panel = (PanelContainer)_body.GetParent();
+        var solid = (StyleBoxFlat)panel.GetThemeStylebox("panel").Duplicate();
+        solid.BgColor = solid.BgColor with { A = 0.97f };
+        panel.AddThemeStyleboxOverride("panel", solid);
         _game.MatchEnded += Build;
         _game.RematchVotesChanged += ShowVotes;
         _game.ScoresChanged += ShowVotes; // someone left
