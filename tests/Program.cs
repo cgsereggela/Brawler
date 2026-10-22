@@ -906,23 +906,25 @@ void Check(bool cond, string name, string detail = "")
     Check(Math.Abs(jaw[Stat.Armor] + 0.2f) < 1e-4f, "Glass Jaw's negative armor survives the clamp", $"{jaw[Stat.Armor]}");
 
     var rng = new Rng(11);
-    bool plainOnly = true, neverCursed = true;
-    int offered = 0, rareOffered = 0;
-    for (int i = 0; i < 3000; i++)
+    bool plainOnly = true, neverCursed = true, atMostOne = true;
+    int picks = 3000, withRare = 0;
+    for (int i = 0; i < picks; i++)
     {
         var plain = CardRegistry.RollOptions(rng, 5);
         plainOnly &= plain.All(id => !CardRegistry.Get(id).IsRare && !CardRegistry.Get(id).IsCurse);
         var opts = CardRegistry.RollOptions(rng, 5, null, 0.1f);
         neverCursed &= opts.All(id => !CardRegistry.Get(id).IsCurse) && opts.Distinct().Count() == opts.Count && opts.Count == 5;
-        offered += opts.Count;
-        rareOffered += opts.Count(id => CardRegistry.Get(id).IsRare);
+        int r = opts.Count(id => CardRegistry.Get(id).IsRare);
+        atMostOne &= r <= 1;
+        if (r > 0) withRare++;
     }
     Check(plainOnly, "Rares off: offers are only common cards");
     Check(neverCursed, "Curses are never offered on their own, and rare offers stay distinct and full");
-    double rate = (double)rareOffered / offered;
-    Check(rate > 0.08 && rate < 0.12, "A 10% rare chance makes about 10% of offered cards rare", $"{rate:P1}");
+    Check(atMostOne, "A pick offers at most one rare card while commons are left");
+    double rate = (double)withRare / picks;
+    Check(rate > 0.08 && rate < 0.12, "A 10% rare chance puts a rare card in about 10% of picks", $"{rate:P1}");
     var allRare = CardRegistry.RollOptions(new Rng(2), 5, null, 1f);
-    Check(allRare.Count == 5 && allRare.All(id => CardRegistry.Get(id).IsRare), "A 100% rare chance offers only rares");
+    Check(allRare.Count == 5 && allRare.Count(id => CardRegistry.Get(id).IsRare) == 1, "A 100% rare chance puts one rare in every pick");
     var commonsOff = new HashSet<int>(CardPool.Allowed(null));
     var onlyRares = CardRegistry.RollOptions(new Rng(2), 5, commonsOff, 0.1f);
     Check(onlyRares.Count == 5 && onlyRares.All(id => CardRegistry.Get(id).IsRare), "With every common card disabled, rares fill the offer");
@@ -945,6 +947,12 @@ void Check(bool cond, string name, string detail = "")
     Check(CardRegistry.RollDeal(new Rng(1), noCurses, new List<int>()) == null, "No enabled curses: no deal");
     var noRares = new HashSet<int>(rares.Select(c => c.Id));
     Check(CardRegistry.RollDeal(new Rng(1), noRares, new List<int>()) == null, "No enabled rares: no deal");
+    var dealRng = new Rng(9);
+    int deals = 0;
+    for (int i = 0; i < 3000; i++)
+        if (CardRegistry.RollDeal(dealRng, null, new List<int>(), 0.1f) != null) deals++;
+    Check(deals > 240 && deals < 360, "A 10% rare chance offers a cursed deal in about 10% of picks", $"{deals / 30.0:F1}%");
+    Check(CardRegistry.RollDeal(new Rng(1), null, new List<int>(), 0) == null, "Rares off: no deals either");
     Check(CardPool.CommonCount(noRares) == CardPool.CommonCount(null) && CardPool.CommonCount(null) >= CardPool.MinEnabled,
         "Rares don't count toward the common minimum");
 

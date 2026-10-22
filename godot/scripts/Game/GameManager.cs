@@ -262,7 +262,7 @@ public partial class GameManager : Node2D
             int count = won ? Settings.WinnerChoices : Settings.LoserChoices;
             var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards, Settings.RareChance / 100f) : null;
             if (ids is not { Count: > 0 }) continue;
-            var deal = Settings.CursedDeals ? CardRegistry.RollDeal(HostRng, Settings.DisabledCards, ids) : null;
+            var deal = Settings.CursedDeals ? CardRegistry.RollDeal(HostRng, Settings.DisabledCards, ids, Settings.RareChance / 100f) : null;
             entries.Add(new PickEntry(p.Slot, ids, deal));
         }
         if (entries.Count == 0)

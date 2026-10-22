@@ -6,7 +6,7 @@ namespace Brawler.Logic;
 public enum CardCategory { Gun, Body, Movement, Chaos, Block, Curse }
 
 /// <summary>
-/// Rare cards turn up in a pick only now and then (MatchSettings.RareChance per offered card) and in cursed deals.
+/// Rare cards turn up in a pick only now and then (MatchSettings.RareChance per pick) and in cursed deals.
 /// Curse cards (CardCategory.Curse) are never offered on their own: they only come bundled with a rare in a deal.
 /// </summary>
 public enum CardRarity { Common, Rare }
@@ -307,33 +307,39 @@ public static class CardRegistry
     /// Picks <paramref name="count"/> distinct random cards, skipping <paramref name="disabled"/> ones (see CardPool).
     /// If the pool runs short the offer is just smaller; if nothing at all is enabled, every card is back in play,
     /// so a pick can never come up empty.
-    /// Each card in the offer is a rare one with probability <paramref name="rareChance"/> (0..1) while enabled rares
-    /// are left; curses are never offered here (see <see cref="RollDeal"/>).
+    /// With probability <paramref name="rareChance"/> (0..1) one card of the offer is a rare one, so rares come up now
+    /// and then rather than in most picks; rares also fill in when the common cards run out. Curses are never offered
+    /// here (see <see cref="RollDeal"/>).
     /// </summary>
     public static List<int> RollOptions(Rng rng, int count, IReadOnlySet<int> disabled = null, float rareChance = 0)
     {
         var pool = CardPool.Allowed(disabled);
         var rares = rareChance > 0 ? CardPool.AllowedRares(disabled) : new List<int>();
         if (pool.Count == 0 && rares.Count == 0) pool = CardPool.Allowed(null);
+        // One roll per pick. No rng draw when rares are off, so a match without them rolls exactly as before.
+        int rareSlots = rares.Count > 0 && pool.Count > 0 && rng.Range(0f, 1f) < rareChance ? 1 : 0;
         var result = new List<int>();
-        while (result.Count < count && (pool.Count > 0 || rares.Count > 0))
-        {
-            // No rng draw for the rare roll when rares are off, so a match without them rolls exactly as before.
-            bool rare = rares.Count > 0 && (pool.Count == 0 || rng.Range(0f, 1f) < rareChance);
-            var from = rare ? rares : pool;
-            int i = rng.Range(0, from.Count - 1);
-            result.Add(from[i]);
-            from.RemoveAt(i);
-        }
+        while (result.Count < count - rareSlots && pool.Count > 0) result.Add(Take(pool));
+        while (result.Count < count && rares.Count > 0) result.Insert(rng.Range(0, result.Count), Take(rares));
         return result;
+
+        int Take(List<int> from)
+        {
+            int i = rng.Range(0, from.Count - 1);
+            int id = from[i];
+            from.RemoveAt(i);
+            return id;
+        }
     }
 
     /// <summary>
     /// A cursed deal: a random enabled rare card that isn't already in <paramref name="offered"/>, bundled with a random
-    /// enabled curse. Null when either pool is empty.
+    /// enabled curse. It comes up with probability <paramref name="chance"/> (the match's rare chance, so deals are as
+    /// occasional as rare cards). Null when it doesn't, or when either pool is empty.
     /// </summary>
-    public static (int Rare, int Curse)? RollDeal(Rng rng, IReadOnlySet<int> disabled, IReadOnlyCollection<int> offered)
+    public static (int Rare, int Curse)? RollDeal(Rng rng, IReadOnlySet<int> disabled, IReadOnlyCollection<int> offered, float chance = 1)
     {
+        if (chance <= 0 || (chance < 1 && rng.Range(0f, 1f) >= chance)) return null;
         var rares = CardPool.AllowedRares(disabled).Where(id => !offered.Contains(id)).ToList();
         var curses = CardPool.AllowedCurses(disabled);
         if (rares.Count == 0 || curses.Count == 0) return null;

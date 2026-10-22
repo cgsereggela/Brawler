@@ -57,7 +57,7 @@ public sealed class MatchSettings
     public int LoserChoices = 5;     // cards offered to round losers
     public int WinnerChoices = 3;    // cards offered to the round winner (0 = winner doesn't pick)
     public int LavaAfter = RisingLava.DefaultAfter; // seconds of fighting before lava rises (0 = never)
-    public int RareChance = 10;      // percent chance that each offered card is a rare one (0 = rares only come in deals)
+    public int RareChance = 10;      // percent chance that a pick offers a rare card, and (with CursedDeals) that it offers a deal; 0 = no rares
     public bool CursedDeals = true;  // each pick also offers a rare card bundled with a curse
     public bool KillCam = true;      // replay the final kill of each battle in slow motion
     public int TeamSize;             // 0 = free-for-all, else 2v2 / 3v3 / 4v4 (see Teams)

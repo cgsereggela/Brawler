@@ -1,5 +1,4 @@
 issues to fix:
-- I seem to get rare cards offered every time, this should only happen occasionaly, based on the chance set in the options
 - the crosshair should disappear after death when controlling the ghost
 - the end game screen should be less transparent and harder to see through
 - the end game screen has too much text on it, hide the list of cards in this screen

@@ -85,14 +85,14 @@ public partial class LobbyUI : Control
         _loserCards = AddSpin(grid, "Card choices (losers)", 1, CardPool.MaxChoices);
         _winnerCards = AddSpin(grid, "Card choices (winner)", 0, CardPool.MaxChoices);
         _lava = AddToggle(grid, "Lava rises after", "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.", CycleLava, out _);
-        _rare = AddToggle(grid, "Rare cards", "How often each card in a pick is a rare one: strong, build-defining cards with a gold frame.", CycleRare, out _);
+        _rare = AddToggle(grid, "Rare cards", "How often a pick offers a rare card: a strong, build-defining card with a gold frame. With cursed deals on, a deal comes up this often too. Off: no rares at all.", CycleRare, out _);
         _killCam = AddToggle(grid, "Kill cam", "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.", ToggleKillCam, out _);
         right.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
         var poolRow = UiKit.HBox(8);
         _deals = UiKit.Button("", ToggleDeals, 0, "Small");
-        _deals.TooltipText = "Each pick also offers a cursed deal: a rare card, but you take a curse card with it.";
+        _deals.TooltipText = "Now and then (as often as the rare-card chance) a pick also offers a cursed deal: a rare card, but you take a curse card with it.";
         _deals.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         poolRow.AddChild(_deals);
         _cards = UiKit.Button("Cards", () => _pool.Open(), 0, "Small");
