@@ -30,6 +30,8 @@ namespace Brawler;
 //                         screen, then quit
 //   --videomatch          a full match to record with --write-movie: generated names (6 players, or --players=N), the
 //                         lobby, the match played by autopilot, the match-over screen with a hover card, then quit
+//   --demo=NAME           a scripted walk through one feature (thumbs), paced for recording with --write-movie for a
+//                         Short; logs "DEMO <frame> <label>" at the moments to cut to
 //   --focuslog=PATH       write one line per drawn frame (phase, kill cam, live bullets, where the action is across the
 //                         screen), to crop a recording to portrait
 //   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
@@ -186,6 +188,7 @@ public partial class Main
             else if (a == "--terrainshots" && _shotDir != null) TerrainShots();
             else if (a == "--readmeshots" && _shotDir != null) ReadmeShots();
             else if (a == "--videomatch") VideoMatch();
+            else if (a.StartsWith("--demo=")) Demo(a["--demo=".Length..]);
             else if (a.StartsWith("--focuslog=")) FocusLog(a);
             else if (a.StartsWith("--aimshots=")) AimShots(a);
             else if (a.StartsWith("--crosshairshots=")) CrosshairShots(a);
