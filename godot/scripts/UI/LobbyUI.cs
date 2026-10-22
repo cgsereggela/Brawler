@@ -404,7 +404,7 @@ public partial class LobbyUI : Control
             var l = UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold);
             l.VerticalAlignment = VerticalAlignment.Center;
             foot.AddChild(l);
-            var x = UiKit.Button("remove", () => _net.RemoveGuest(guest), 0, "Small");
+            var x = UiKit.Button("Remove", () => _net.RemoveGuest(guest), 0, "Small");
             x.TooltipText = $"Remove this local player ({PadName(guest)})";
             AddRemove(x);
         }
@@ -414,7 +414,7 @@ public partial class LobbyUI : Control
             skill.TooltipText = "How well this bot plays: Easy, Normal or Hard (click to change)";
             skill.AddThemeColorOverride("font_color", SkillColor(p.Skill));
             foot.AddChild(skill);
-            var x = UiKit.Button("remove", () => _net.RemoveBot(s), 0, "Small");
+            var x = UiKit.Button("Remove", () => _net.RemoveBot(s), 0, "Small");
             x.TooltipText = "Remove this bot";
             AddRemove(x);
         }

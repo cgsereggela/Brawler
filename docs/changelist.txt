@@ -1,5 +1,4 @@
 issues to fix:
-- 'Remove' button in lobby should be capitalized
 - remove the 'move the mouse to look around' text from the customize menu
 - the 'Done' button slides off the bottom of the screen in the Options > Controls menu, recommend: move the reset to defaults button beside the 'Done' button, keep the buttons the same size
 
