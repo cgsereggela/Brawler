@@ -69,7 +69,7 @@ jobs:
           $sign = @{}
           if ($env:BRAWLER_SIGNING_PFX_B64) {
             $pfx = Join-Path $env:RUNNER_TEMP 'brawler-signing.pfx'
-            [System.IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:BRAWLER_SIGNING_PFX_B64))
+            [System.IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:BRAWLER_SIGNING_PFX_B64.Trim()))
             $sign.SignPfx = $pfx
           }
           else { Write-Host '::warning::No BRAWLER_SIGNING_PFX secret, so Brawler.exe is not signed. See tools/new-signing-cert.sh.' }

@@ -67,7 +67,7 @@ function Sign-Files([string[]]$files) {
     $ErrorActionPreference = 'Continue' # osslsigncode writes notes to stderr; only its exit code means failure
     if ($IsLinux -or $IsMacOS) {
         $passFile = [System.IO.Path]::GetTempFileName()
-        [System.IO.File]::WriteAllText($passFile, $SignPassword)
+        [System.IO.File]::WriteAllText($passFile, $SignPassword.Trim())
         try {
             foreach ($f in $files) {
                 $signed = "$f.signed"
@@ -86,7 +86,7 @@ function Sign-Files([string[]]$files) {
         finally { Remove-Item -Force $passFile -ErrorAction SilentlyContinue }
     }
     else {
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($SignPfx, $SignPassword)
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($SignPfx, $SignPassword.Trim())
         if (-not $cert.HasPrivateKey) { Fail "$SignPfx has no private key." }
         foreach ($f in $files) {
             $r = Set-AuthenticodeSignature -FilePath $f -Certificate $cert -HashAlgorithm SHA256 -TimestampServer $timestampUrl -ErrorAction SilentlyContinue
