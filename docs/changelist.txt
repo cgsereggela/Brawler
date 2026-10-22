@@ -1,5 +1,4 @@
 issues to fix:
-- the glow around the player in the customize menu seems centered too low, raise it slightly so it looks centered around the avatar, it seems fine in the match
 - at the beginning of the round we need a larger indicator like an arrow or target or something highlighting my player so I know where to start lookingd
 - I seem to get rare cards offered every time, this should only happen occasionaly, based on the chance set in the options
 - the crosshair should disappear after death when controlling the ghost

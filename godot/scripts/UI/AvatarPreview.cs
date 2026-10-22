@@ -56,7 +56,8 @@ public partial class AvatarPreview : Control
         if (Pedestal)
         {
             var feet = center + new Vector2(1.5f, 9.6f) * Zoom;
-            GlowTex.Draw(this, feet, 18 * Zoom, body with { A = 0.35f + 0.08f * Mathf.Sin(_t * 2) });
+            // Centered on the body, as in a match, so it surrounds the character rather than pooling at the feet.
+            GlowTex.Draw(this, center + new Vector2(1.5f, 0), 18 * Zoom, body with { A = 0.35f + 0.08f * Mathf.Sin(_t * 2) });
             DrawColoredPolygon(Shapes.Ellipse(feet, 13 * Zoom, 3 * Zoom, 32), new Color(0, 0, 0, 0.35f));
             Shapes.DrawClosed(this, Shapes.Ellipse(feet, 13 * Zoom, 3 * Zoom, 40), Shapes.Hdr(body.Lightened(0.3f), 1.2f) with { A = 0.8f }, Mathf.Max(1, Zoom * 0.35f));
         }
