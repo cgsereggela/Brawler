@@ -932,7 +932,7 @@ public partial class Main : Node
                         AddTestBots();
                         Show(_lobby);
                     },
-                    // The same lobby as 2v2 (a row per team, team tags, friendly fire), then the mode button once more for 3v3.
+                    // The same lobby as 2v2 (a column per team, team tags, friendly fire), then the mode button once more for 3v3.
                     () => _net.SetTeamSize(2),
                     () => _net.SetTeamSize(3),
                     () =>
