@@ -1,3 +1,22 @@
+## New in 1.2.0
+
+- **Gun Game mode:** every kill moves you up a fixed ladder of eight cards, from Minigun to One Shot, and a kill on the
+  last one wins. Free-for-all only; everyone respawns. The HUD shows how far up the ladder each player is.
+- **Survival mode:** the humans team up against waves of bots. Each wave brings more bots, and tougher ones (Easy, then
+  Normal, then Hard, with cards from wave 3). Pick a card after each wave you clear. Clear 10 waves to win; the run ends
+  when everyone falls. Needs at least one bot in the lobby.
+- **Draft:** a lobby toggle. Before the first battle, players take turns drafting opening cards from one shared pool.
+- **Bot skill:** each bot in the lobby has an **Easy**, **Normal** or **Hard** button; click it to change. Normal plays
+  like the old bots.
+- **Unlockable cosmetics:** four new hats (Wizard, Laurel, Horns, Pirate) and a new **Trail** that follows you around
+  (Sparks, Bubbles, Rainbow, Flames, Stars). They unlock as you play matches, win, take players out, clear Survival
+  waves and win a Gun Game. **Customize** lets you try locked ones on and says what earns them, and the match-over
+  screen tells you when you unlock one.
+- **Map thumbnails:** **My maps** and the lobby's **Arenas** list show a small picture of each arena.
+- **Fixes:** the lobby's match settings no longer slide off the screen in team modes (the **Remove** button now sits
+  under a player's skill button); **Done** no longer drops off the bottom of **Options → Controls** (**Reset to
+  defaults** now sits beside it); the Customize screen lost its "move the mouse to look around" hint.
+
 ## New in 1.1.0
 
 - **Map editor:** **Map Editor** on the main menu builds your own arenas: blocks, gaps, hills, spawns, jump pads,
