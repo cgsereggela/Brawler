@@ -1,5 +1,4 @@
 issues to fix:
-- the crosshair should disappear after death when controlling the ghost
 - the end game screen should be less transparent and harder to see through
 - the end game screen has too much text on it, hide the list of cards in this screen
 - draw the player stats on top of the end screen when both are showing at the same time

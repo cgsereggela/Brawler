@@ -88,6 +88,8 @@ public partial class Crosshair : Node2D
     public override void _Draw()
     {
         var me = _game.LocalMatchPlayer;
+        // Dead: the ghost floats after the mouse and shows where it is, so the crosshair steps aside (the pointer stays hidden).
+        if (me?.Avatar is { Alive: false } dead && IsInstanceValid(dead)) return;
         var a = _tracked;
         var at = GetLocalMousePosition();
         // On autopilot (test runs) the mouse means nothing: put the crosshair on the bot's aim line instead.

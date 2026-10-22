@@ -36,7 +36,7 @@ Defaults; rebind them in Options → Controls.
 |---|---|
 | Move | A / D (or arrows) |
 | Jump / wall jump | W / Space / Up (walk off a ledge and you keep your jump for the whole fall) |
-| Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload |
+| Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload. Once you are down it disappears, since your ghost follows the mouse |
 | Shoot | Left mouse (hold) |
 | Block | Right mouse / Shift |
 | Emotes | 1 GG, 2 HAHA!, 3 OOPS, 4 COME AT ME, 5 UNLUCKY: a speech bubble over your head for everyone to see |
