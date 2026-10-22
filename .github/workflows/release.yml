@@ -8,6 +8,8 @@
 #
 # Brawler.exe is signed with the self-signed certificate in the BRAWLER_SIGNING_PFX (base64 .pfx) and
 # BRAWLER_SIGNING_PASSWORD repository secrets; tools/new-signing-cert.sh makes them. Without them the build is unsigned.
+#
+# Before packaging it runs the unit tests and --editorcheck (the map editor driven by made-up mouse and pad input).
 name: Release
 
 on:
@@ -54,6 +56,14 @@ jobs:
           curl -fsSL -o /tmp/templates.tpz $base/Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz
           unzip -q /tmp/templates.tpz -d /tmp/tpl
           mv /tmp/tpl/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono/
+
+      - name: Map editor check
+        run: |
+          godot=$(find ~/godot -name 'Godot_v*_mono_linux.x86_64' | head -1)
+          dotnet build godot/Brawler.csproj
+          "$godot" --headless --path godot --import > /dev/null 2>&1 || true
+          timeout 600 "$godot" --headless --path godot -- --editorcheck 2>&1 | tee editorcheck.log | grep -E "EDITORCHECK|AUTOTEST" || true
+          grep -q "AUTOTEST PASS: editorcheck" editorcheck.log
 
       - name: Install osslsigncode
         run: sudo apt-get update -qq && sudo apt-get install -y -qq osslsigncode

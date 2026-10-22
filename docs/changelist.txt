@@ -1,5 +1,4 @@
 issues to fix:
-- no automated test runs the map editor UI: run --editorcheck in CI next to the unit tests
 - arenas in a match are only shown by name: let players save the current arena (or copy its code) from the lobby's Arenas panel or the battle HUD
 
 features to add:
