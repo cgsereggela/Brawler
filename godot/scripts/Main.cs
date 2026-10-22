@@ -29,7 +29,12 @@ namespace Brawler;
 ///   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
 ///   --hudshots            (with --shots=DIR, and --cards=) screenshot each player chip's hover card (cards and stats)
 ///   --readmeshots         (with --shots=DIR, run with --fixed-fps 60) the README media: a match with generated names,
-///                         a GIF clip + screenshot per battle and card pick, hover cards and the match-over screen, then quit
+///                         a GIF clip + screenshot per battle and card pick, the first kill cams, hover cards and the match-over
+///                         screen, then quit
+///   --videomatch          a full match to record with --write-movie: generated names (6 players, or --players=N), the
+///                         lobby, the match played by autopilot, the match-over screen with a hover card, then quit
+///   --focuslog=PATH       write one line per drawn frame (phase, kill cam, live bullets, where the action is across the
+///                         screen), to crop a recording to portrait
 ///   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
 ///                         some with full recoil) into DIR, then quit
 ///   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
@@ -295,7 +300,7 @@ public partial class Main : Node
         _matchFinished = true;
         if (_autoMode == "sim") SimMatchEnded(winner);
         else if (_rematchTest && _rematches == 0 && _autoMode is "offline" or "host" or "join") AutoVoteRematch();
-        else if (_autoMode is not (null or "readme")) // readme quits after its match-over shot
+        else if (_autoMode is not (null or "readme" or "video")) // readme and video quit after their match-over screen
         {
             var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
             t.Timeout += () =>
@@ -365,7 +370,7 @@ public partial class Main : Node
                 _simMax = Mathf.Clamp(_simMax, _simMin, LobbyState.MaxPlayers);
             }
         }
-        if (args.Any(a => a is "--autotest" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
+        if (args.Any(a => a is "--autotest" or "--readmeshots" or "--videomatch" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
             _game.Stats.Enabled = forceStats;
         if (_overlayCheck) _game.CardPickBegan += () => _ocSawPick = true;
         if (_shotDir != null && !args.Contains("--readmeshots")) // readme names its own shots
@@ -691,8 +696,51 @@ public partial class Main : Node
                     RecordClip($"pick_{n:D2}", 2.5);
                     tree.CreateTimer(2.0, true, false, true).Timeout += () => SaveShot($"pick_{n:D2}");
                 };
+                int cam = 0;
+                _game.KillCamStarted += () => { if (++cam <= 4) RecordClip($"killcam_{cam:D2}", 3.6); };
                 _game.MatchEnded += _ => tree.CreateTimer(3.0, true, false, true).Timeout += () => { SaveShot("match_over"); tree.Quit(0); };
                 _game.HostStartMatch();
+            }
+            else if (a == "--videomatch")
+            {
+                // A full match for a video, recorded with Godot's --write-movie: generated names, the lobby for a few
+                // seconds, the match played out by autopilot, then the match-over screen with a hover card, then quit.
+                _autoMode = "video";
+                _game.AutopilotLocal = true;
+                _pick.ShowAutopilotPick = true;
+                var rng = new Rng((ulong)System.DateTime.Now.Ticks);
+                var names = FunNames.Pick(rng, _playersArg ? _simMax : 6);
+                _net.LocalName = names[0];
+                _net.LocalLook = Appearance.Random(rng);
+                _net.StartOffline();
+                for (int i = 1; i < names.Count; i++) _net.AddBot();
+                for (int i = 1; i < names.Count; i++) _net.Lobby.Players[i].Name = names[i];
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 5 });
+                Show(_lobby);
+                var tree = GetTree();
+                _game.MatchEnded += _ => tree.CreateTimer(4.0, true, false, true).Timeout += () =>
+                {
+                    _hud.DebugHover = 0;
+                    tree.CreateTimer(3.0, true, false, true).Timeout += () =>
+                    {
+                        _hud.DebugHover = -1;
+                        tree.CreateTimer(2.5, true, false, true).Timeout += () => tree.Quit(0);
+                    };
+                };
+                tree.CreateTimer(3.0, true, false, true).Timeout += _game.HostStartMatch;
+            }
+            else if (a.StartsWith("--focuslog="))
+            {
+                // For cropping a recording to portrait: one line per drawn frame with the phase, whether the kill cam
+                // is on, live bullets and where the action is (0–1 across the screen).
+                var log = new System.IO.StreamWriter(a["--focuslog=".Length..]) { AutoFlush = false };
+                log.WriteLine("frame phase killcam bullets focus");
+                RenderingServer.FramePostDraw += () =>
+                {
+                    log.WriteLine($"{Engine.GetFramesDrawn()} {_game.Phase} {(_game.KillCam.Playing ? 1 : 0)} {_game.Bullets?.Bullets.Count ?? 0} {FocusX():0.000}");
+                    if (Engine.GetFramesDrawn() % 60 == 0) log.Flush();
+                };
+                TreeExiting += () => log.Dispose();
             }
             else if (a.StartsWith("--aimshots="))
             {
@@ -1511,7 +1559,28 @@ public partial class Main : Node
         img.SavePng(path);
     }
 
-    private void SaveShot(string name) => GetViewport().GetTexture().GetImage().SavePng($"{_shotDir}/{name}.png");
+    /// <summary>--focuslog: where the action is across the screen (0–1): the kill during a kill cam, else your character
+    /// pulled toward the middle of everyone still standing, or the middle of the screen when nobody is.</summary>
+    private float FocusX()
+    {
+        if (_game.Phase is not (Phase.Countdown or Phase.Fighting or Phase.Intermission)) return 0.5f;
+        Vector2? at = null;
+        if (_game.KillCam.Playing) at = _game.KillCam.Framing().Focus;
+        else
+        {
+            var alive = _game.Active().Select(p => p.Avatar).Where(v => v != null && IsInstanceValid(v) && v.Alive).ToList();
+            if (alive.Count > 0)
+            {
+                var mid = alive.Aggregate(Vector2.Zero, (s, v) => s + v.GlobalPosition) / alive.Count;
+                at = _game.LocalMatchPlayer?.Avatar is { Alive: true } me && IsInstanceValid(me) ? me.GlobalPosition.Lerp(mid, 0.35f) : mid;
+            }
+        }
+        if (at is not { } p) return 0.5f;
+        var vp = GetViewport();
+        return Mathf.Clamp((vp.GetCanvasTransform() * p).X / vp.GetVisibleRect().Size.X, 0, 1);
+    }
+
+    private void SaveShot(string name) =>GetViewport().GetTexture().GetImage().SavePng($"{_shotDir}/{name}.png");
 
     // --readmeshots clips: every 3rd rendered frame (20 fps under --fixed-fps 60), scaled to 640 wide.
     private const int ClipW = 640, ClipH = 360, ClipEvery = 3;
