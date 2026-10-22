@@ -1,0 +1,878 @@
+using System.Linq;
+using Brawler.Core;
+using Brawler.Fx;
+using Brawler.Game;
+using Brawler.Logic;
+using Brawler.Net;
+using Brawler.UI;
+using Godot;
+
+namespace Brawler;
+
+/// <summary>The automated test matches (--autotest, --autohost, --autojoin, --simulate and friends) and the checks they run.</summary>
+public partial class Main
+{
+    // ---------- starting the automated matches ----------
+
+    // --autotest: an offline match, the local player and bots on autopilot, with the pool and chat checks.
+    private bool StartAutotest()
+    {
+        _autoMode = "offline";
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _net.LocalName = "Auto";
+        _net.StartOffline();
+        AddCouch();
+        AddTestBots();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3, DisabledCards = new(AutoDisabled) });
+        var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
+        if (!roundTrip.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: lobby round trip gave [{string.Join(",", roundTrip)}]"); return false; }
+        StartPoolCheck();
+        StartChatCheck();
+        Log.Info("AUTOTEST offline starting");
+        _game.HostStartMatch();
+        return true;
+    }
+
+    // --autohost[=port]: host a LAN game with a bot; the match starts once a client joins. False if hosting failed.
+    private bool StartAutoHost(string arg)
+    {
+        _autoMode = "host";
+        int port = arg.Contains('=') && int.TryParse(arg.Split('=')[1], out int p) ? p : NetworkManager.DefaultPort;
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _net.LocalName = "AutoHost";
+        _net.UseUpnp = false;
+        if (!_net.Host(port)) { Finish(1, "could not host"); return false; }
+        AddCouch();
+        if (!_noBots) _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, DisabledCards = new(AutoDisabled) });
+        StartPoolCheck();
+        StartChatCheck();
+        _net.LobbyChanged += AutoHostMaybeStart;
+        return true;
+    }
+
+    // --autojoin[=ip:port]: join a LAN game on autopilot.
+    private void StartAutoJoin(string arg)
+    {
+        _autoMode = "join";
+        string target = arg.Contains('=') ? arg.Split('=')[1] : $"127.0.0.1:{NetworkManager.DefaultPort}";
+        var parts = target.Split(':');
+        int port = parts.Length > 1 && int.TryParse(parts[1], out int p) ? p : NetworkManager.DefaultPort;
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _net.LocalName = "AutoJoin";
+        StartPoolCheck();
+        StartChatCheck();
+        _net.LobbyChanged += AutoJoinCheckPool;
+        (_joinHost, _joinPort) = (parts[0], port);
+        if (_dropAt > 0) _game.BattleStarted += AutoDropMaybe;
+        _net.Join(parts[0], port);
+    }
+
+    // --simulate=N: N bot-only matches back to back, for the card stats log.
+    private void StartSimulate(string arg)
+    {
+        _autoMode = "sim";
+        _simTotal = arg.Contains('=') && int.TryParse(arg.Split('=')[1], out int n) ? Mathf.Max(1, n) : 20;
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _game.Stats.Mode = "sim";
+        Log.Info($"SIMULATE {_simTotal} matches, {_simMin}-{_simMax} players → {ProjectSettings.GlobalizePath(_game.Stats.FilePath)}");
+        SimNextMatch();
+    }
+
+    /// <summary>The match of an automated run ended: start the next one, or check what happened and quit.</summary>
+    private void TestMatchEnded(int winner)
+    {
+    if (_autoMode == "sim") SimMatchEnded(winner);
+    else if (_rematchTest && _rematches == 0 && _autoMode is "offline" or "host" or "join") AutoVoteRematch();
+    else if (_autoMode is not (null or "readme" or "video")) // readme and video quit after their match-over screen
+    {
+        var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
+        t.Timeout += () =>
+        {
+            if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
+            else if (_poolCheck && _poolPicks == 0 && _net.TestRounds != 1) Finish(1, "poolcheck: the match ended without a card pick"); // --rounds=1 has no pick
+            else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
+            else if (ChatCheckProblem() is { } chat) Finish(1, chat);
+            else if (ComboCheckProblem() is { } combo) Finish(1, combo);
+            else if (LavaCheckProblem() is { } lava) Finish(1, lava);
+            else if (CouchCheckProblem() is { } couch) Finish(1, couch);
+            else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
+        };
+    }
+    }
+
+    // ---------- --simulate: bot-only matches for the card stats log ----------
+
+    private int _simTotal, _simDone, _simMin = 2, _simMax = LobbyState.MaxPlayers;
+    private bool _playersArg; // --players= given: also sets how many play in --autotest, --hudshots and the --menushots lobby
+
+    // ---------- --padcheck: controllers, driven by synthetic joypad events ----------
+
+    private bool _padCheck;
+
+    private async void PadCheck()
+    {
+        Pads.TestDevices.AddRange(new[] { 0, 1 });
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        void Press(int dev, int button, bool down) => Input.ParseInputEvent(new InputEventJoypadButton { Device = dev, ButtonIndex = (JoyButton)button, Pressed = down, Pressure = down ? 1 : 0 });
+        void Stick(int dev, JoyAxis axis, float v) => Input.ParseInputEvent(new InputEventJoypadMotion { Device = dev, Axis = axis, AxisValue = v });
+        async System.Threading.Tasks.Task Tap(int dev, int button)
+        {
+            Press(dev, button, true);
+            await Wait(0.1);
+            Press(dev, button, false);
+            await Wait(0.1);
+        }
+        string Name(Control c) => c is Button b ? $"button \"{b.Text}\"" : c?.GetType().Name ?? "nothing";
+
+        await Wait(0.5);
+        // The menu: a d-pad press with nothing focused lands on the first button, then moves on from there.
+        await Tap(0, PadLayout.DpadDown);
+        var first = GetViewport().GuiGetFocusOwner();
+        if (first == null || !_menu.IsAncestorOf(first)) { Finish(1, $"padcheck: the d-pad focused {Name(first)}, not a menu button"); return; }
+        await Tap(0, PadLayout.DpadDown);
+        var second = GetViewport().GuiGetFocusOwner();
+        if (second == first) { Finish(1, $"padcheck: the d-pad did not move the focus off {Name(first)}"); return; }
+        Log.Info($"PADCHECK menu: focus landed on {Name(first)}, moved to {Name(second)}");
+
+        // The lobby: + Local Player, then A on the second controller.
+        FindButton(_menu, "PLAY VS BOTS").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!_lobby.Visible) { Finish(1, "padcheck: no lobby"); return; }
+        FindButton(_lobby, "+ Local Player").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.4);
+        await Tap(1, PadLayout.A);
+        if (Pads.Couch.DeviceOf(1) != 1 || _net.Lobby.Guest(_net.LocalPeer, 1) is not { } guest) { Finish(1, "padcheck: A on the second controller did not add a local player"); return; }
+        Log.Info($"PADCHECK lobby: {guest.Name} joined on controller 1, slot {guest.Slot}");
+        if (_shotDir != null) { await Wait(0.3); SaveShot(); }
+
+        // Input: the guest's controller drives the guest, and no longer the keyboard player.
+        var pad = new PadInput(1);
+        var local = new LocalInput(_game);
+        pad.Next(null, 1f / 60);
+        local.Next(null, 1f / 60);
+        Press(1, PadLayout.RightShoulder, true);
+        Press(1, PadLayout.A, true);
+        Stick(1, JoyAxis.LeftX, 1);
+        await Wait(0.1);
+        var f = pad.Next(null, 1f / 60);
+        var mine = local.Next(null, 1f / 60);
+        Press(1, PadLayout.RightShoulder, false);
+        Press(1, PadLayout.A, false);
+        Stick(1, JoyAxis.LeftX, 0);
+        if (!f.Shoot || !f.JumpHeld || f.JumpPresses != 1 || f.MoveX < 0.9f) { Finish(1, $"padcheck: guest frame shoot={f.Shoot} jump={f.JumpHeld}/{f.JumpPresses} move={f.MoveX:0.00}"); return; }
+        if (mine.Shoot || mine.JumpHeld || mine.MoveX != 0) { Finish(1, "padcheck: the guest's controller also drove the keyboard player"); return; }
+        // An unclaimed controller drives the keyboard player.
+        Press(0, PadLayout.RightShoulder, true);
+        Stick(0, JoyAxis.LeftX, -1);
+        await Wait(0.1);
+        mine = local.Next(null, 1f / 60);
+        Press(0, PadLayout.RightShoulder, false);
+        Stick(0, JoyAxis.LeftX, 0);
+        if (!mine.Shoot || mine.MoveX > -0.9f) { Finish(1, $"padcheck: the spare controller did not drive the keyboard player (shoot={mine.Shoot} move={mine.MoveX:0.00})"); return; }
+        Log.Info("PADCHECK input: the guest's controller drives only the guest; the spare one drives the keyboard player");
+
+        // A card pick, chosen on the controllers: the keyboard player first, then the guest.
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, KillCam = false });
+        _game.LavaOverride = 2;
+        _game.HostStartMatch();
+        if (_shotDir != null)
+        {
+            // Mid-fight: both crosshairs (the guest's rides their aim line).
+            for (int i = 0; i < 100 && _game.Phase != Phase.Fighting; i++) await Wait(0.1);
+            Stick(1, JoyAxis.RightX, 0.7f);
+            Stick(1, JoyAxis.RightY, -0.7f);
+            await Wait(0.6);
+            SaveShot();
+            Stick(1, JoyAxis.RightX, 0);
+            Stick(1, JoyAxis.RightY, 0);
+        }
+        for (int i = 0; i < 1800 && _game.Phase != Phase.CardPick; i++) await Wait(0.1);
+        if (_game.Phase != Phase.CardPick) { Finish(1, "padcheck: no card pick within 3 minutes"); return; }
+        var me = _game.LocalMatchPlayer;
+        var g = _game.LocalGuests.FirstOrDefault();
+        int mineBefore = me.Cards.Count, guestBefore = g?.Cards.Count ?? 0;
+        await Wait(1.0);
+        if (GetViewport().GuiGetFocusOwner() is not CardView) await Tap(0, PadLayout.DpadRight); // nothing focused yet: the d-pad grabs the first card
+        if (GetViewport().GuiGetFocusOwner() is not CardView) { Finish(1, $"padcheck: the card pick has {Name(GetViewport().GuiGetFocusOwner())} focused, not a card"); return; }
+        await Tap(0, PadLayout.DpadRight);
+        if (_shotDir != null) { await Wait(0.3); SaveShot(); }
+        await Tap(0, PadLayout.A);
+        await Wait(1.5);
+        if (_shotDir != null) SaveShot();
+        if (g != null && _game.PickOptions.ContainsKey(g.Slot))
+        {
+            if (GetViewport().GuiGetFocusOwner() is not CardView) await Tap(1, PadLayout.DpadRight);
+            await Tap(1, PadLayout.A);
+        }
+        await Wait(0.5);
+        bool mePicked = !_game.PickOptions.ContainsKey(me.Slot) || me.Cards.Count > mineBefore;
+        bool guestPicked = g == null || !_game.PickOptions.ContainsKey(g.Slot) || g.Cards.Count > guestBefore || _game.Phase != Phase.CardPick && g.Cards.Count > guestBefore;
+        if (!mePicked || !guestPicked) { Finish(1, $"padcheck: picks by controller: keyboard player {mePicked}, guest {guestPicked}"); return; }
+        Log.Info($"PADCHECK pick: {me.Info.Name} took {CardRegistry.Get(me.Cards.Last())?.Name}, {g?.Info.Name} took {(g?.Cards.Count > 0 ? CardRegistry.Get(g.Cards.Last())?.Name : "-")}");
+        Finish(0, "padcheck: menus, local co-op join, controller input and card picks all work");
+    }
+
+    // ---------- --editorcheck: the map editor, driven by made-up mouse presses ----------
+
+    private async void EditorCheck()
+    {
+        // Saved maps and settings go somewhere of their own, so the test leaves the player's alone.
+        MapLibrary.Dir = "user://editorcheck/maps";
+        MapLibrary.SettingsPath = "user://editorcheck/settings.cfg";
+        DirAccess.MakeDirRecursiveAbsolute(MapLibrary.Dir);
+        foreach (var f in DirAccess.GetFilesAt(MapLibrary.Dir)) DirAccess.RemoveAbsolute($"{MapLibrary.Dir}/{f}");
+        MapLibrary.Draft = "";
+        MapLibrary.LobbyMaps = new();
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        var ed = _editor;
+        Vector2 At(float x, float y) => new Vector2(x, y) * MapEditorUI.Zoom;
+        void Move(float x, float y) => ed.Feed(new InputEventMouseMotion { Position = At(x, y) });
+        void Button(float x, float y, bool down, MouseButton b = MouseButton.Left) => ed.Feed(new InputEventMouseButton { Position = At(x, y), ButtonIndex = b, Pressed = down });
+        void Click(float x, float y, MouseButton b = MouseButton.Left)
+        {
+            Move(x, y);
+            Button(x, y, true, b);
+            Button(x, y, false, b);
+        }
+        void Drag(float x1, float y1, float x2, float y2)
+        {
+            Move(x1, y1);
+            Button(x1, y1, true);
+            for (int i = 1; i <= 4; i++) Move(x1 + (x2 - x1) * i / 4, y1 + (y2 - y1) * i / 4);
+            Button(x2, y2, false);
+        }
+        bool Fail(string why)
+        {
+            Finish(1, $"editorcheck: {why}");
+            return true;
+        }
+
+        await Wait(0.5);
+        FindButton(_menu, "Map Editor").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!ed.Visible || _game.EditorView == null || _game.MapNode.Layout == null) { Fail("the Map Editor button didn't open the editor with an arena showing"); return; }
+        if (_shotDir != null) { await Wait(2.5); SaveShot("editor_generated"); }
+
+        ed.Load(MapDesign.Empty(ThemeId.ElderForest, 1));
+        ed.SetTool(EditTool.Block);
+        Drag(300, 470, 420, 478);
+        if (ed.Design.Blocks.Count != 1 || ed.Design.Blocks[0].W < 100) { Fail($"dragging with Block made {ed.Design.Blocks.Count} blocks"); return; }
+        var block = ed.Design.Blocks[0];
+        ed.SetTool(EditTool.Spawn);
+        Click(350, 300);
+        Click(120, 300);
+        if (ed.Design.Spawns.Count != 2 || ed.Design.Spawns[0].Y != block.Y || ed.Design.Spawns[1].Y != MapGenerator.FloorY)
+        { Fail($"spawns didn't land on the block and the floor: {string.Join(" ", ed.Design.Spawns)}"); return; }
+        ed.SetTool(EditTool.Gap);
+        Drag(600, 545, 680, 545);
+        ed.SetTool(EditTool.Hill);
+        Click(820, 500);
+        ed.SetTool(EditTool.Crate);
+        Click(250, 200);
+        ed.SetTool(EditTool.Poison);
+        Drag(150, 500, 200, 500);
+        var lay = ed.Layout;
+        if (ed.Design.Pits.Count != 1 || ed.Design.Hills.Count != 1 || lay.Slopes.Count != 2 || ed.Design.Props.Count != 1
+            || ed.Design.Props[0].Rect.Bottom != MapGenerator.FloorY || ed.Design.Hazards.Count != 1)
+        { Fail($"gap/hill/crate/pool: {ed.Design.Pits.Count} pits, {ed.Design.Hills.Count} hills ({lay.Slopes.Count} slopes), {ed.Design.Props.Count} props, {ed.Design.Hazards.Count} pools"); return; }
+        if (ed.Design.Problems().Count != 0) { Fail($"problems on a fine arena: {string.Join(" | ", ed.Design.Problems())}"); return; }
+        Log.Info($"EDITORCHECK tools: block {block}, 2 spawns, a gap, a hill, a crate and a pool");
+
+        // Select, move, resize, undo, redo, delete.
+        ed.SetTool(EditTool.Select);
+        Drag(360, 476, 440, 436);
+        var moved = ed.Design.Blocks[0];
+        if (moved.X != block.X + 80 || moved.Y != block.Y - 40) { Fail($"dragging the block moved it to {moved}, from {block}"); return; }
+        if (ed.Design.Spawns[0].Y != moved.Y) { Fail($"the spawn on the block didn't move with it: {ed.Design.Spawns[0]}"); return; }
+        Drag(moved.Right, moved.Y + 4, moved.Right + 40, moved.Y + 4);
+        if (ed.Design.Blocks[0].W != moved.W + 40) { Fail($"dragging the block's right edge left it {ed.Design.Blocks[0].W} wide, from {moved.W}"); return; }
+        ed.Feed(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+        ed.Feed(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+        if (ed.Design.Blocks[0] != block) { Fail($"two undos left the block at {ed.Design.Blocks[0]}, not {block}"); return; }
+        ed.Feed(new InputEventKey { Keycode = Key.Y, CtrlPressed = true, Pressed = true });
+        if (ed.Design.Blocks[0] != moved) { Fail("redo didn't put the move back"); return; }
+        var crate = ed.Design.Props[0].Rect;
+        Click(crate.X + crate.W / 2f, crate.Y + crate.H / 2f, MouseButton.Right);
+        if (ed.Design.Props.Count != 0) { Fail("right-click didn't delete the crate"); return; }
+        Log.Info("EDITORCHECK editing: move, resize, undo, redo and right-click delete work");
+
+        // Name it, save it, share it, open the code again.
+        var name = FindChild<LineEdit>(ed, l => l.PlaceholderText.StartsWith("Name"));
+        name.Text = "Check Arena";
+        name.EmitSignal(LineEdit.SignalName.TextChanged, name.Text);
+        FindButton(ed, "Save").EmitSignal(BaseButton.SignalName.Pressed);
+        var saved = MapLibrary.All();
+        if (saved.Count != 1 || saved[0].Name != "Check Arena") { Fail($"Save left {saved.Count} maps in the library"); return; }
+        var code = MapCode.Encode(ed.Design);
+        ed.Load(MapDesign.Empty(ThemeId.NeonNight, 1));
+        if (!ed.Import(" " + code + "\n") || MapCode.Encode(ed.Design) != code) { Fail("pasting the code back didn't reopen the same arena"); return; }
+        if (ed.Import(code[..^4])) { Fail("a cut-off code was accepted"); return; }
+        Log.Info($"EDITORCHECK sharing: saved, and the {code.Length}-character code reopens it: {code}");
+        if (_shotDir != null)
+        {
+            ed.SetTool(EditTool.Select);
+            Click(moved.X + 20, moved.Y + 4);
+            await Wait(2.5);
+            SaveShot("editor_custom");
+        }
+
+        // Playtest: a match against a bot on exactly this arena.
+        var design = ed.Design.Copy();
+        _game.AutopilotLocal = true;
+        FindButton(ed, "PLAYTEST").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!_lobby.Visible || _net.Lobby.Settings.Maps.Count != 1) { Fail("Playtest didn't open a lobby with the arena chosen"); return; }
+        _net.Lobby.Settings.BattlesPerRound = 1;
+        _net.Lobby.Settings.RoundsToWin = 1;
+        _game.HostStartMatch();
+        for (int i = 0; i < 100 && _game.BattleNumber == 0; i++) await Wait(0.05);
+        var played = _game.MapNode.Layout;
+        var expected = design.Build(2);
+        if (played == null || !played.Solids.SequenceEqual(expected.Solids) || !played.Slopes.SequenceEqual(expected.Slopes) || _game.ArenaName != "Check Arena")
+        { Fail($"the playtest battle wasn't on the arena (name {_game.ArenaName}, {played?.Solids.Count} solids vs {expected.Solids.Count})"); return; }
+        var spawned = _game.Slots.Where(p => p?.Avatar != null).Select(p => p.Avatar.Position).ToList();
+        if (spawned.Count != 2 || !spawned.All(at => design.Spawns.Any(sp => at.DistanceTo(new Vector2(sp.X, sp.Y)) < 30)))
+        { Fail($"fighters didn't start on the arena's spawns: {string.Join(" ", spawned)}"); return; }
+        if (_shotDir != null) { await Wait(1.5); SaveShot("editor_playtest"); }
+        Log.Info("EDITORCHECK playtest: the battle is played on the arena, from its spawns");
+
+        // Leaving the playtest goes back to the editor, with the arena still there.
+        _autoMode = null; // leaving is the point here, not a failure
+        _net.Leave();
+        await Wait(0.3);
+        if (!ed.Visible || MapCode.Encode(ed.Design) != MapCode.Encode(design)) { Fail("leaving the playtest didn't come back to the editor and its arena"); return; }
+        // The lobby's arenas: tick the saved arena, then back to random.
+        FindButton(ed, "Back").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        FindButton(_menu, "PLAY VS BOTS").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        var arenas = FindButton(_lobby, "Random");
+        if (arenas == null || _net.Lobby.Settings.Maps.Count != 0) { Fail("a new lobby didn't start on random arenas"); return; }
+        arenas.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        var tick = FindChild<CheckBox>(_lobby, c => c.Text == "Check Arena" && c.IsVisibleInTree());
+        if (tick == null) { Fail("the saved arena isn't listed in the lobby's arenas"); return; }
+        tick.ButtonPressed = true;
+        await Wait(0.2);
+        if (_net.Lobby.Settings.Maps.Count != 1 || arenas.Text != "Check Arena" || MapLibrary.LobbyMaps.Count != 1)
+        { Fail($"ticking the arena left {_net.Lobby.Settings.Maps.Count} arenas chosen, the button saying {arenas.Text}"); return; }
+        if (_shotDir != null) SaveShot("editor_lobby_arenas");
+        FindButton(_lobby, "Random only").EmitSignal(BaseButton.SignalName.Pressed);
+        if (_net.Lobby.Settings.Maps.Count != 0) { Fail("Random only didn't clear the arenas"); return; }
+        Log.Info("EDITORCHECK lobby: the saved arena can be ticked for a match, and Random only clears it");
+        Finish(0, "editorcheck: drawing, editing, saving, sharing, playtesting and picking an arena all work");
+    }
+
+    private static T FindChild<T>(Node root, System.Func<T, bool> match) where T : Node
+    {
+        foreach (var c in root.GetChildren())
+        {
+            if (c is T t && match(t)) return t;
+            if (FindChild(c, match) is { } found) return found;
+        }
+        return null;
+    }
+
+    // ---------- --couch=N: local co-op guests in the automated matches ----------
+
+    private int _couch;
+
+    /// <summary>Adds the --couch guests, on made-up controller ids (they play on autopilot, so no controller is read).</summary>
+    private void AddCouch()
+    {
+        for (int i = 0; i < _couch; i++)
+            if (!_net.AddGuest(100 + i)) Log.Info($"COUCHCHECK could not add guest {i + 1}");
+    }
+
+    private string CouchCheckProblem()
+    {
+        if (_couch == 0) return null;
+        var guests = _game.LocalGuests;
+        if (guests.Count != _couch) return $"couchcheck: {guests.Count} couch guests in the match, expected {_couch}";
+        var me = _game.LocalMatchPlayer;
+        foreach (var g in guests)
+        {
+            if (g.Info.PeerId != _net.LocalPeer || g.Info.Guest < 1) return $"couchcheck: {g.Info.Name} is not a guest of this machine";
+            // When there were card picks, everyone at this machine took cards, not just the keyboard player.
+            if (me != null && me.Cards.Count > 0 && g.Cards.Count == 0) return $"couchcheck: guest {g.Info.Name} never picked a card";
+        }
+        var remote = _net.IsHost ? _net.Lobby.Players.Count(p => p.Guest > 0 && p.PeerId != _net.LocalPeer) : 0;
+        Log.Info($"COUCHCHECK {guests.Count} guests played: {string.Join(", ", guests.Select(g => $"{g.Info.Name} {g.Cards.Count} cards"))}" +
+                 (_net.IsHost ? $"; guests from other machines: {remote}" : ""));
+        return null;
+    }
+
+    /// <summary>Bots to add beside the local player in the test modes that take --players= (default four players).</summary>
+    private void AddTestBots() { for (int i = 1; i < (_playersArg ? _simMax : 4); i++) _net.AddBot(); }
+
+    private readonly Rng _simRng = new((ulong)System.DateTime.Now.Ticks);
+    private readonly System.Diagnostics.Stopwatch _simClock = new();
+    private long _battleFrames;
+    private float _battleCap; // --battlecap=SECS (diagnostics): abandon a single battle that runs longer than this
+
+    /// <summary>One log line per live fighter, for working out why a simulated battle drags on.</summary>
+    private void LogStall(string why)
+    {
+        Log.Info($"STALL {why}: battle {_game.BattleNumber}, {_battleFrames / 60}s, map seed {_game.Map?.Seed}");
+        foreach (var a in _game.LiveAvatars())
+        {
+            var cards = string.Join(",", a.Player.Cards.Select(id => CardRegistry.Get(id)?.Name ?? id.ToString()));
+            var bot = a.Player.Input is BotBrain b ? b.DebugState : "";
+            Log.Info($"  slot {a.Player.Slot} pos ({a.GlobalPosition.X:0},{a.GlobalPosition.Y:0}) vel ({a.Velocity.X:0},{a.Velocity.Y:0}) hp {a.Hp:0}/{a.S[Stat.MaxHp]:0} floor {a.IsOnFloor()} {bot} cards [{cards}]");
+        }
+    }
+
+    private void SimNextMatch()
+    {
+        if (!_simClock.IsRunning) _simClock.Start();
+        int players = _simRng.Range(_simMin, _simMax);
+        _net.LocalName = "Sim";
+        _net.StartOffline();
+        for (int i = 1; i < players; i++) _net.AddBot();
+        _net.SetSettings(new MatchSettings()); // the lobby defaults: what people actually play
+        _game.DisableKillCam = true;
+        _frames = 0;
+        _matchFinished = false;
+        _game.HostStartMatch();
+    }
+
+    private void SimMatchEnded(int winner)
+    {
+        _simDone++;
+        double secs = _simClock.Elapsed.TotalSeconds;
+        Log.Info($"SIMULATE {_simDone}/{_simTotal} done (winner slot {winner}, {_game.BattleNumber} battles, {secs:0}s elapsed)");
+        // Defer: we're inside the BattleOver RPC; tearing the match down right here would pull state from under it.
+        Callable.From(() =>
+        {
+            _game.HostReturnToLobby();
+            if (_simDone >= _simTotal) Finish(0, $"simulated {_simDone} matches in {secs:0}s");
+            else SimNextMatch();
+        }).CallDeferred();
+    }
+
+    private void AutoHostMaybeStart()
+    {
+        // Another machine has joined (couch guests on this one don't count).
+        if (_net.InMatch || _net.Lobby.Players.Where(p => !p.IsBot).Select(p => p.PeerId).Distinct().Count() < 2) return;
+        _net.LobbyChanged -= AutoHostMaybeStart;
+        Log.Info("AUTOTEST host: client joined, starting match");
+        GetTree().CreateTimer(1.0).Timeout += () => _game.HostStartMatch();
+    }
+
+    public override void _PhysicsProcess(double delta)
+    {
+        if (_autoMode == null) return;
+        if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
+        if (_chatCheck) PollGhosts();
+        if (_lavaCheck) PollLava();
+        if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
+        {
+            _battleFrames++;
+            if (_battleFrames % (60 * 60) == 0) LogStall("long battle");
+            if (_battleCap > 0 && _battleFrames > _battleCap * 60)
+            {
+                LogStall("battle cap");
+                Log.Info("SIMULATE match timed out, abandoning it (saved as incomplete)");
+                _frames = 0;
+                _battleFrames = 0;
+                SimMatchEnded(-1);
+                return;
+            }
+        }
+        if (++_frames > AutotestMaxFrames)
+        {
+            if (_autoMode != "sim") { Finish(1, "timed out before the match ended"); return; }
+            LogStall("match timeout");
+            Log.Info("SIMULATE match timed out, abandoning it (saved as incomplete)");
+            _frames = 0;
+            SimMatchEnded(-1);
+        }
+        if (_shotDir != null && _autoMode != "readme" && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+        // And one mid-countdown each battle, where the YOU marker shows.
+        bool counting = _game.Phase == Phase.Countdown && _game.CountdownLeft < GameManager.CountdownTime / 2;
+        if (_shotDir != null && _autoMode != "readme" && counting && !_countdownShot && _shotCount < 40) SaveShot();
+        _countdownShot = counting;
+    }
+
+    // ---------- --dropat=N (with --autojoin): leave in battle N, join again, and check the slot came back ----------
+
+    private int _dropAt, _dropCards, _joinPort;
+    private bool _noBots, _dropping, _rejoinChecked;
+    private bool _countdownShot;
+    private string _joinHost;
+
+    private void AutoDropMaybe()
+    {
+        if (_dropping || _rejoinChecked || _game.BattleNumber != _dropAt) return;
+        _dropping = true;
+        _dropCards = _game.LocalMatchPlayer?.Cards.Count ?? -1;
+        GetTree().CreateTimer(1.5).Timeout += () =>
+        {
+            Log.Info($"DROPTEST leaving in battle {_dropAt} with {_dropCards} cards");
+            _net.Leave();
+            _game.MatchBegan += AutoRejoinCheck;
+            GetTree().CreateTimer(1.0).Timeout += () => _net.Join(_joinHost, _joinPort);
+        };
+    }
+
+    private void AutoRejoinCheck()
+    {
+        _game.MatchBegan -= AutoRejoinCheck;
+        _dropping = false;
+        var me = _game.LocalMatchPlayer;
+        if (me == null || me.Cards.Count != _dropCards)
+        {
+            Finish(1, $"droptest: rejoined with {me?.Cards.Count ?? -1} cards, had {_dropCards}");
+            return;
+        }
+        _rejoinChecked = true;
+        Log.Info($"DROPTEST rejoined slot {me.Slot} with all {_dropCards} cards");
+    }
+
+    // ---------- --rematch (with --autotest, --autohost or --autojoin): vote for a rematch, check it starts fresh ----------
+
+    private bool _rematchTest;
+    private int _rematches;
+
+    private void AutoVoteRematch()
+    {
+        // The host votes first and the client a second later, so the host has to wait for the second vote.
+        GetTree().CreateTimer(_autoMode == "join" ? 1.5 : 0.5, true, false, true).Timeout += () =>
+        {
+            Log.Info($"REMATCHTEST voting for a rematch ({_game.RematchVotes.Count} votes in so far)");
+            _game.MatchBegan += AutoRematchCheck;
+            _game.LocalVoteRematch(true);
+        };
+    }
+
+    private void AutoRematchCheck()
+    {
+        _game.MatchBegan -= AutoRematchCheck;
+        var stale = _game.Slots.Where(p => p != null && (p.Cards.Count > 0 || p.RoundWins > 0 || p.BattleWins > 0)).ToList();
+        if (stale.Count > 0 || _game.RematchVotes.Count > 0)
+        {
+            Finish(1, $"rematchtest: rematch didn't start fresh: {string.Join(", ", stale.Select(p => p.Info.Name))}, {_game.RematchVotes.Count} votes left");
+            return;
+        }
+        _rematches++;
+        Log.Info($"REMATCHTEST rematch started with {_game.Active().Count()} players");
+    }
+
+    // ---------- emote, ping and ghost check (--autotest, --autohost, --autojoin) ----------
+
+    private bool _chatCheck;
+    private int _myEmotes, _myPings, _otherChat;
+    // Each ghost seen (avatars are rebuilt every battle, so keyed by instance): who, how long it was up, how far it went.
+    private readonly System.Collections.Generic.Dictionary<ulong, (string Name, float Age, float Travel)> _ghosts = new();
+
+    /// <summary>
+    /// Two seconds into every fight, the autopilot emotes (a different one each battle) and pings above its head. Our
+    /// own emotes and pings must come back from the host, and every ghost that was up for a second must have moved.
+    /// </summary>
+    private void StartChatCheck()
+    {
+        _chatCheck = true;
+        StartComboCheck();
+        _game.EmoteShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myEmotes++; else _otherChat++; };
+        _game.PingShown += (slot, _) => { if (slot == _game.LocalMatchPlayer?.Slot) _myPings++; else _otherChat++; };
+        _game.BattleStarted += () => GetTree().CreateTimer(GameManager.CountdownTime + 2.0, true, false, true).Timeout += () =>
+        {
+            var me = _game.LocalMatchPlayer?.Avatar;
+            if (me == null || _game.Phase != Phase.Fighting) return;
+            _game.LocalEmote(_game.BattleNumber % Emotes.All.Length);
+            _game.LocalPing(me.GlobalPosition + new Vector2(0, -40));
+        };
+        // With --shots: a few pictures of a ghost's bubble, once the ghost has risen.
+        if (_shotDir != null)
+            _game.EmoteShown += (slot, _) =>
+            {
+                if (_chatShots >= 3 || _game.Slots[slot]?.Avatar is not { Alive: false }) return;
+                int n = ++_chatShots;
+                GetTree().CreateTimer(Avatar.GhostDelay + 0.3, true, false, true).Timeout += () => SaveShot($"chat_{n}");
+            };
+    }
+
+    private int _chatShots;
+
+    private void PollGhosts()
+    {
+        foreach (var p in _game.Slots)
+            if (p?.Avatar is { GhostUp: true } a)
+                _ghosts[a.GetInstanceId()] = (p.Info.Name, a.GhostAge, a.GhostTravel);
+    }
+
+    /// <summary>Null when the check passed (or isn't running); otherwise what went wrong.</summary>
+    private string ChatCheckProblem()
+    {
+        if (!_chatCheck) return null;
+        var stuck = _ghosts.Values.Where(g => g.Age > 1f && g.Travel < 10f).ToList();
+        Log.Info($"CHATCHECK own emotes {_myEmotes}, own pings {_myPings}, others' {_otherChat}; ghosts {_ghosts.Count}, "
+            + $"floated {(_ghosts.Count > 0 ? _ghosts.Values.Average(g => g.Travel) : 0):0} px on average");
+        if (_myEmotes == 0) return "chatcheck: our emotes never came back from the host";
+        if (_myPings == 0) return "chatcheck: our pings never came back from the host";
+        if (_ghosts.Count == 0) return "chatcheck: no ghost ever rose";
+        if (stuck.Count > 0) return $"chatcheck: ghosts that never moved: {string.Join(", ", stuck.Select(g => g.Name))}";
+        return null;
+    }
+
+    // ---------- combo check (with the chat check) ----------
+
+    private readonly System.Collections.Generic.List<(int Slot, ComboDef Combo)> _combosFound = new();
+
+    private void StartComboCheck()
+    {
+        _game.ComboFound += (slot, combo) => _combosFound.Add((slot, combo));
+        _game.MatchBegan += _combosFound.Clear; // a rematch starts everyone with no cards again
+        if (_shotDir == null) return;
+        // With --shots: an offer with a COMBO tag on it, and the "combo found" panel after our pick.
+        _game.CardPickBegan += () =>
+        {
+            var me = _game.LocalMatchPlayer;
+            if (_comboShots >= 4 || me == null || !_game.PickOptions.TryGetValue(me.Slot, out var opts)) return;
+            if (!opts.Any(id => Combos.Unlocks(me.Cards, id).Count > 0)) return;
+            int n = ++_comboShots;
+            GetTree().CreateTimer(0.6, true, false, true).Timeout += () => SaveShot($"combo_offer_{n}");
+        };
+        _game.ComboFound += (slot, _) =>
+        {
+            if (_comboShots >= 4 || slot != _game.LocalMatchPlayer?.Slot) return;
+            int n = ++_comboShots;
+            GetTree().CreateTimer(0.4, true, false, true).Timeout += () => SaveShot($"combo_found_{n}");
+        };
+    }
+
+    private int _comboShots;
+
+    /// <summary>
+    /// Every combo announced must really be active for that player at the end, and every combo a player ends with must
+    /// have been announced. Skipped with --cards, which replaces everyone's cards each battle, and after a rejoin.
+    /// </summary>
+    private string ComboCheckProblem()
+    {
+        if (!_chatCheck) return null;
+        bool dealt = _game.DebugCards != null || _dropAt > 0;
+        var players = _game.Slots.Where(p => p != null).ToList();
+        int held = players.Sum(p => Combos.Active(p.Cards).Count);
+        Log.Info($"COMBOCHECK combos found {_combosFound.Count}, held at the end {held}, bounce blasts {_game.Bullets.BounceBlasts}");
+        if (dealt) return null;
+        foreach (var (slot, combo) in _combosFound)
+            if (_game.Slots[slot] is { } p && !combo.ActiveFor(p.Cards))
+                return $"combocheck: {p.Info.Name} was told they found {combo.Name} but their cards don't make it";
+        foreach (var p in players)
+            foreach (var combo in Combos.Active(p.Cards))
+                if (!_combosFound.Contains((p.Slot, combo)))
+                    return $"combocheck: {p.Info.Name} holds {combo.Name} but it was never announced";
+        return null;
+    }
+
+    // ---------- lava check (--lavacheck with --autotest, --autohost, --autojoin) ----------
+
+    private bool _lavaCheck;
+    private readonly System.Collections.Generic.HashSet<int> _lavaBattles = new(), _lavaShots = new();
+    private readonly System.Collections.Generic.Dictionary<int, float> _inLava = new();
+    private float _lavaWorst;
+
+    private void PollLava()
+    {
+        if (_game.Phase != Phase.Fighting || _game.Map == null) return;
+        float y = _game.Arena.LavaY;
+        int battle = _game.BattleNumber;
+        if (y < MapGenerator.FloorY - 40) _lavaBattles.Add(battle);
+        if (_shotDir != null && y < MapGenerator.FloorY - 120 && _lavaShots.Add(battle)) SaveShot($"lava_{battle:D2}");
+        // How long each fighter has stood in it without dying: lava that doesn't hurt (or a death that never synced) shows up here.
+        foreach (var a in _game.LiveAvatars())
+        {
+            int slot = a.Player.Slot;
+            bool inside = a.GlobalPosition.Y + a.HalfSize.Y - 2 > y;
+            float t = inside ? (_inLava.TryGetValue(slot, out float was) ? was : 0) + 1f / 60f : 0;
+            _inLava[slot] = t;
+            _lavaWorst = Mathf.Max(_lavaWorst, t);
+        }
+    }
+
+    /// <summary>Null when the check passed (or isn't running); otherwise what went wrong.</summary>
+    private string LavaCheckProblem()
+    {
+        if (!_lavaCheck) return null;
+        Log.Info($"LAVACHECK setting {_game.Settings.LavaAfter}s, lava over the floor in {_lavaBattles.Count}/{_game.BattleNumber} battles, longest anyone lived in it {_lavaWorst:0.00}s");
+        if (_game.Settings.LavaAfter != 3) return $"lavacheck: this peer got lava after {_game.Settings.LavaAfter}s, not 3";
+        if (_lavaBattles.Count == 0) return "lavacheck: the lava never rose over the floor";
+        if (_lavaWorst > 2.5f) return $"lavacheck: someone lived {_lavaWorst:0.0}s in the lava";
+        return null;
+    }
+
+    // ---------- card pool check (--autotest, --autohost, --autojoin) ----------
+
+    // Out of the pool in test matches: a few cards from every category, plus ids no card has (custom cards
+    // another machine may have) to show unknown ids pass through.
+    private static readonly int[] AutoDisabled = { 1, 2, 3, 17, 30, 43, 55, 56, 57, 58, 59, 60, 82, 92, 1000, 4242 };
+    private bool _poolCheck;
+    private int _poolPicks;
+
+    private void StartPoolCheck()
+    {
+        _poolCheck = true;
+        _game.CardPickBegan += () =>
+        {
+            if (!_poolCheck) return;
+            _poolPicks++;
+            var offered = _game.PickOptions.Values.SelectMany(ids => ids)
+                .Concat(_game.PickDeals.Values.SelectMany(d => new[] { d.Rare, d.Curse })).ToList();
+            var bad = offered.Where(AutoDisabled.Contains).ToList();
+            if (bad.Count > 0) { Finish(1, $"poolcheck: disabled cards offered: {string.Join(",", bad)}"); return; }
+            if (_game.PickOptions.Values.Any(ids => ids.Distinct().Count() != ids.Count)) { Finish(1, "poolcheck: an offer repeats a card"); return; }
+            Log.Info($"POOLCHECK pick {_poolPicks}: {offered.Count} cards offered, none disabled");
+        };
+    }
+
+    /// <summary>The client's first lobby must carry the host's disabled list exactly.</summary>
+    private void AutoJoinCheckPool()
+    {
+        if (_net.Lobby.Players.Count == 0) return;
+        _net.LobbyChanged -= AutoJoinCheckPool;
+        AddCouch();
+        var got = _net.Lobby.Settings.DisabledCards;
+        if (!got.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: client got disabled [{string.Join(",", got.OrderBy(id => id))}]"); return; }
+        Log.Info($"POOLCHECK client has the host's disabled list: {string.Join(",", got.OrderBy(id => id))}");
+    }
+
+    // ---------- --overlaycheck: the Esc options overlay over a running match ----------
+
+    private bool _overlayCheck, _ocSawPick;
+    private int _ocStage;
+    private long _ocFrames;
+    private float _ocMoved;
+    private readonly System.Collections.Generic.Dictionary<int, Vector2> _ocLast = new();
+    private const int OcDone = 7;
+
+    private static void PressEsc()
+    {
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = false });
+    }
+
+    /// <summary>What the local player would send right now with move-right and shoot held down.</summary>
+    private InputFrame ProbeHeldInput()
+    {
+        Input.ActionPress("move_right");
+        Input.ActionPress("shoot");
+        var f = new LocalInput(_game).Next(null, 1f / 60);
+        Input.ActionRelease("move_right");
+        Input.ActionRelease("shoot");
+        return f;
+    }
+
+    private static Button FindButton(Node n, string text)
+    {
+        foreach (var c in n.GetChildren())
+            if (c is Button b && b.Text == text) return b;
+            else if (FindButton(c, text) is { } found) return found;
+        return null;
+    }
+
+    private static CardView FirstCard(Node n)
+    {
+        foreach (var c in n.GetChildren())
+            if (c is CardView cv && cv.IsVisibleInTree()) return cv;
+            else if (FirstCard(c) is { } found) return found;
+        return null;
+    }
+
+    private void OverlayCheckStep()
+    {
+        void Fail(string why) { _overlayCheck = false; Finish(1, $"overlaycheck: {why}"); }
+        bool overlayUp = _overlay && _options.Visible && LocalInput.Suppressed;
+        _ocFrames++;
+        switch (_ocStage)
+        {
+            case 0: // a battle well under way: press Esc
+                if (_game.Phase != Phase.Fighting) { _ocFrames = 0; return; }
+                if (_ocFrames < 60) return;
+                var free = ProbeHeldInput();
+                if (free.MoveX <= 0 || !free.Shoot) { Fail("held keys don't register even without the overlay"); return; }
+                if (!_crosshair.Active) { Fail("no crosshair in a battle"); return; }
+                PressEsc();
+                (_ocStage, _ocFrames) = (1, 0);
+                return;
+            case 1: // the overlay is up and your held keys do nothing
+                if (!_overlay) { if (_ocFrames > 10) Fail("Esc did not open the overlay"); return; }
+                if (!overlayUp) { Fail("overlay flagged open but not shown, or input not suppressed"); return; }
+                var muted = ProbeHeldInput();
+                if (muted.MoveX != 0 || muted.Shoot) { Fail("held keys still move or shoot under the overlay"); return; }
+                Log.Info("OVERLAYCHECK Esc opened the overlay mid-battle; held move+shoot give no input");
+                (_ocStage, _ocFrames, _ocMoved) = (2, 0, 0);
+                _ocLast.Clear();
+                return;
+            case 2: // three seconds under the overlay: nothing paused, the bots keep fighting
+                if (GetTree().Paused || !Mathf.IsEqualApprox(Engine.TimeScale, 1)) { Fail("the game paused"); return; }
+                if (!overlayUp) { Fail("overlay closed by itself during the battle"); return; }
+                if (_ocFrames > 2 && _crosshair.Active) { Fail("the crosshair still replaces the pointer under the overlay"); return; }
+                foreach (var a in _game.LiveAvatars())
+                {
+                    if (a.Player == _game.LocalMatchPlayer) continue;
+                    if (_ocLast.TryGetValue(a.Player.Slot, out var p)) _ocMoved += a.GlobalPosition.DistanceTo(p);
+                    _ocLast[a.Player.Slot] = a.GlobalPosition;
+                }
+                if (_ocFrames == 60 && _shotDir != null) SaveShot();
+                if (_ocFrames < 180) return;
+                if (_ocMoved < 100) { Fail($"bots moved only {_ocMoved:0}px in 3s under the overlay"); return; }
+                Log.Info($"OVERLAYCHECK game kept running: bots moved {_ocMoved:0}px in 3s, now battle {_game.BattleNumber} {_game.Phase}");
+                (_ocStage, _ocFrames, _ocSawPick) = (3, 0, false);
+                return;
+            case 3: // stays open through battle ends and new battles until a card pick comes up under it
+                if (!overlayUp) { Fail($"overlay closed by itself ({_game.Phase})"); return; }
+                if (_ocFrames > 60 * 180) { Fail("no card pick within 3 minutes"); return; }
+                if (!_ocSawPick || _game.Phase != Phase.CardPick || FirstCard(_pick) is not { } card) return;
+                // Hover a card: the overlay, not the card, must be what the mouse is over.
+                var at = GetViewport().GetFinalTransform() * card.GetGlobalRect().GetCenter();
+                Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+                (_ocStage, _ocFrames) = (4, 0);
+                return;
+            case 4: // card pick under the overlay: both on screen, overlay on top and catching the mouse
+                if (_ocFrames < 6) return;
+                if (_game.Phase != Phase.CardPick) { (_ocStage, _ocFrames, _ocSawPick) = (3, 0, false); return; }
+                if (!overlayUp || !_pick.Visible || !_hud.Visible) { Fail($"card pick screens wrong: options {_options.Visible} pick {_pick.Visible} hud {_hud.Visible}"); return; }
+                var hovered = GetViewport().GuiGetHoveredControl();
+                if (hovered == null || !(hovered == _options || _options.IsAncestorOf(hovered))) { Fail($"mouse over a card reaches {hovered?.GetPath().ToString() ?? "nothing"}, not the overlay"); return; }
+                Log.Info($"OVERLAYCHECK card pick came up under the overlay; the mouse hits {hovered.Name}, not the cards");
+                if (_shotDir != null) SaveShot();
+                FindButton(_options, "LEAVE MATCH")?.EmitSignal(BaseButton.SignalName.Pressed);
+                (_ocStage, _ocFrames) = (5, 0);
+                return;
+            case 5: // Leave asks first; No backs out without leaving
+                if (_ocFrames < 6) return;
+                if (FindButton(_options, "YES") is not { } yes || !yes.IsVisibleInTree() || FindButton(_options, "LEAVE MATCH").IsVisibleInTree())
+                { Fail("Leave match did not ask for confirmation"); return; }
+                if (_shotDir != null) SaveShot();
+                FindButton(_options, "NO").EmitSignal(BaseButton.SignalName.Pressed);
+                if (!FindButton(_options, "LEAVE MATCH").IsVisibleInTree() || _net.Mode == NetMode.None) { Fail("No did not back out of leaving"); return; }
+                Log.Info("OVERLAYCHECK Leave match asks first; No backs out");
+                PressEsc();
+                (_ocStage, _ocFrames) = (6, 0);
+                return;
+            case 6: // Esc closed it; the card pick is still there and input is back
+                if (_ocFrames < 6) return;
+                if (_overlay || _options.Visible || LocalInput.Suppressed) { Fail("Esc did not close the overlay"); return; }
+                if (!_hud.Visible || _pick.Visible != (_game.Phase == Phase.CardPick)) { Fail($"after closing: hud {_hud.Visible} pick {_pick.Visible} in {_game.Phase}"); return; }
+                if (_crosshair.Active == _pick.Visible) { Fail($"crosshair {(_crosshair.Active ? "shown" : "hidden")} with the card pick {(_pick.Visible ? "up" : "down")}"); return; }
+                Log.Info($"OVERLAYCHECK Esc closed it; {_game.Phase} screens intact, input restored");
+                _ocStage = OcDone;
+                return;
+        }
+    }
+
+    private void Finish(int code, string why)
+    {
+        Log.Info($"AUTOTEST {(code == 0 ? "PASS" : "FAIL")}: {why}");
+        _autoMode = null;
+        GetTree().Quit(code);
+    }
+}

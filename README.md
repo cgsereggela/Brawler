@@ -240,12 +240,12 @@ Everything is computed from the card list every peer already has, so nothing ext
 ```
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
-  scripts/Main.cs           wiring, screens, automated test modes
+  scripts/Main.cs           wiring and screens; Main.CommandLine/.Checks/.Shots: the automated test, screenshot and benchmark modes
   scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, MapDesign + MapCode (custom arenas), ArenaFeatures, Sweep, Appearance, GunRig,
                             Teams, GameModes (hill, flags, head), StatsModel/StatsReport, Synth (sound and music)
   scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look; MapLibrary.cs saved arenas
   scripts/Net/              NetworkManager (ENet host/join, lobby sync, version check), PortOpener (UPnP)
-  scripts/Game/             GameManager (match flow + netcode, hit/kill effects; GameManager.Modes: respawns and objectives), ObjectiveNode (draws them), Avatar, AvatarArt (character + gun vector art),
+  scripts/Game/             GameManager (state and simulation; .Flow: match flow, kill cam, picks; .Combat: damage and hit/kill effects; .Modes: respawns and objectives; .Chat: emotes and pings; .Sync: snapshots and wire formats), ObjectiveNode (draws them), Avatar, AvatarArt (character + gun vector art),
                             BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Arena (crates, glass,
                             movers, pools, saws), KillCam (records the battle, replays the final kill), Backdrop (scenery),
                             ArenaTheme, FxStyle (card-driven effect power and flavors)

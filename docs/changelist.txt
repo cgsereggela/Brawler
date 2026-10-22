@@ -1,6 +1,23 @@
 issues to fix:
+- bots ignore the editor's hazards: BotBrain only avoids rising lava, so bots walk into sawblades and magma/poison pools and never use moving platforms. Custom arenas make this much more common
+- two map names can share one file: MapLibrary.PathOf turns "My Map!" and "My Map?" into the same my_map.map, and the editor's overwrite check compares names rather than files, so saving can silently replace a different map
+- clashing names pile up as "Map 2 2 2": the rename in ArenaPoolUI appends " 2" on every clash; count up instead (Map 2, Map 3)
+- leaving the map editor gives no warning about unsaved changes. The draft is kept, but nothing says the work isn't in My maps
+- check the lobby settings packet size with 12 custom arenas plus disabled cards, and keep it well inside ENet's reliable-packet limits (split or compress if needed)
+- a bad map code gets one vague error. Say which case it is: not a map code, damaged (checksum), or made in a newer version
+- the map editor needs a mouse; make it usable with a controller like the rest of the game (move a cursor with the stick, A to place, B to delete, bumpers to change tools)
+- no automated test runs the map editor UI: run --editorcheck in CI next to the unit tests
+- arenas in a match are only shown by name: let players save the current arena (or copy its code) from the lobby's Arenas panel or the battle HUD
 
 features to add:
+- map thumbnails in My maps, the editor's library and the lobby's Arenas panel
+- bot difficulty levels (Easy, Normal, Hard), chosen per bot in the lobby
+- draft mode: before the match, players take turns picking cards from one shared pool
+- Gun Game mode: every kill moves you to the next card in a fixed list; first to finish it wins
+- Survival mode: human players team up against waves of bots
+- unlockable cosmetics (hats, trails) for milestones, with no effect on gameplay
+- clip export: save a kill cam as a GIF (Logic/Gif.cs already exists)
+- accessibility: colorblind-safe player and team colors, a bigger UI scale, and adjustable aim assist for controllers
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame

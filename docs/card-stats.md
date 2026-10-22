@@ -14,7 +14,7 @@ tools/CardStats (dotnet run) ◀── StatsJson.ParseLines + StatsReport.Build 
 | Piece | File | Role |
 |---|---|---|
 | Recorder | `godot/scripts/Game/StatsRecorder.cs` | Collects events during a match and appends the finished record to the log. Runs on the host only. |
-| Hooks | `godot/scripts/Game/GameManager.cs` | Calls `Stats.*` at match, battle and pick boundaries, and on shots, damage, blocks and deaths. |
+| Hooks | `godot/scripts/Game/GameManager*.cs` (mostly `.Flow` and `.Combat`) | Calls `Stats.*` at match, battle and pick boundaries, and on shots, damage, blocks and deaths. |
 | Record model | `godot/scripts/Logic/StatsModel.cs` | `MatchRecord` and its child records, JSON options, and the card-table hash. Has no Godot dependency. |
 | Aggregation | `godot/scripts/Logic/StatsReport.cs` | Builds per-card and per-pair tallies, then writes markdown and CSV. Has no Godot dependency and is unit-tested in `tests/`. |
 | CLI | `tools/CardStats/Program.cs` | Reads the log, applies filters, writes the report. |

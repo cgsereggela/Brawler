@@ -1,0 +1,206 @@
+using System.Linq;
+using Brawler.Core;
+using Brawler.Fx;
+using Brawler.Game;
+using Brawler.Logic;
+using Brawler.Net;
+using Brawler.UI;
+using Godot;
+
+namespace Brawler;
+
+// Automated test modes (pass after "--" on the command line):
+//   --autotest            offline match, local player + 3 bots (--players=N: N players) on autopilot; exits 0 when the match ends
+//   --autohost[=port]     host a LAN game with 1 bot, autopilot, start once a client joins
+//   --autojoin[=ip:port]  join a LAN game on autopilot
+//                         (all three take some cards out of the pool and fail if a pick offers one; the joiner also
+//                         checks it received the host's disabled list)
+//   --simulate=N          play N bot-only matches back to back (2–8 players) to fill the card stats log; exits 0
+//   --players=A[-B]       player count (or range) per simulated match, default 2-8; the screenshot modes and --autotest
+//                         take the top of it as their player count (default 4)
+//   --statsdir=PATH       where card_stats.jsonl goes (default user://stats)
+//   --battlecap=SECS      (with --simulate) abandon a battle after SECS simulated seconds; logs STALL lines with bot state
+//   --killcamskip         (with --autotest/--autohost/--autojoin) ask to skip each kill cam half a second in
+//   --stats               also record stats during --autotest/--autohost (off by default so tests don't pollute the log)
+//   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
+//   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
+//   --hudshots            (with --shots=DIR, and --cards=) screenshot each player chip's hover card (cards and stats)
+//   --readmeshots         (with --shots=DIR, run with --fixed-fps 60) the README media: a match with generated names,
+//                         a GIF clip + screenshot per battle and card pick, the first kill cams, hover cards and the match-over
+//                         screen, then quit
+//   --videomatch          a full match to record with --write-movie: generated names (6 players, or --players=N), the
+//                         lobby, the match played by autopilot, the match-over screen with a hover card, then quit
+//   --focuslog=PATH       write one line per drawn frame (phase, kill cam, live bullets, where the action is across the
+//                         screen), to crop a recording to portrait
+//   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
+//                         some with full recoil) into DIR, then quit
+//   --crosshairshots=DIR  screenshot the crosshair in a range of ammo/reload states over every arena theme, then quit
+//   --walkshots=DIR       screenshot leg poses (walk cycle frames, idle, air, wall slide, landing, ramps) into DIR, then quit
+//   --lookshots=DIR       screenshot every eye, mouth, hair and hat option (some firing, some blinking) into DIR, then quit;
+//                         --lookscale=S draws them at size S (default 3.2; 1 is their size in a match)
+//   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
+//   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
+//                         cards to each player every battle, to exercise the whole card pool
+//   --carddir=DIR         load custom cards from DIR instead of user://cards (so tests leave the real folder alone)
+//   --overlaycheck        (with --autotest) presses Esc mid-battle, checks the game keeps running under the options
+//                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
+//                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
+//                         you fight (not under the overlay or the card pick)
+//   --lava=SECS           sudden-death lava rises after SECS seconds of fighting (0 = off) in the matches this run hosts
+//   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
+//                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
+//   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
+//   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
+//   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
+//   --arena=CODE          every battle of the matches this run hosts is played on this map code (see the map editor)
+//   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
+//   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
+//                         player input, and a card pick chosen on each controller; exits 0 on success
+//   --editorcheck         drives the map editor with made-up mouse presses (draw a block, a gap and a hill; place a spawn, a
+//                         crate and a pool; move, resize, undo, delete; save, share and reopen a map code), then playtests
+//                         the arena against a bot and checks the battle is played on it; exits 0 on success (with
+//                         --shots=DIR, screenshots the editor)
+//   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
+//                         autopilot; checks at the end that they played and picked cards like everyone else
+//   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
+public partial class Main
+{
+    private string _autoMode;
+    private bool _matchFinished;
+    private long _frames;
+    private const long AutotestMaxFrames = 60L * 60 * 30; // 30 simulated minutes per match
+
+    // ---------- automated test modes ----------
+
+    private void ParseDebugCards(string spec)
+    {
+        if (spec.StartsWith("random:") && int.TryParse(spec["random:".Length..], out int n))
+        {
+            _game.DebugCards = slot =>
+            {
+                var hand = new System.Collections.Generic.List<int>();
+                for (int i = 0; i < n; i++) hand.Add(CardRegistry.All[(int)(GD.Randi() % (uint)CardRegistry.All.Count)].Id);
+                Log.Info($"P{slot} cards: {string.Join(", ", hand.Select(id => CardRegistry.Get(id).Name))}");
+                return hand;
+            };
+            return;
+        }
+        var ids = spec.Split(',').Select(s => int.TryParse(s, out int id) ? id : -1).Where(id => CardRegistry.Get(id) != null).ToList();
+        _game.DebugCards = _ => new System.Collections.Generic.List<int>(ids);
+    }
+
+    private void HandleCommandLine()
+    {
+        var args = OS.GetCmdlineUserArgs();
+        bool forceStats = false;
+        foreach (var a in args)
+        {
+            if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
+            else if (a == "--streamer") StreamerMode.SetForRun(true);
+            else if (a.StartsWith("--lava=") && int.TryParse(a["--lava=".Length..], out int lava)) _game.LavaOverride = lava;
+            else if (a.StartsWith("--rarechance=") && int.TryParse(a["--rarechance=".Length..], out int rare)) _game.RareOverride = Mathf.Clamp(rare, 0, 100);
+            else if (a.StartsWith("--teams=") && int.TryParse(a["--teams=".Length..], out int teams)) _net.TestTeamSize = Mathf.Clamp(teams, 0, 4);
+            else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
+            else if (a.StartsWith("--mode=")) _net.TestMode = GameModes.Parse(a["--mode=".Length..]);
+            else if (a.StartsWith("--rounds=") && int.TryParse(a["--rounds=".Length..], out int rounds)) _net.TestRounds = Mathf.Clamp(rounds, 1, 10);
+            else if (a.StartsWith("--arena="))
+            {
+                if (MapCode.Decode(a["--arena=".Length..]) is { } arena) _net.TestArena = MapCode.Pack(arena);
+                else { Finish(1, "--arena: that isn't a map code"); return; }
+            }
+            else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
+            else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
+            else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
+            else if (a == "--stats") forceStats = true;
+            else if (a == "--overlaycheck") _overlayCheck = true;
+            else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
+            else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--editorcheck")
+            {
+                _autoMode = "editorcheck";
+                _game.DisableHitStop = true;
+                EditorCheck();
+            }
+            else if (a == "--padcheck")
+            {
+                _autoMode = "padcheck";
+                _padCheck = true;
+                _game.DisableHitStop = true;
+                PadCheck();
+            }
+            else if (a == "--nobots") _noBots = true;
+            else if (a.StartsWith("--couch=") && int.TryParse(a["--couch=".Length..], out int couch)) _couch = Mathf.Clamp(couch, 0, CouchRoster.MaxGuests);
+            else if (a == "--nofxcull") Fx.FxLayer.Culling = false;
+            else if (a == "--rematch") _rematchTest = true;
+            else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
+            else if (a.StartsWith("--players="))
+            {
+                var r = a["--players=".Length..].Split('-');
+                _playersArg = true;
+                if (int.TryParse(r[0], out int lo)) _simMin = _simMax = lo;
+                if (r.Length > 1 && int.TryParse(r[1], out int hi)) _simMax = hi;
+                _simMin = Mathf.Clamp(_simMin, 2, LobbyState.MaxPlayers);
+                _simMax = Mathf.Clamp(_simMax, _simMin, LobbyState.MaxPlayers);
+            }
+        }
+        if (args.Any(a => a is "--autotest" or "--readmeshots" or "--videomatch" or "--padcheck" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
+            _game.Stats.Enabled = forceStats;
+        if (_overlayCheck) _game.CardPickBegan += () => _ocSawPick = true;
+        if (_shotDir != null && !args.Contains("--readmeshots")) // readme names its own shots
+        {
+            _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
+            _game.MatchEnded += _ =>
+            {
+                GetTree().CreateTimer(0.3, true, false, true).Timeout += () =>
+                {
+                    SaveShot();
+                    // Then with a hover card open, which must draw over the match-over screen.
+                    _hud.DebugHover = 0;
+                    GetTree().CreateTimer(0.1, true, false, true).Timeout += () => { SaveShot(); _hud.DebugHover = -1; };
+                };
+            };
+            // The kill cam's build-up, its slow-motion kill and the aftermath (real seconds: it slows game time).
+            _game.KillCamStarted += () =>
+            {
+                foreach (double at in new[] { 0.7, 1.9, 2.8 })
+                    GetTree().CreateTimer(at, true, false, true).Timeout += () => { if (_game.KillCam.Playing) SaveShot(); };
+            };
+        }
+
+        foreach (var a in args)
+        {
+            if (a == "--autotest") { if (!StartAutotest()) return; }
+            else if (a.StartsWith("--autohost")) { if (!StartAutoHost(a)) return; }
+            else if (a.StartsWith("--autojoin")) StartAutoJoin(a);
+            else if (a.StartsWith("--simulate")) StartSimulate(a);
+            else if (a == "--themebench") ThemeBench();
+            else if (a == "--fxbench") FxBench();
+            else if (a == "--fxshots" && _shotDir != null) FxShots();
+            else if (a == "--arenashots" && _shotDir != null) ArenaShots();
+            else if (a == "--layoutshots" && _shotDir != null) LayoutShots();
+            else if (a == "--hudshots" && _shotDir != null) HudShots();
+            else if (a == "--terrainshots" && _shotDir != null) TerrainShots();
+            else if (a == "--readmeshots" && _shotDir != null) ReadmeShots();
+            else if (a == "--videomatch") VideoMatch();
+            else if (a.StartsWith("--focuslog=")) FocusLog(a);
+            else if (a.StartsWith("--aimshots=")) AimShots(a);
+            else if (a.StartsWith("--crosshairshots=")) CrosshairShots(a);
+            else if (a.StartsWith("--walkshots=")) WalkShots(a);
+            else if (a.StartsWith("--lookshots=")) LookShots(a);
+            else if (a == "--upnpcheck")
+            {
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    string result = PortOpener.Probe();
+                    Callable.From(() => { Log.Info($"UPNPCHECK {result}"); GetTree().Quit(0); }).CallDeferred();
+                });
+            }
+            else if (a == "--makeicon")
+            {
+                _autoMode = "icon";
+                Fx.IconMaker.Make(this);
+            }
+            else if (a == "--menushots" && _shotDir != null) MenuShots();
+        }
+    }
+}
