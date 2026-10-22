@@ -4,6 +4,9 @@ using System.Text;
 
 namespace Brawler.Logic;
 
+/// <summary>Why a map code didn't open.</summary>
+public enum MapCodeError { None, NotACode, Damaged, Newer }
+
 /// <summary>
 /// Map codes: a <see cref="MapDesign"/> packed into a short line of text to paste to friends. The design is
 /// bit-packed (every coordinate takes 10 bits or fewer, in the coarsest of 1, 2, 4 or 8 px steps that is still exact for
@@ -18,7 +21,23 @@ public static class MapCode
     public static string Encode(MapDesign d) => Text(Pack(d));
 
     /// <summary>Reads a code (spaces and line breaks are ignored); null if it isn't a valid map code.</summary>
-    public static MapDesign Decode(string code) => Bytes(code) is { } b ? Unpack(b) : null;
+    public static MapDesign Decode(string code) => Decode(code, out _);
+
+    /// <summary>Reads a code, and when it can't, says why (see <see cref="Problem"/>).</summary>
+    public static MapDesign Decode(string code, out MapCodeError why)
+    {
+        if (Bytes(code) is not { } b) { why = MapCodeError.NotACode; return null; }
+        return Unpack(b, out why);
+    }
+
+    /// <summary>What to tell a player about a code that didn't open.</summary>
+    public static string Problem(MapCodeError why) => why switch
+    {
+        MapCodeError.Damaged => "That map code is damaged: part of it is missing or changed. Copy the whole code again.",
+        MapCodeError.Newer => "That map was made in a newer version of Brawler. Update the game to open it.",
+        _ => "That isn't a map code.",
+    };
+
 
     /// <summary>The design as bytes (what a lobby sends to everyone); see <see cref="Unpack"/>.</summary>
     public static byte[] Pack(MapDesign d)
@@ -93,13 +112,21 @@ public static class MapCode
     }
 
     /// <summary>A design from <see cref="Pack"/>'s bytes, or null if they are damaged or from a newer version.</summary>
-    public static MapDesign Unpack(byte[] bytes)
+    public static MapDesign Unpack(byte[] bytes) => Unpack(bytes, out _);
+
+    public static MapDesign Unpack(byte[] bytes, out MapCodeError why)
     {
-        if (bytes == null || bytes.Length < 6 || bytes[^1] != Checksum(bytes, bytes.Length - 1)) return null;
+        // The version is the first 4 bits, and every version ends in this checksum. A sound newer code says so; a
+        // broken one of this version is a damaged paste; anything else isn't a map code at all.
+        int version = bytes is { Length: > 0 } ? bytes[0] >> 4 : -1;
+        bool sound = bytes is { Length: >= 2 } && bytes[^1] == Checksum(bytes, bytes.Length - 1);
+        why = version == Version ? MapCodeError.Damaged : sound && version > Version ? MapCodeError.Newer : MapCodeError.NotACode;
+        if (!sound || version != Version || bytes.Length < 6) return null;
+
         try
         {
             var r = new BitReader(bytes, bytes.Length - 1);
-            if (r.Bits(4) != Version) return null;
+            r.Bits(4); // the version, checked above
             var d = new MapDesign { Seed = (int)r.UBits(32) };
             int style = r.Bits(3);
             if (style >= Enum.GetValues<MapStyle>().Length) return null;
@@ -170,6 +197,7 @@ public static class MapCode
                 float phase = r.Bits(4) / 16f;
                 d.Movers.Add(new Mover(v[0], v[0] + v[1], v[2], ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(v[0], v[0] + v[1]), phase));
             }
+            why = MapCodeError.None;
             return d;
         }
         catch (IndexOutOfRangeException)
@@ -196,14 +224,14 @@ public static class MapCode
         for (int i = 0; i < Math.Min(list.Count, max); i++) yield return list[i];
     }
 
-    private static byte Checksum(byte[] data, int n)
+    internal static byte Checksum(byte[] data, int n)
     {
         int sum = 0x6D;
         for (int i = 0; i < n; i++) sum = (sum * 31 + data[i]) & 0xFF;
         return (byte)sum;
     }
 
-    private static string Text(byte[] bytes)
+    internal static string Text(byte[] bytes)
     {
         var sb = new StringBuilder();
         int acc = 0, bits = 0;

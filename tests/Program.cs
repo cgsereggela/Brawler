@@ -1785,6 +1785,19 @@ static List<byte[]> DecodeGif(byte[] g)
     var broken = good[..10] + (good[10] == 'A' ? 'B' : 'A') + good[11..];
     Check(MapCode.Decode(broken) == null, "Map code: a changed character is caught");
     Check(MapCode.Decode(good[..(good.Length / 2)]) == null && MapCode.Decode("hello world!") == null && MapCode.Decode("") == null, "Map code: cut-off codes and junk are rejected");
+    {
+        MapCode.Decode("hello world!", out var junk);
+        MapCode.Decode(good[..(good.Length / 2)], out var cut);
+        var flipped = good[..10] + (good[10] == 'A' ? 'B' : 'A') + good[11..];
+        MapCode.Decode(flipped, out var changed);
+        var newer = MapCode.Pack(MapCode.Decode(good));
+        newer[0] = (byte)(newer[0] & 0x0F | (MapCode.Version + 1) << 4);
+        newer[^1] = MapCode.Checksum(newer, newer.Length - 1);
+        MapCode.Decode(MapCode.Text(newer), out var future);
+        MapCode.Decode(good, out var fine);
+        Check(junk == MapCodeError.NotACode && cut == MapCodeError.Damaged && changed == MapCodeError.Damaged && future == MapCodeError.Newer && fine == MapCodeError.None,
+            $"Map code: a bad code says why (junk {junk}, cut off {cut}, changed {changed}, newer {future})");
+    }
     Check(MapCode.Decode(" " + good[..20] + "\n" + good[20..] + " ") != null, "Map code: spaces and line breaks in a paste are ignored");
     // The largest map a code can carry (every list full, coordinates spread out): what a lobby with 12 of them sends.
     var full = new MapDesign { Name = new string('W', MapDesign.MaxName), Seed = int.MaxValue, Style = MapStyle.Tiers };

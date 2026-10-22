@@ -442,10 +442,10 @@ public partial class MapEditorUI : Control
     /// <summary>Opens a pasted map code; true if it was one.</summary>
     public bool Import(string text)
     {
-        var d = MapCode.Decode(text);
+        var d = MapCode.Decode(text, out var why);
         if (d == null)
         {
-            Flash("That isn't a map code (or part of it is missing).");
+            Flash(MapCode.Problem(why));
             return false;
         }
         Remember();

@@ -163,10 +163,10 @@ public partial class ArenaPoolUI : Control
     private void Add(string text)
     {
         if (!_net.IsHost) return;
-        var d = MapCode.Decode(text);
+        var d = MapCode.Decode(text, out var why);
         if (d == null)
         {
-            _message.Text = "That isn't a map code (or part of it is missing).";
+            _message.Text = MapCode.Problem(why);
             return;
         }
         var code = MapCode.Encode(d);
