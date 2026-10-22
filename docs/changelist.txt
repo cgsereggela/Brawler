@@ -1,10 +1,10 @@
 issues to fix:
-- at the beginning of the round we need a larger indicator like an arrow or target or something highlighting my player so I know where to start lookingd
 - I seem to get rare cards offered every time, this should only happen occasionaly, based on the chance set in the options
 - the crosshair should disappear after death when controlling the ghost
 - the end game screen should be less transparent and harder to see through
 - the end game screen has too much text on it, hide the list of cards in this screen
 - draw the player stats on top of the end screen when both are showing at the same time
+- the reload happens to soon when the player still has ammo, automatic reload should only happen when the user runs out of ammo, otherwise they can press a key (r by default) to reload early
 
 features to add:
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code

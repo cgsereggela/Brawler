@@ -116,6 +116,7 @@ public partial class GameManager : Node2D
         AddChild(Bullets);
         AddChild(new LavaNode { Name = "Lava", Game = this });
         AddChild(Fx);
+        AddChild(new SpawnMarker { Name = "SpawnMarker", Game = this });
         AddChild(_cam);
         _cam.MakeCurrent();
         Fx.ScreenRect = new Rect2(-40, -40, MapLayout.Width + 80, MapLayout.Height + 80);

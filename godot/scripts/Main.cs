@@ -1086,12 +1086,17 @@ public partial class Main : Node
             SimMatchEnded(-1);
         }
         if (_shotDir != null && _autoMode != "readme" && _frames % 240 == 0 && _shotCount < 40) SaveShot();
+        // And one mid-countdown each battle, where the YOU marker shows.
+        bool counting = _game.Phase == Phase.Countdown && _game.CountdownLeft < GameManager.CountdownTime / 2;
+        if (_shotDir != null && _autoMode != "readme" && counting && !_countdownShot && _shotCount < 40) SaveShot();
+        _countdownShot = counting;
     }
 
     // ---------- --dropat=N (with --autojoin): leave in battle N, join again, and check the slot came back ----------
 
     private int _dropAt, _dropCards, _joinPort;
     private bool _noBots, _dropping, _rejoinChecked;
+    private bool _countdownShot;
     private string _joinHost;
 
     private void AutoDropMaybe()
