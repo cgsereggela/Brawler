@@ -17,6 +17,7 @@ public partial class LobbyUI : Control
     private Button _copy;
     private VBoxContainer _inviteRow;
     private GridContainer _players;
+    private HBoxContainer _row;
     private Button _addBot, _addLocal, _start, _color, _cards;
     private CardPoolUI _pool;
     private ArenaPoolUI _arenaPool;
@@ -32,11 +33,9 @@ public partial class LobbyUI : Control
         // Two glass panels side by side, players on the left and match settings on the right, with the title, the
         // connection info and Start between them. Everything fits on screen at once, so nothing scrolls.
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        var center = new CenterContainer();
-        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(center);
-        var row = UiKit.HBox(14);
-        center.AddChild(row);
+        // Placed by FitRow rather than a CenterContainer: some modes and team sizes make the row wider than the screen.
+        var row = _row = UiKit.HBox(14);
+        AddChild(row);
 
         var left = Panel(row);
         left.AddChild(UiKit.Label("PLAYERS", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
@@ -376,9 +375,15 @@ public partial class LobbyUI : Control
         nameLabel.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         v.AddChild(nameLabel);
         string tag = p.IsBot ? p.Skill == BotSkill.Normal ? "BOT" : $"{BotTuning.Name(p.Skill).ToUpperInvariant()} BOT" : p.PeerId == _net.LocalPeer ? "YOU" : p.Guest > 0 ? "COUCH" : "PLAYER";
-        // One line under the name: the team tag (team modes), then remove (the host's bots) or who this is.
+        // Under the name: the team tag (team modes), then the bot's skill or who this is; remove (the host's bots, your
+        // couch guests) gets a line of its own below, since the cards have room to grow down but not sideways.
         var foot = UiKit.HBox(4);
         v.AddChild(foot);
+        void AddRemove(Button x)
+        {
+            x.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            v.AddChild(x);
+        }
         int s = p.Slot;
         if (team >= 0)
         {
@@ -396,9 +401,12 @@ public partial class LobbyUI : Control
         if (myGuest)
         {
             int guest = p.Guest;
-            var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveGuest(guest), 0, "Small");
+            var l = UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold);
+            l.VerticalAlignment = VerticalAlignment.Center;
+            foot.AddChild(l);
+            var x = UiKit.Button("remove", () => _net.RemoveGuest(guest), 0, "Small");
             x.TooltipText = $"Remove this local player ({PadName(guest)})";
-            foot.AddChild(x);
+            AddRemove(x);
         }
         else if (host && p.IsBot)
         {
@@ -406,9 +414,9 @@ public partial class LobbyUI : Control
             skill.TooltipText = "How well this bot plays: Easy, Normal or Hard (click to change)";
             skill.AddThemeColorOverride("font_color", SkillColor(p.Skill));
             foot.AddChild(skill);
-            var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveBot(s), 0, "Small");
+            var x = UiKit.Button("remove", () => _net.RemoveBot(s), 0, "Small");
             x.TooltipText = "Remove this bot";
-            foot.AddChild(x);
+            AddRemove(x);
         }
         else
         {
@@ -454,6 +462,7 @@ public partial class LobbyUI : Control
 
     public override void _Process(double delta)
     {
+        FitRow();
         if (_padWait <= 0) return;
         _padWait -= (float)delta;
         _padWaitAge += (float)delta;
@@ -468,6 +477,22 @@ public partial class LobbyUI : Control
                     break;
                 }
         if (_padWait <= 0) RefreshAddLocal();
+    }
+
+    /// <summary>
+    /// Centers the panels, shrinking them all together when they need more room than the screen has (wide team cards,
+    /// a long settings list), so every setting and button stays on screen whatever the mode.
+    /// </summary>
+    private void FitRow()
+    {
+        if (_row == null || !IsVisibleInTree()) return;
+        const float margin = 16;
+        var min = _row.GetCombinedMinimumSize();
+        var room = Size - new Vector2(margin, margin) * 2;
+        float s = Mathf.Min(1, Mathf.Min(room.X / Mathf.Max(1, min.X), room.Y / Mathf.Max(1, min.Y)));
+        _row.Size = min;
+        _row.Scale = new Vector2(s, s);
+        _row.Position = ((Size - min * s) / 2).Floor();
     }
 
     private void Refresh()

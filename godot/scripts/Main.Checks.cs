@@ -1051,4 +1051,36 @@ public partial class Main
         _autoMode = null;
         GetTree().Quit(code);
     }
+
+    // ---------- --lobbycheck: every lobby layout fits on screen ----------
+
+    /// <summary>
+    /// A full lobby (host, a couch guest and six bots) in every game mode and team size: fails if any button or label
+    /// of the lobby ends up off screen. With --shots=DIR, saves each layout.
+    /// </summary>
+    private async void LobbyCheck()
+    {
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        Press(_menu, "PLAY VS BOTS");
+        await Wait(0.5);
+        _net.AddGuest(100);
+        while (_net.Lobby.Players.Count < LobbyState.MaxPlayers) _net.AddBot();
+        int layouts = 0;
+        foreach (var mode in GameModes.All)
+            foreach (int size in new[] { 0, 2, 3, 4 })
+            {
+                _net.Lobby.Settings.Mode = mode;
+                _net.SetTeamSize(size);
+                await Wait(0.15);
+                var screen = GetViewport().GetVisibleRect().Grow(0.5f);
+                var off = FindAll<Control>(_lobby, c => c.IsVisibleInTree() && c is BaseButton or Label && !screen.Encloses(c.GetGlobalRect()))
+                    .Select(c => c is Button b ? b.Text : ((Label)c).Text).ToList();
+                string name = $"{GameModes.Id(mode)}_{(size == 0 ? "ffa" : $"{size}v{size}")}";
+                if (_shotDir != null) SaveShot($"lobby_{name}");
+                if (off.Count > 0) { Finish(1, $"lobbycheck: {name}: off screen: {string.Join(", ", off.Take(6))}"); return; }
+                layouts++;
+            }
+        Finish(0, $"lobbycheck: all {layouts} lobby layouts fit on screen");
+    }
 }

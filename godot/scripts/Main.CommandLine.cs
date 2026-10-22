@@ -60,6 +60,8 @@ namespace Brawler;
 //   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 //   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
 //                         player input, and a card pick chosen on each controller; exits 0 on success
+//   --lobbycheck          fills the lobby (a couch guest and bots) and walks every game mode and team size, failing if
+//                         anything ends up off screen (with --shots=DIR, saves each layout), then quits
 //   --editorcheck         drives the map editor with made-up mouse presses (draw a block, a gap and a hill; place a spawn, a
 //                         crate and a pool; move, resize, undo, delete; save, share and reopen a map code), then playtests
 //                         the arena against a bot and checks the battle is played on it; exits 0 on success (with
@@ -123,6 +125,11 @@ public partial class Main
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--lobbycheck")
+            {
+                _autoMode = "lobbycheck";
+                LobbyCheck();
+            }
             else if (a == "--editorcheck")
             {
                 _autoMode = "editorcheck";
