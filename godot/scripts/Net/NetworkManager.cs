@@ -158,7 +158,7 @@ public partial class NetworkManager : Node
         Lobby.Players.Add(new PlayerInfo
         {
             Slot = slot, PeerId = 1, IsBot = true, Name = $"Bot {Palette.Names[color]}", ColorIdx = color,
-            Team = Lobby.NewcomerTeam(), Look = Appearance.Random(_botLooks),
+            Team = Lobby.NewcomerTeam(), Look = Appearance.Random(_botLooks), Skill = TestBotSkills is { } skills && skills.Count > 0 ? skills[Lobby.Players.Count(p => p.IsBot) % skills.Count] : NewBotSkill,
         });
         BroadcastLobby();
     }
@@ -176,6 +176,20 @@ public partial class NetworkManager : Node
         var p = Lobby.BySlot(slot);
         if (p == null || InMatch || !Lobby.TeamMode) return;
         p.Team = Teams.Swap(Lobby.Players.Where(o => o != p).Select(o => o.Team), p.Team, Lobby.Settings.TeamSize);
+        BroadcastLobby();
+    }
+
+    /// <summary>The skill a newly added bot gets: the last one the host picked for a bot.</summary>
+    public BotSkill NewBotSkill = BotSkill.Normal;
+
+    /// <summary>--botskills: the skills bots get as they are added, in turn (tests and demos).</summary>
+    public System.Collections.Generic.List<BotSkill> TestBotSkills;
+
+    /// <summary>Host: moves a bot to the next skill level (Easy, Normal, Hard, then Easy again).</summary>
+    public void CycleBotSkill(int slot)
+    {
+        if (!IsHost || InMatch || Lobby.BySlot(slot) is not { IsBot: true } p) return;
+        p.Skill = NewBotSkill = BotTuning.Next(p.Skill);
         BroadcastLobby();
     }
 

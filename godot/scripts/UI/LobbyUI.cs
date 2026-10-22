@@ -366,7 +366,7 @@ public partial class LobbyUI : Control
         nameLabel.ClipText = true;
         nameLabel.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         v.AddChild(nameLabel);
-        string tag = p.IsBot ? "BOT" : p.PeerId == _net.LocalPeer ? "YOU" : p.Guest > 0 ? "COUCH" : "PLAYER";
+        string tag = p.IsBot ? p.Skill == BotSkill.Normal ? "BOT" : $"{BotTuning.Name(p.Skill).ToUpperInvariant()} BOT" : p.PeerId == _net.LocalPeer ? "YOU" : p.Guest > 0 ? "COUCH" : "PLAYER";
         // One line under the name: the team tag (team modes), then remove (the host's bots) or who this is.
         var foot = UiKit.HBox(4);
         v.AddChild(foot);
@@ -393,6 +393,10 @@ public partial class LobbyUI : Control
         }
         else if (host && p.IsBot)
         {
+            var skill = UiKit.Button(BotTuning.Name(p.Skill), () => _net.CycleBotSkill(s), 0, "Small");
+            skill.TooltipText = "How well this bot plays: Easy, Normal or Hard (click to change)";
+            skill.AddThemeColorOverride("font_color", SkillColor(p.Skill));
+            foot.AddChild(skill);
             var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveBot(s), 0, "Small");
             x.TooltipText = "Remove this bot";
             foot.AddChild(x);
@@ -405,6 +409,8 @@ public partial class LobbyUI : Control
         }
         return card;
     }
+
+    private static Color SkillColor(BotSkill s) => s switch { BotSkill.Easy => new Color("#9cf0a0"), BotSkill.Hard => new Color("#ff8a6a"), _ => Palette.Text };
 
     // ---------- local co-op ----------
 

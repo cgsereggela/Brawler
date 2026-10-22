@@ -49,7 +49,7 @@ public sealed class StatsRecorder
             },
         };
         foreach (var p in players.OrderBy(p => p.Slot))
-            _match.Players.Add(new PlayerRec { Slot = p.Slot, Name = p.Info.Name, Bot = isBot(p) });
+            _match.Players.Add(new PlayerRec { Slot = p.Slot, Name = p.Info.Name, Bot = isBot(p), Skill = isBot(p) ? BotTuning.Name(p.Info.IsBot ? p.Info.Skill : BotSkill.Normal) : null });
         _matchT = 0;
         _battle = null;
     }

@@ -21,11 +21,15 @@ public sealed class BotBrain : IInputSource
     private Vector2 _aimWobble;
     private float _preferredDist;
     private readonly HashSet<int> _consideredBullets = new();
+    private readonly BotTuning _tune;
+    private Avatar _seen;
+    private float _seenT;
 
-    public BotBrain(GameManager game)
+    public BotBrain(GameManager game, BotSkill skill = BotSkill.Normal)
     {
         _game = game;
-        _preferredDist = _rng.RandfRange(140, 240);
+        _tune = BotTuning.Of(skill);
+        _preferredDist = _rng.RandfRange(_tune.PrefMin, _tune.PrefMax);
     }
 
     public InputFrame Next(Avatar self, float dt)
@@ -55,16 +59,20 @@ public sealed class BotBrain : IInputSource
             float tDist = tTo.Length();
             float speed = self.S[Stat.BulletSpeed];
             float t = tDist / speed;
-            var predicted = target.GlobalPosition + target.Velocity * t * 0.8f;
+            var predicted = target.GlobalPosition + target.Velocity * t * _tune.Lead;
             predicted.Y -= 0.5f * self.S[Stat.BulletGravity] * t * t;
             if (_aimWobbleT <= 0)
             {
                 _aimWobbleT = 0.3f;
-                _aimWobble = new Vector2(_rng.RandfRange(-1, 1), _rng.RandfRange(-1, 1)) * (6 + tDist * 0.06f);
+                _aimWobble = new Vector2(_rng.RandfRange(-1, 1), _rng.RandfRange(-1, 1)) * (6 + tDist * 0.06f) * _tune.AimError;
             }
             f.Aim = predicted + _aimWobble;
             bool sight = HasLineOfSight(me, target.GlobalPosition);
-            f.Shoot = sight && tDist < 520 && (self.Ammo > 1 || tDist < 180 || _rng.Randf() < 0.05f);
+            // Reaction time: a target has to stay in sight a moment before the first shot.
+            if (!sight || target != _seen) _seenT = 0;
+            else _seenT += dt;
+            _seen = sight ? target : null;
+            f.Shoot = sight && _seenT >= _tune.Reaction && tDist < _tune.Range && (self.Ammo > 1 || tDist < 180 || _rng.Randf() < 0.05f);
             f.Reload = !sight && lowAmmo;
         }
 
@@ -291,7 +299,7 @@ public sealed class BotBrain : IInputSource
         // --- block incoming bullets ---
         if (self.BlockReady && ThreatIncoming(self, out int bulletId) && _consideredBullets.Add(bulletId))
         {
-            if (_rng.Randf() < 0.55f) _blocks++;
+            if (_rng.Randf() < _tune.BlockChance) _blocks++;
         }
         // Shield Bash: block into an enemy that's close enough to slam.
         else if (self.BlockReady && self.S[Stat.ShieldBash] > 0 && NearestEnemy(self) is { } close

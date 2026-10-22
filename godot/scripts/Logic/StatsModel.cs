@@ -13,7 +13,7 @@ namespace Brawler.Logic;
 /// </summary>
 public sealed class MatchRecord
 {
-    public const int CurrentVersion = 4; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal); 3: SettingsRec.TeamSize; 4: SettingsRec.GameMode
+    public const int CurrentVersion = 5; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal); 3: SettingsRec.TeamSize; 4: SettingsRec.GameMode; 5: PlayerRec.Skill
 
     public int V { get; set; } = CurrentVersion;
     public string Id { get; set; }
@@ -51,6 +51,8 @@ public sealed class PlayerRec
     public string Name { get; set; }
     /// <summary>True for AI bots and for an autopilot-driven local player.</summary>
     public bool Bot { get; set; }
+    /// <summary>Bots: Easy, Normal or Hard (see BotTuning); null for people. Card stats should come from Normal bots.</summary>
+    public string Skill { get; set; }
     public List<int> FinalCards { get; set; } = new();
     public int RoundWins { get; set; }
     public bool Left { get; set; }

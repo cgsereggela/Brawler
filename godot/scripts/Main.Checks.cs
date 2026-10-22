@@ -541,7 +541,7 @@ public partial class Main
     {
         _simDone++;
         double secs = _simClock.Elapsed.TotalSeconds;
-        Log.Info($"SIMULATE {_simDone}/{_simTotal} done (winner slot {winner}, {_game.BattleNumber} battles, {secs:0}s elapsed)");
+        Log.Info($"SIMULATE {_simDone}/{_simTotal} done (winner slot {winner}, {_game.BattleNumber} battles, {secs:0}s elapsed) | {_game.ScoreLine()}");
         // Defer: we're inside the BattleOver RPC; tearing the match down right here would pull state from under it.
         Callable.From(() =>
         {

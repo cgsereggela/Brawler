@@ -536,7 +536,7 @@ public partial class GameManager
             if (AttachLocal(mp)) { }
             else if (IsHost)
             {
-                mp.Input = info.IsBot ? new BotBrain(this) : new RemoteInput();
+                mp.Input = info.IsBot ? new BotBrain(this, info.Skill) : new RemoteInput();
             }
             Slots[info.Slot] = mp;
         }

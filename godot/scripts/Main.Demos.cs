@@ -25,6 +25,7 @@ public partial class Main
         switch (name)
         {
             case "thumbs": await DemoThumbs(); break;
+            case "botskill": await DemoBotSkill(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -41,6 +42,17 @@ public partial class Main
     }
 
     private static void Press(Node root, string text) => FindButton(root, text)?.EmitSignal(BaseButton.SignalName.Pressed);
+
+    private static System.Collections.Generic.List<T> FindAll<T>(Node root, System.Func<T, bool> match) where T : Node
+    {
+        var list = new System.Collections.Generic.List<T>();
+        foreach (var c in root.GetChildren())
+        {
+            if (c is T t && match(t)) list.Add(t);
+            list.AddRange(FindAll(c, match));
+        }
+        return list;
+    }
 
     // Map thumbnails: a few saved arenas in My maps, then the lobby's Arenas panel picking some for a match.
     private async Task DemoThumbs()
@@ -84,6 +96,31 @@ public partial class Main
         _game.AutopilotLocal = true;
         _game.HostStartMatch();
         await DemoWait(9.0);
+        DemoMark("end");
+    }
+
+    // Bot skill: three bots in the lobby set to Easy, Normal and Hard with their buttons, then a match against them.
+    private async Task DemoBotSkill()
+    {
+        _game.DisableKillCam = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        await DemoWait(1.2);
+        DemoMark("lobby");
+        // Each press rebuilds the cards, so look the buttons up again every time.
+        Button SkillButton(int bot) => FindAll<Button>(_lobby, b => b.IsVisibleInTree() && b.Text is "Easy" or "Normal" or "Hard") is var bs && bot < bs.Count ? bs[bot] : null;
+        foreach (var (bot, presses) in new[] { (0, 2), (1, 1), (2, 3) })
+            for (int i = 0; i < presses; i++)
+            {
+                SkillButton(bot)?.EmitSignal(BaseButton.SignalName.Pressed);
+                await DemoWait(0.7);
+            }
+        await DemoWait(2.0);
+        DemoMark("match");
+        _game.AutopilotLocal = true;
+        _game.HostStartMatch();
+        await DemoWait(40.0);
         DemoMark("end");
     }
 }

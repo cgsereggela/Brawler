@@ -47,6 +47,7 @@ public sealed class PlayerInfo
     public bool IsBot;
     public int Team; // 0 or 1 in team modes (see Teams)
     public int Guest; // 0 = the person at the keyboard; 1-3 = a local co-op guest on the same machine (see Pads.Couch)
+    public BotSkill Skill = BotSkill.Normal; // bots only: how well it plays (see BotTuning)
     public Appearance Look = Appearance.Default();
     public string Key; // host only, never sent: the player's rejoin key (see NetworkManager.RejoinKey)
 }
@@ -136,7 +137,7 @@ public sealed class LobbyState
         w.U8(Players.Count);
         foreach (var p in Players)
             {
-            w.U8(p.Slot).I64(p.PeerId).Str(p.Name).U8(p.ColorIdx).Bool(p.IsBot).U8(p.Team).U8(p.Guest);
+            w.U8(p.Slot).I64(p.PeerId).Str(p.Name).U8(p.ColorIdx).Bool(p.IsBot).U8(p.Team).U8(p.Guest).U8((byte)p.Skill);
             w.Bytes(p.Look.ToBytes());
         }
         return w.Done();
@@ -166,7 +167,7 @@ public sealed class LobbyState
         else for (; maps > 0; maps--) s.Settings.Maps.Add(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)
-            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Team = r.U8(), Guest = r.U8(), Look = Appearance.FromBytes(r.Bytes()) });
+            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Team = r.U8(), Guest = r.U8(), Skill = (BotSkill)r.U8(), Look = Appearance.FromBytes(r.Bytes()) });
         return s;
     }
 }

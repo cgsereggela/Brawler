@@ -32,6 +32,7 @@ namespace Brawler;
 //                         lobby, the match played by autopilot, the match-over screen with a hover card, then quit
 //   --demo=NAME           a scripted walk through one feature (thumbs), paced for recording with --write-movie for a
 //                         Short; logs "DEMO <frame> <label>" at the moments to cut to
+//   --botskills=A,B,..    bots get these skills (easy, normal, hard) as they are added, in turn
 //   --focuslog=PATH       write one line per drawn frame (phase, kill cam, live bullets, where the action is across the
 //                         screen), to crop a recording to portrait
 //   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
@@ -134,6 +135,8 @@ public partial class Main
                 PadCheck();
             }
             else if (a == "--nobots") _noBots = true;
+            else if (a.StartsWith("--botskills="))
+                _net.TestBotSkills = a["--botskills=".Length..].Split(',').Select(s => System.Enum.TryParse<BotSkill>(s, true, out var k) ? k : BotSkill.Normal).ToList();
             else if (a.StartsWith("--couch=") && int.TryParse(a["--couch=".Length..], out int couch)) _couch = Mathf.Clamp(couch, 0, CouchRoster.MaxGuests);
             else if (a == "--nofxcull") Fx.FxLayer.Culling = false;
             else if (a == "--rematch") _rematchTest = true;
