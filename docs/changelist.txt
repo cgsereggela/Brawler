@@ -1,5 +1,4 @@
 issues to fix:
-- arenas in a match are only shown by name: let players save the current arena (or copy its code) from the lobby's Arenas panel or the battle HUD
 
 features to add:
 - map thumbnails in My maps, the editor's library and the lobby's Arenas panel

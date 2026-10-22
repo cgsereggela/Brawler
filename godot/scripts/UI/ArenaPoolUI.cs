@@ -107,7 +107,7 @@ public partial class ArenaPoolUI : Control
                 var box = new CheckBox { Text = name, ButtonPressed = chosen.Contains(code), FocusMode = FocusModeEnum.None, SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 box.AddThemeFontSizeOverride("font_size", UiKit.Small);
                 box.Toggled += on => Toggle(rows.Select(r => r.Code).ToList(), code, on);
-                _list.AddChild(Row(box, design));
+                _list.AddChild(Row(box, design, code));
             }
         }
         else
@@ -118,8 +118,8 @@ public partial class ArenaPoolUI : Control
                 var d = MapCode.Decode(code);
                 var name = UiKit.Label(d.Name != "" ? d.Name : "Untitled", UiKit.Small, Palette.Text);
                 name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-                var row = Row(name, d);
-                bool saved = library.Exists(e => e.Code == code);
+                var row = Row(name, d, code);
+                bool saved = MapLibrary.Holds(code);
                 var save = UiKit.Button(saved ? "Saved" : "Save", () =>
                 {
                     if (d.Name == "") d.Name = "Shared arena";
@@ -134,11 +134,19 @@ public partial class ArenaPoolUI : Control
         }
     }
 
-    private static HBoxContainer Row(Control first, MapDesign d)
+    /// <summary>An arena's row: its name (or tick box), theme, and Copy for its code.</summary>
+    private HBoxContainer Row(Control first, MapDesign d, string code)
     {
         var row = UiKit.HBox(8);
         row.AddChild(first);
         row.AddChild(UiKit.Label(ThemeRules.Name(d.Theme), UiKit.Tiny, Palette.TextDim));
+        var copy = UiKit.Button("Copy", () =>
+        {
+            DisplayServer.ClipboardSet(code);
+            _message.Text = $"Copied the code for {(d.Name != "" ? d.Name : "this arena")}: paste it to friends, or into the map editor.";
+        }, 0, "Small");
+        copy.TooltipText = "Copy this arena's map code";
+        row.AddChild(copy);
         return row;
     }
 

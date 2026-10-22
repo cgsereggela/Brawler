@@ -71,12 +71,14 @@ public partial class GameManager
     /// A battle's arena on every peer: with custom arenas in the lobby, the one whose turn the seed carries (a code that
     /// doesn't read falls back to a generated arena); otherwise the seed's generated arena.
     /// </summary>
-    public MapLayout LayoutFor(int seed, int players, out string name)
+    public MapLayout LayoutFor(int seed, int players, out string name, out MapDesign custom)
     {
         var maps = Settings.Maps;
         name = null;
+        custom = null;
         if (maps.Count > 0 && MapCode.Unpack(maps[(int)((uint)seed % (uint)maps.Count)]) is { } design)
         {
+            custom = design;
             name = design.Name != "" ? design.Name : null;
             return design.Build(players);
         }
@@ -85,6 +87,9 @@ public partial class GameManager
 
     /// <summary>What the HUD calls this battle's arena: a custom arena's name, else its theme.</summary>
     public string ArenaName { get; private set; } = "";
+
+    /// <summary>This battle's custom arena as a map code (to save or share from the overlay), or null for a generated one.</summary>
+    public string ArenaCode { get; private set; }
 
     /// <summary>
     /// The level editor's framing: the camera fixed on the whole arena drawn at <c>Zoom</c> with its top-left corner at
@@ -565,9 +570,10 @@ public partial class GameManager
             }
 
         var active = Active().OrderBy(p => p.Slot).ToList();
-        var layout = LayoutFor(seed, active.Count, out var arenaName);
+        var layout = LayoutFor(seed, active.Count, out var arenaName, out var custom);
         MapNode.Build(layout);
         ArenaName = arenaName ?? MapNode.Theme.Name;
+        ArenaCode = custom != null ? MapCode.Encode(custom) : null;
         Arena.Build(layout);
 
         // Seeded shuffle so spawn positions rotate fairly but identically on all peers.

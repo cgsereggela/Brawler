@@ -205,6 +205,7 @@ public partial class Main : Node
     {
         if (_overlay || !_hud.Visible) return;
         _overlay = true;
+        _options.SetArena(_game.ArenaCode);
         _options.SetOverlay(true);
         _options.Visible = true;
         LocalInput.Suppressed = true;

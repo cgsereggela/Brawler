@@ -1,6 +1,7 @@
 using System;
 using Brawler.Core;
 using Brawler.Fx;
+using Brawler.Logic;
 using Godot;
 
 namespace Brawler.UI;
@@ -21,6 +22,10 @@ public partial class OptionsUI : Control
     private bool _overlay;
     private ColorRect _dim;
     private Control _leaveButton, _leaveConfirm, _done;
+    private HBoxContainer _arenaRow;
+    private Label _arenaLabel;
+    private Button _arenaSave;
+    private string _arenaCode;
 
     public OptionsUI(Sfx sfx) => _sfx = sfx;
     public OptionsUI() { }
@@ -31,7 +36,34 @@ public partial class OptionsUI : Control
         _overlay = overlay;
         if (_dim == null) return;
         _dim.Visible = overlay;
+        SetArena(overlay ? _arenaCode : null);
         ShowLeaveConfirm(false);
+    }
+
+    /// <summary>The battle's custom arena (a map code) for the overlay's Save and Copy, or null to hide them.</summary>
+    public void SetArena(string code)
+    {
+        _arenaCode = code;
+        if (_arenaRow == null) return;
+        var d = code != null ? MapCode.Decode(code) : null;
+        _arenaRow.Visible = _overlay && d != null;
+        if (d == null) return;
+        bool saved = MapLibrary.Holds(code);
+        _arenaLabel.Text = $"Arena: {(d.Name != "" ? d.Name : "Untitled")}";
+        _arenaSave.Text = saved ? "SAVED" : "SAVE ARENA";
+        _arenaSave.Disabled = saved;
+    }
+
+    private void SaveArena()
+    {
+        var d = MapCode.Decode(_arenaCode);
+        if (d == null) return;
+        d.Name = MapLibrary.FreeName(d.Name != "" ? d.Name : "Shared arena");
+        bool ok = MapLibrary.Save(d);
+        SetArena(_arenaCode);
+        _arenaSave.Text = ok ? "SAVED" : "SAVE ARENA";
+        _arenaSave.Disabled = ok;
+        _arenaLabel.Text = ok ? $"Saved {d.Name} to My maps." : "Couldn't save the arena.";
     }
 
     public override void _Ready()
@@ -63,6 +95,22 @@ public partial class OptionsUI : Control
         AddSlider(grid, "Sound FX", AudioSettings.Effects, v => AudioSettings.Effects = v, "shoot");
 
         body.AddChild(UiKit.Spacer(4));
+        // In a match on a custom arena: keep it, or copy its code for a friend.
+        _arenaRow = UiKit.HBox(8);
+        body.AddChild(_arenaRow);
+        _arenaLabel = UiKit.Label("", UiKit.Small, Palette.TextDim);
+        _arenaLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _arenaLabel.VerticalAlignment = VerticalAlignment.Center;
+        _arenaLabel.ClipText = true;
+        _arenaRow.AddChild(_arenaLabel);
+        _arenaSave = NoFocus(UiKit.Button("SAVE ARENA", SaveArena, 0, "Small"));
+        _arenaRow.AddChild(_arenaSave);
+        _arenaRow.AddChild(NoFocus(UiKit.Button("COPY CODE", () =>
+        {
+            DisplayServer.ClipboardSet(_arenaCode);
+            _arenaLabel.Text = "Code copied: friends paste it in their map editor or lobby.";
+        }, 0, "Small")));
+
         // Footer: Done fills it; in a match Leave sits to its left and swaps the row for a confirm prompt.
         var footer = UiKit.HBox(10);
         body.AddChild(footer);

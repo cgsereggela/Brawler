@@ -407,8 +407,15 @@ public partial class Main
         var spawned = _game.Slots.Where(p => p?.Avatar != null).Select(p => p.Avatar.Position).ToList();
         if (spawned.Count != 2 || !spawned.All(at => design.Spawns.Any(sp => at.DistanceTo(new Vector2(sp.X, sp.Y)) < 30)))
         { Fail($"fighters didn't start on the arena's spawns: {string.Join(" ", spawned)}"); return; }
+        // The overlay offers the arena: here already saved, so its Save says so.
+        if (MapCode.Decode(_game.ArenaCode ?? "")?.Name != "Check Arena") { Fail($"the battle's arena code is {_game.ArenaCode ?? "missing"}"); return; }
+        OpenOverlay();
+        var savedArena = FindButton(_options, "SAVED");
+        bool arenaRowShown = savedArena is { Disabled: true } && savedArena.IsVisibleInTree() && FindButton(_options, "COPY CODE") != null;
+        CloseOverlay();
+        if (!arenaRowShown) { Fail("the match overlay doesn't offer the custom arena (Saved / Copy code)"); return; }
         if (_shotDir != null) { await Wait(1.5); SaveShot("editor_playtest"); }
-        Log.Info("EDITORCHECK playtest: the battle is played on the arena, from its spawns");
+        Log.Info("EDITORCHECK playtest: the battle is played on the arena, from its spawns, and the overlay offers it");
 
         // Leaving the playtest goes back to the editor, with the arena still there.
         _autoMode = null; // leaving is the point here, not a failure
@@ -434,6 +441,7 @@ public partial class Main
         await Wait(0.2);
         var tick = FindChild<CheckBox>(_lobby, c => c.Text == "Check Arena" && c.IsVisibleInTree());
         if (tick == null) { Fail("the saved arena isn't listed in the lobby's arenas"); return; }
+        if (FindChild<Button>(_lobby, b => b.Text == "Copy" && b.IsVisibleInTree() && b.GetParent() == tick.GetParent()) == null) { Fail("the lobby's arenas have no Copy button"); return; }
         tick.ButtonPressed = true;
         await Wait(0.2);
         if (_net.Lobby.Settings.Maps.Count != 1 || arenas.Text != "Check Arena" || MapLibrary.LobbyMaps.Count != 1)

@@ -49,6 +49,15 @@ public static class MapLibrary
 
     public static bool Exists(string name) => FileAccess.FileExists(PathOf(name));
 
+    /// <summary>True if a saved map is this arena, whatever it was named.</summary>
+    public static bool Holds(string code)
+    {
+        if (MapCode.Decode(code) is not { } d) return false;
+        string Unnamed(MapDesign m) { m.Name = ""; return MapCode.Encode(m); }
+        var want = Unnamed(d);
+        return All().Exists(e => Unnamed(e.Design) == want);
+    }
+
     /// <summary>
     /// The name itself if no saved map has it, otherwise the first free "Name 2", "Name 3"... A count already on the
     /// end is replaced rather than added to, so a copy of "Map 2" is "Map 3", not "Map 2 2".
