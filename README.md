@@ -3,16 +3,22 @@
 A ROUNDS-style 2–8 player platform shooter: lose a round, pick a card, come back stronger.
 Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
-<p align="center"><img src="docs/media/chaos.gif" alt="Four players trading homing, bouncing and exploding shots late in a match" width="720"></p>
+<p align="center"><img src="docs/media/chaos.gif" alt="Four players trading split, bouncing and exploding shots late in a match in Candy Clouds" width="720"></p>
 
 | | |
 |---|---|
-| <img src="docs/media/battle.gif" alt="An early battle in the Deep Reef arena"> | <img src="docs/media/card-pick.gif" alt="Picking a card after losing a round"> |
-| Every battle is on a freshly generated arena, in one of several themes. | Lose a round, pick a card. They stack, and your shots get flashier the more you hold. |
+| <img src="docs/media/battle.gif" alt="A battle starting in Toxic Grove, with the YOU marker over your character"> | <img src="docs/media/card-pick.gif" alt="Picking a card after losing a round, with a cursed deal on the right"> |
+| Every battle is on a freshly generated arena, in one of ten themes. Rings and a YOU arrow show where you start. | Lose a round, pick a card. They stack, and your shots get flashier the more you hold. |
 | <img src="docs/media/frost-bite.png" alt="A battle in the Frost Bite arena"> | <img src="docs/media/stats-hover.png" alt="Hovering a player chip shows their cards and stats"> |
 | Block to stop a shot. Block cards let you reflect, heal or bash. | Hover any player to see their cards and how they changed their stats. |
-| <img src="docs/media/sunset-peaks.png" alt="A chaotic late-match fight in Sunset Peaks"> | <img src="docs/media/match-over.png" alt="The match-over screen with every player's cards"> |
-| Late in a match, most shots split, bounce or explode. | The first to win enough rounds takes the match. |
+| <img src="docs/media/kill-cam.gif" alt="The kill cam replaying a double kill in slow motion"> | <img src="docs/media/cursed-deal.png" alt="Taking a cursed deal: the rare Hydra card chained to the Butterfingers curse"> |
+| The final kill of every battle replays in slow motion. | Rare cards, and cursed deals that bundle one with a curse. |
+| <img src="docs/media/king-of-the-hill.gif" alt="King of the Hill: players fighting over the glowing zone in Neon Night"> | <img src="docs/media/capture-the-flag.gif" alt="Capture the Flag, 3v3 in Toxic Grove"> |
+| King of the Hill: hold the zone alone to win. | Capture the Flag in 2v2, 3v3 or 4v4. |
+| <img src="docs/media/headhunter.gif" alt="Headhunter: everyone hunts the crowned match leader"> | <img src="docs/media/lobby.png" alt="The lobby: players on the left, match settings on the right"> |
+| Headhunter: take out the crowned leader to win on the spot. | Up to 8 players, humans and bots in any mix, over LAN or the internet. |
+| <img src="docs/media/deep-reef.png" alt="A late-match fight in Deep Reef with an explosion and a block"> | <img src="docs/media/match-over.png" alt="The match-over screen with awards and standings"> |
+| Late in a match, most shots split, bounce or explode. | The first to win enough rounds takes the match, and awards go round. |
 
 ## Download and play
 
@@ -300,7 +306,8 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --crosshairshots=C:/tmp/shots                 # the crosshair at several ammo/reload states over every arena theme
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
 "$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed
-"$GODOT" --path godot --fixed-fps 60 -- --readmeshots --shots=C:/tmp/shots  # the README media: a full match with generated names, a GIF + screenshot per battle and card pick (docs/media)
+"$GODOT" --path godot --fixed-fps 60 -- --readmeshots --shots=C:/tmp/shots  # the README media: a full match with generated names, a GIF + screenshot per battle and card pick, the first kill cams (docs/media)
+"$GODOT" --path godot --write-movie C:/tmp/match.avi -- --videomatch --focuslog=C:/tmp/match.focus  # records a full 6-player match (lobby to match-over) for a video; the focus log says where the action is each frame, for a portrait crop
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
 ```
 `--autotest`, `--autohost` and `--autojoin` also switch some cards off in the card pool and fail if a pick ever offers one; the client checks that it received the host's list.
