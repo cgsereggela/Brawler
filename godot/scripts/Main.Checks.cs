@@ -1055,54 +1055,91 @@ public partial class Main
     // ---------- --lobbycheck: every lobby layout fits on screen ----------
 
     /// <summary>
-    /// A full lobby (host, a couch guest and six bots) in every game mode and team size: fails if any button or label
-    /// of the lobby ends up off screen. With --shots=DIR, saves each layout.
+    /// The main menu, then a full lobby (host, a couch guest and six bots) in every game mode and team size, then the
+    /// options on every tab, all at every UI scale: fails if any button or label ends up off screen. With --shots=DIR,
+    /// saves each layout.
     /// </summary>
     private async void LobbyCheck()
     {
         var tree = GetTree();
         async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        float userScale = Accessibility.UiScale;
+        string tag = "";
+        void Scale(float s)
+        {
+            Accessibility.PreviewUiScale(s);
+            tag = s == 1 ? "" : $"_{s * 100:0}";
+        }
+        // Anything visible under root that ends up off screen, by its text; saves the layout as lobby_NAME with --shots.
+        bool Fits(Control root, string name)
+        {
+            name += tag;
+            var screen = GetViewport().GetVisibleRect().Grow(0.5f);
+            // A row scrolled out of view inside a scroll box is fine as long as the box itself is on screen.
+            static bool Scrolled(Control c)
+            {
+                for (var p = c.GetParent(); p != null; p = p.GetParent()) if (p is ScrollContainer) return true;
+                return false;
+            }
+            var off = FindAll<Control>(root, c => c.IsVisibleInTree() && (c is ScrollContainer || c is BaseButton or Label && !Scrolled(c))
+                    && !screen.Encloses(c.GetGlobalTransformWithCanvas() * new Rect2(Vector2.Zero, c.Size)))
+                .Select(c => c switch { Button b => b.Text, Label l => l.Text, _ => $"{c.Name} tab" }).ToList();
+            if (_shotDir != null) SaveShot($"lobby_{name}");
+            if (off.Count > 0)
+            {
+                Accessibility.PreviewUiScale(userScale);
+                Finish(1, $"lobbycheck: {name}: off screen: {string.Join(", ", off.Take(6))}");
+            }
+            return off.Count == 0;
+        }
+        int layouts = 0;
+        foreach (float s in Accessibility.UiScales)
+        {
+            Scale(s);
+            await Wait(0.15);
+            if (!Fits(_menu, "menu")) return;
+            layouts++;
+        }
         Press(_menu, "PLAY VS BOTS");
         await Wait(0.5);
         _net.AddGuest(100);
         while (_net.Lobby.Players.Count < LobbyState.MaxPlayers) _net.AddBot();
-        // Anything visible under root that ends up off screen, by its text; saves the layout as lobby_NAME with --shots.
-        bool Fits(Control root, string name)
+        foreach (float s in Accessibility.UiScales)
         {
-            var screen = GetViewport().GetVisibleRect().Grow(0.5f);
-            var off = FindAll<Control>(root, c => c.IsVisibleInTree() && c is BaseButton or Label && !screen.Encloses(c.GetGlobalRect()))
-                .Select(c => c is Button b ? b.Text : ((Label)c).Text).ToList();
-            if (_shotDir != null) SaveShot($"lobby_{name}");
-            if (off.Count > 0) Finish(1, $"lobbycheck: {name}: off screen: {string.Join(", ", off.Take(6))}");
-            return off.Count == 0;
+            Scale(s);
+            foreach (var mode in GameModes.All)
+                foreach (int size in new[] { 0, 2, 3, 4 })
+                {
+                    _net.Lobby.Settings.Mode = mode;
+                    _net.SetTeamSize(size);
+                    await Wait(0.15);
+                    if (!Fits(_lobby, $"{GameModes.Id(mode)}_{(size == 0 ? "ffa" : $"{size}v{size}")}")) return;
+                    layouts++;
+                }
         }
-        int layouts = 0;
-        foreach (var mode in GameModes.All)
-            foreach (int size in new[] { 0, 2, 3, 4 })
-            {
-                _net.Lobby.Settings.Mode = mode;
-                _net.SetTeamSize(size);
-                await Wait(0.15);
-                if (!Fits(_lobby, $"{GameModes.Id(mode)}_{(size == 0 ? "ffa" : $"{size}v{size}")}")) return;
-                layouts++;
-            }
         // The lobby's options, then the in-match overlay version (with Leave match), on every tab.
         OpenOptions(_lobby);
         var tabs = FindAll<TabContainer>(_options, _ => true).First();
         KillCamClips.KeepBlankForCheck(10); // the overlay then shows the kill cam row, and the arena row too:
-        _options.SetArena(MapCode.Encode(MapDesign.Generate(MapStyle.Tiers, ThemeId.SunsetPeaks, 7)));
-        foreach (bool overlay in new[] { false, true })
+        string arena = MapCode.Encode(MapDesign.Generate(MapStyle.Tiers, ThemeId.SunsetPeaks, 7));
+        foreach (float s in Accessibility.UiScales)
         {
-            _options.SetOverlay(overlay);
-            for (int t = 0; t < tabs.GetTabCount(); t++)
+            Scale(s);
+            foreach (bool overlay in new[] { false, true })
             {
-                tabs.CurrentTab = t;
-                await Wait(0.15);
-                if (!Fits(_options, $"options_{(overlay ? "overlay_" : "")}{tabs.GetTabTitle(t).ToLowerInvariant()}")) return;
-                layouts++;
+                _options.SetOverlay(overlay);
+                if (overlay) _options.SetArena(arena);
+                for (int t = 0; t < tabs.GetTabCount(); t++)
+                {
+                    tabs.CurrentTab = t;
+                    await Wait(0.15);
+                    if (!Fits(_options, $"options_{(overlay ? "overlay_" : "")}{tabs.GetTabTitle(t).ToLowerInvariant()}")) return;
+                    layouts++;
+                }
             }
         }
-        Finish(0, $"lobbycheck: all {layouts} lobby and options layouts fit on screen");
+        Accessibility.PreviewUiScale(userScale);
+        Finish(0, $"lobbycheck: all {layouts} menu, lobby and options layouts fit on screen at every UI scale");
     }
 
     // ---------- --clipcheck: a kill cam saves as a GIF ----------

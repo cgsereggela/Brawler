@@ -87,10 +87,13 @@ public partial class Main : Node
 
         var ui = new CanvasLayer { Name = "UI", Layer = 10 };
         AddChild(ui);
-        var root = new Control { Name = "Root", Theme = UiKit.BuildTheme() };
-        root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _uiRoot = new Control { Name = "Root", Theme = UiKit.BuildTheme() };
+        var root = _uiRoot;
         root.MouseFilter = Control.MouseFilterEnum.Ignore;
         ui.AddChild(root);
+        ApplyUiScale();
+        GetViewport().SizeChanged += ApplyUiScale;
+        Accessibility.Changed += ApplyUiScale;
 
         _menu = new MenuUI(_net) { Name = "Menu" };
         _lobby = new LobbyUI(_net) { Name = "Lobby" };
@@ -118,6 +121,21 @@ public partial class Main : Node
         Show(_menu);
         HandleCommandLine();
         CareerBook.Enabled = _autoMode == null; // test runs earn nothing (a demo turns it back on with its own career)
+    }
+
+    private Control _uiRoot;
+
+    /// <summary>
+    /// Every screen lives under one root control: at a bigger UI scale (Accessibility) it is laid out in a smaller
+    /// space and drawn scaled up to fill the window, so the menus and HUD grow but still fit.
+    /// </summary>
+    private void ApplyUiScale()
+    {
+        if (_uiRoot == null || !IsInstanceValid(_uiRoot)) return;
+        float s = Accessibility.UiScale;
+        _uiRoot.Position = Vector2.Zero;
+        _uiRoot.Scale = Vector2.One * s;
+        _uiRoot.Size = GetViewport().GetVisibleRect().Size / s;
     }
 
     private void Wire()

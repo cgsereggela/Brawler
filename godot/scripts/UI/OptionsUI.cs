@@ -53,6 +53,7 @@ public partial class OptionsUI : Control
         if (_arenaRow == null) return;
         var d = code != null ? MapCode.Decode(code) : null;
         _arenaRow.Visible = _overlay && d != null && !OnControls;
+        FitTabs();
         if (d == null) return;
         bool saved = MapLibrary.Holds(code);
         _arenaLabel.Text = $"Arena: {(d.Name != "" ? d.Name : "Untitled")}";
@@ -69,6 +70,7 @@ public partial class OptionsUI : Control
         _clipRow.Visible = _overlay && KillCamClips.HasClip && !OnControls;
         _clipButton.Text = KillCamClips.ButtonText;
         _clipButton.Disabled = KillCamClips.Saving;
+        FitTabs();
     }
 
     public override void _ExitTree() => KillCamClips.Changed -= ShowClip;
@@ -95,7 +97,7 @@ public partial class OptionsUI : Control
         var (_, body) = UiKit.CenteredPanel(this, 460);
         body.AddChild(new TitleText("OPTIONS", 30, 1.5f, Palette.Cool, Palette.Hot));
 
-        var tabs = _tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 220) };
+        var tabs = _tabs = new TabContainer(); // as tall as its tallest tab (see FitTabs)
         body.AddChild(tabs);
         var audio = Tab(tabs, "Audio");
         var video = Tab(tabs, "Video");
@@ -103,7 +105,7 @@ public partial class OptionsUI : Control
         BloomOptions.Build(video);
         AccessibilityOptions.Build(video);
         var controls = ControlsOptions.Build(Tab(tabs, "Controls"));
-        _controlsTab = (Control)controls.GetParent();
+        _controlsTab = (Control)controls.GetParent().GetParent();
         PrivacyOptions.Build(Tab(tabs, "Online"));
 
         var grid = new GridContainer { Columns = 3 };
@@ -156,7 +158,9 @@ public partial class OptionsUI : Control
             ShowLeaveConfirm(false);
             SetArena(_arenaCode);
             ShowClip();
+            FitTabs();
         };
+        Resized += FitTabs;
         _done = UiKit.Primary("DONE", Close);
         _done.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         footer.AddChild(_done);
@@ -221,12 +225,49 @@ public partial class OptionsUI : Control
         GetViewport().SetInputAsHandled();
     }
 
-    private static VBoxContainer Tab(TabContainer tabs, string title)
+    /// <summary>A tab's rows, in a scroll box that only scrolls when the tab is taller than the window allows (see FitTabs).</summary>
+    private VBoxContainer Tab(TabContainer tabs, string title)
     {
+        var scroll = new ScrollContainer { Name = title, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        tabs.AddChild(scroll);
         var box = UiKit.VBox(10);
-        box.Name = title;
-        tabs.AddChild(box);
+        box.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        scroll.AddChild(box);
+        _tabScrolls.Add(scroll);
         return box;
+    }
+
+    private readonly System.Collections.Generic.List<ScrollContainer> _tabScrolls = new();
+    private bool _fitQueued;
+    private int _fitPasses;
+
+    /// <summary>
+    /// Gives each tab its full height when the panel fits on screen, and otherwise only the height left over, so at a
+    /// big UI scale a tall tab (Controls) scrolls instead of pushing the footer off the bottom.
+    /// </summary>
+    private void FitTabs()
+    {
+        if (_fitQueued) return;
+        _fitQueued = true;
+        Callable.From(() =>
+        {
+            _fitQueued = false;
+            if (_tabs == null || !IsInstanceValid(_tabs)) return;
+            var panel = (Control)_tabs.GetParent().GetParent();
+            // Everything but the tab pages: the rest of the panel, the tab bar and the page frame.
+            float tabBar = _tabs.GetTabBar().GetCombinedMinimumSize().Y + _tabs.GetThemeStylebox("panel").GetMinimumSize().Y;
+            float chrome = panel.GetCombinedMinimumSize().Y - _tabs.GetCombinedMinimumSize().Y + tabBar, room = Size.Y - chrome;
+            bool moved = false;
+            foreach (var sc in _tabScrolls)
+            {
+                float want = ((Control)sc.GetChild(0)).GetCombinedMinimumSize().Y, h = Mathf.Clamp(room, 80, want);
+                moved |= Mathf.Abs(sc.CustomMinimumSize.Y - h) > 0.5f;
+                sc.CustomMinimumSize = new Vector2(0, h);
+            }
+            // A second pass settles it once the new heights are laid out.
+            if (moved && ++_fitPasses < 4) FitTabs();
+            else _fitPasses = 0;
+        }).CallDeferred();
     }
 
     private void AddSlider(GridContainer grid, string label, float value, Action<float> set, string preview)

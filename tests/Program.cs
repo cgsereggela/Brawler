@@ -1705,6 +1705,22 @@ static List<byte[]> DecodeGif(byte[] g)
     Check(aim.Dir.X < -0.99f, "Aim: with the right stick resting, moving turns you that way");
     aim.Update(new PadState { LX = -0.4f, RX = 0.9f });
     Check(aim.Dir.X > 0.99f, "Aim: the right stick wins over the left");
+    var me = Vector2.Zero;
+    var ahead = new[] { new Vector2(200, 30) }; // about 8.5° below the aim line
+    var bent = AimAssist.Bend(Vector2.UnitX, me, ahead, 0.5f);
+    Check(bent.Y > 0 && bent.Y < 30 / 200f && Math.Abs(bent.Length() - 1) < 1e-4f, "Aim assist: bends part of the way toward an enemy near the line", $"{bent}");
+    Check(AimAssist.Bend(Vector2.UnitX, me, ahead, 0) == Vector2.UnitX, "Aim assist: 0% leaves the aim alone");
+    Check(AimAssist.Bend(Vector2.UnitX, me, new[] { new Vector2(0, 200) }, 1) == Vector2.UnitX, "Aim assist: an enemy well off the line doesn't pull");
+    Check(AimAssist.Bend(Vector2.UnitX, me, new[] { new Vector2(900, 10) }, 1) == Vector2.UnitX, "Aim assist: an enemy out of range doesn't pull");
+    var two = AimAssist.Bend(Vector2.UnitX, me, new[] { new Vector2(200, -60), new Vector2(200, 10) }, 1);
+    Check(two.Y > 0, "Aim assist: the enemy nearest the line wins", $"{two}");
+    Check(AimAssist.Bend(-Vector2.UnitX, me, new[] { new Vector2(-200, 5), new Vector2(-200, -5) }, 1).X < -0.99f, "Aim assist: works across the ±180° seam");
+
+    foreach (var kind in Enum.GetValues<ColorVision.Kind>())
+        Check(ColorVision.ClosestPair(ColorVision.Safe, kind) > 25, $"Colors: the safe set stays apart for {kind} vision", $"{ColorVision.ClosestPair(ColorVision.Safe, kind):0.0} ΔE");
+    Check(ColorVision.ClosestPair(ColorVision.Usual, ColorVision.Kind.Deutan) < 5, "Colors: the usual blue and purple do merge for a deuteranope (why the safe set exists)");
+    Check(ColorVision.Distance(ColorVision.Safe[0], ColorVision.Safe[1], ColorVision.Kind.Deutan) > 80, "Colors: the safe team colors (red and blue) are far apart");
+
     var held = new PadState { Buttons = 1u << PadLayout.LeftShoulder, RT = 0.9f, LT = 0.1f };
     Check(held.JumpHeld && held.ShootHeld && !held.BlockHeld && held.Active, "Pad: LB jumps, RT shoots, a resting LT doesn't block");
 

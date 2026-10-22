@@ -139,3 +139,45 @@ public sealed class CouchRoster
     public bool Remove(int guest) => _devices.Remove(guest);
     public void Clear() => _devices.Clear();
 }
+
+/// <summary>
+/// Controller aim assist: bends the stick's aim toward the target nearest the line it points along, if that target
+/// is inside a cone and in range. Strength 0 leaves the aim alone; 1 uses the widest cone and pulls most of the way.
+/// Pure, so the tests cover it.
+/// </summary>
+public static class AimAssist
+{
+    /// <summary>Half-angle of the cone at full strength (about 20°), and how far away a target can be.</summary>
+    public const float MaxCone = 0.35f, Range = 420;
+    /// <summary>At full strength the aim turns this much of the way to the target.</summary>
+    public const float MaxPull = 0.8f;
+
+    public static Vector2 Bend(Vector2 dir, Vector2 from, IEnumerable<Vector2> targets, float strength)
+    {
+        if (strength <= 0 || dir == Vector2.Zero) return dir;
+        float cone = MaxCone * strength, aim = MathF.Atan2(dir.Y, dir.X);
+        float bestOff = cone, bestDelta = 0;
+        bool found = false;
+        foreach (var t in targets)
+        {
+            var to = t - from;
+            float d = to.Length();
+            if (d < 1 || d > Range) continue;
+            float delta = Wrap(MathF.Atan2(to.Y, to.X) - aim);
+            if (MathF.Abs(delta) >= bestOff) continue;
+            bestOff = MathF.Abs(delta);
+            bestDelta = delta;
+            found = true;
+        }
+        if (!found) return dir;
+        float a = aim + bestDelta * MaxPull * strength;
+        return new Vector2(MathF.Cos(a), MathF.Sin(a));
+    }
+
+    private static float Wrap(float a)
+    {
+        while (a > MathF.PI) a -= 2 * MathF.PI;
+        while (a < -MathF.PI) a += 2 * MathF.PI;
+        return a;
+    }
+}

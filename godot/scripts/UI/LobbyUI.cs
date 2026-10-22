@@ -130,6 +130,7 @@ public partial class LobbyUI : Control
         _net.LobbyChanged += Refresh;
         _net.PortsChanged += Refresh;
         StreamerMode.Changed += Refresh;
+        Accessibility.Changed += Refresh; // colorblind-safe colors
         Refresh();
     }
 
@@ -156,6 +157,7 @@ public partial class LobbyUI : Control
         _net.LobbyChanged -= Refresh;
         _net.PortsChanged -= Refresh;
         StreamerMode.Changed -= Refresh;
+        Accessibility.Changed -= Refresh;
     }
 
     /// <summary>Opens or closes the card pool panel (the Cards button opens it too).</summary>

@@ -37,6 +37,7 @@ public partial class Main
             case "survival": await DemoSurvival(); break;
             case "cosmetics": await DemoCosmetics(); break;
             case "clips": await DemoClips(); break;
+            case "access": await DemoAccess(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -341,5 +342,50 @@ public partial class Main
                 await DemoWait(0.05);
             }
         DemoMark("end");
+    }
+
+    /// <summary>
+    /// Accessibility: a full lobby in the usual colors, then the colorblind-safe ones; the Video tab's new rows, the UI
+    /// growing to 115% and 130%; then a match at that size. Nothing is saved: the user's own settings come back after.
+    /// </summary>
+    private async Task DemoAccess()
+    {
+        bool userColors = Accessibility.ColorblindColors;
+        float userScale = Accessibility.UiScale;
+        Accessibility.PreviewColorblind(false);
+        Accessibility.PreviewUiScale(1);
+        _game.AutopilotLocal = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < LobbyState.MaxPlayers) _net.AddBot();
+        await DemoWait(0.4);
+        DemoMark("lobby");
+        await DemoWait(2.5);
+        OpenOptions(_lobby);
+        var tabs = FindAll<TabContainer>(_options, _ => true).First();
+        tabs.CurrentTab = 1;
+        DemoMark("options");
+        await DemoWait(1.5);
+        FindAll<CheckButton>(_options, c => c.Text == "Colorblind-safe colors").First().SetPressedNoSignal(true);
+        Accessibility.PreviewColorblind(true);
+        DemoMark("safe");
+        await DemoWait(1.5);
+        Accessibility.PreviewUiScale(1.15f);
+        DemoMark("scale115");
+        await DemoWait(1.2);
+        Accessibility.PreviewUiScale(1.3f);
+        DemoMark("scale130");
+        await DemoWait(1.8);
+        Press(_options, "DONE");
+        DemoMark("lobby_safe");
+        await DemoWait(2.5);
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 1 });
+        DemoMark("match");
+        _game.HostStartMatch();
+        await DemoWait(5);
+        await DemoWait(5);
+        DemoMark("end");
+        Accessibility.PreviewColorblind(userColors);
+        Accessibility.PreviewUiScale(userScale);
     }
 }

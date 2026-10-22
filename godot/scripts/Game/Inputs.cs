@@ -111,7 +111,9 @@ public sealed class PadReader
     /// <summary>Jump and block presses since the last <see cref="Merge"/>.</summary>
     public byte Jumps, Blocks;
 
-    public Vector2 AimDir => new(_aim.Dir.X, _aim.Dir.Y);
+    /// <summary>Where the stick aims, after aim assist (see <see cref="AimAt"/>).</summary>
+    public Vector2 AimDir => _assisted ?? new Vector2(_aim.Dir.X, _aim.Dir.Y);
+    private Vector2? _assisted;
 
     /// <summary>
     /// Adds what the given controllers hold to <paramref name="f"/> (sticks only where the keyboard is idle). Returns
@@ -147,8 +149,23 @@ public sealed class PadReader
         return used;
     }
 
-    public Vector2 AimAt(Avatar self) =>
-        self.Alive ? self.GlobalPosition + AimDir * Reach : self.GlobalPosition + new Vector2(_ghost.X, _ghost.Y) * GhostReach;
+    public Vector2 AimAt(Avatar self)
+    {
+        _assisted = null;
+        if (!self.Alive) return self.GlobalPosition + new Vector2(_ghost.X, _ghost.Y) * GhostReach;
+        // Aim assist works while the right stick is pushed (a resting stick doesn't track anyone by itself), and pulls
+        // toward enemies only: a teammate in the way is left alone.
+        var from = ToNum(self.GlobalPosition);
+        var foes = new List<System.Numerics.Vector2>();
+        if (self.Game != null && _aim.Aiming && Accessibility.AimAssist > 0)
+            foreach (var a in self.Game.LiveAvatars())
+                if (a != self && !self.Game.Allies(a.Player.Slot, self.Player.Slot)) foes.Add(ToNum(a.GlobalPosition));
+        var d = AimAssist.Bend(_aim.Dir, from, foes, Accessibility.AimAssist);
+        _assisted = new Vector2(d.X, d.Y);
+        return self.GlobalPosition + _assisted.Value * Reach;
+    }
+
+    private static System.Numerics.Vector2 ToNum(Vector2 v) => new(v.X, v.Y);
 }
 
 /// <summary>Host side: latest frame received from a remote client.</summary>

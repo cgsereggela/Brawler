@@ -78,6 +78,16 @@ yours ("NAME, CHOOSE A CARD"). Remove one with their *remove* button in the lobb
 Options also has window mode (Windowed / Borderless / Fullscreen) and bloom strength (default 50%). Everything is saved to
 `%APPDATA%\Godot\app_userdata\Brawler\settings.cfg`.
 
+**Accessibility** (Options → Video):
+- **Shake** scales screen shake and zoom punches, and **Reduce flashes** drops full-screen flashes and dims glow bursts.
+- **Colorblind-safe colors** swaps the eight player colors (and so the Red and Blue teams) for a set picked to stay apart
+  with protanopia, deuteranopia and tritanopia. It only changes what you see. The colors and the check behind them are
+  in `godot/scripts/Logic/ColorVision.cs`.
+- **UI scale** (100%, 115% or 130%) makes the menus and HUD bigger. Tall pages, like Controls, scroll when they no longer
+  fit.
+- **Aim assist** (default 40%, 0% is off) is for controllers only. While the right stick aims, your aim bends toward
+  the enemy nearest that line, if they're within about 20° (at 100%) and in range. Teammates don't pull.
+
 ### Playing with friends
 - **Host:** Menu → *Host Game*. The lobby shows your LAN/VPN address(es) and the port (default `24565`). It also asks
   the router to forward the port via UPnP and, if that works, shows the public `ip:port` with a **Copy** button.
@@ -347,7 +357,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --padcheck        # made-up controller presses: menu focus, + Local Player, guest vs keyboard input, card picks on each pad (PADCHECK)
 "$GODOT" --path godot -- --editorcheck                                 # made-up mouse presses in the map editor: draw, move, resize, undo, delete, controller cursor, save, share, playtest, pick it in a lobby (EDITORCHECK)
-"$GODOT" --path godot -- --lobbycheck                                  # a full lobby in every game mode and team size, then every Options tab (menu and in-match): fails if any control ends up off screen (LOBBYCHECK; add --shots=DIR to save each layout)
+"$GODOT" --path godot -- --lobbycheck                                  # the main menu, a full lobby in every game mode and team size, then every Options tab (menu and in-match), at every UI scale: fails if any control ends up off screen (LOBBYCHECK; add --shots=DIR to save each layout)
 "$GODOT" --path godot -- --clipcheck                                   # an offline match until a kill cam is kept, then saves it as a GIF from the Esc menu and checks the file (CLIPCHECK; with --shots=DIR keeps a copy)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --hazardcheck     # 4 bots fight 300 s on a pit arena with pools, a saw and a mover: limits hazard damage, needs pit crossings (HAZARDCHECK)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)

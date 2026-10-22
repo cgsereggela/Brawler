@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- accessibility: colorblind-safe player and team colors, a bigger UI scale, and adjustable aim assist for controllers
 - add a bug report button on the main menu that links to: https://github.com/cgsereggela/Brawler/issues
 
 performance improvements

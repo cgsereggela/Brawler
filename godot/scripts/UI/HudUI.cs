@@ -48,7 +48,7 @@ public partial class HudUI : Control
         // and stats can still be read over it.
         _hover = new Control { ZIndex = 1, MouseFilter = MouseFilterEnum.Ignore };
         _hover.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _hover.Draw += () => DrawHoverCard(_hover, GetViewportRect().Size);
+        _hover.Draw += () => DrawHoverCard(_hover, Size);
         AddChild(_hover);
         _game.Banner += (text, color, seconds) =>
         {
@@ -62,7 +62,7 @@ public partial class HudUI : Control
     {
         _bannerT -= (float)delta;
         _t += (float)delta;
-        var vs = GetViewportRect().Size;
+        var vs = Size;
         int key = BaseKey(vs);
         if (key != _baseKey)
         {
@@ -112,10 +112,12 @@ public partial class HudUI : Control
         _chips.Clear();
         var widths = new List<(MatchPlayer P, float W)>();
         bool compact = false;
+        _compactName = CompactName;
         // Team modes: Red's chips, then a wider gap, then Blue's.
         var order = _game.Slots.Where(p => p != null).OrderBy(p => _game.TeamOf(p.Slot)).ThenBy(p => p.Slot).ToList();
         const float teamGap = 10;
-        for (int pass = 0; pass < 2; pass++)
+        // A third pass, when even compact chips run into the counter (eight players at a big UI scale): names get less room.
+        for (int pass = 0; pass < 3; pass++)
         {
             widths.Clear();
             float total = 10 + (_game.TeamMode ? teamGap : 0);
@@ -125,7 +127,9 @@ public partial class HudUI : Control
                 widths.Add((p, w));
                 total += w + (compact ? 5 : 8);
             }
-            if (compact || total <= vs.X - 130) break;
+            float over = total - (vs.X - 130);
+            if (over <= 0 || pass == 2) break;
+            if (compact) _compactName = Mathf.Max(18, CompactName - over / Mathf.Max(1, order.Count));
             compact = true;
         }
         _compact = compact;
@@ -162,7 +166,7 @@ public partial class HudUI : Control
     private void DrawBase()
     {
         var ci = _base;
-        var vs = GetViewportRect().Size;
+        var vs = Size;
         var bold = Fonts.Bold;
 
         // Your loadout, bottom-left, centered in the floor band (MapGenerator.FloorDepth) so the strip never covers the
@@ -218,7 +222,7 @@ public partial class HudUI : Control
 
     public override void _Draw()
     {
-        var vs = GetViewportRect().Size;
+        var vs = Size;
 
         // The chip heads breathe and blink, so they're drawn every frame, over the cached chips. The chips fade out
         // under the kill cam's letterbox bars.
@@ -306,6 +310,7 @@ public partial class HudUI : Control
     }
 
     private const float CompactName = 50; // compact chips clip names to this width
+    private float _compactName = CompactName; // or less, when the screen is too narrow even for that (see Layout)
 
     private static Color ChipColor(MatchPlayer p) => (p.Left || p.Benched) ? Palette.TextDim : p.Color;
 
@@ -315,7 +320,7 @@ public partial class HudUI : Control
         float badge = Badge(p) ? (compact ? 10 : 12) : 0;
         if (!compact)
             return 44 + Mathf.Max(Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 13).X, Pips * 9) + 14 + badge;
-        float nameW = Mathf.Min(CompactName, Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 11).X);
+        float nameW = Mathf.Min(_compactName, Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 11).X);
         return 35 + Mathf.Max(nameW, PipStep(true) * Pips) + 8 + badge;
     }
 
@@ -333,7 +338,7 @@ public partial class HudUI : Control
     }
 
     /// <summary>Spacing of the round-win pips; compact chips squeeze long matches into the name's width.</summary>
-    private float PipStep(bool compact) => compact ? Mathf.Min(6, CompactName / Mathf.Max(1, Pips)) : 9;
+    private float PipStep(bool compact) => compact ? Mathf.Min(6, _compactName / Mathf.Max(1, Pips)) : 9;
 
     /// <summary>Pips on a chip: round wins to take the match, in Gun Game the ladder's cards, in Survival the waves.</summary>
     private int Pips => _game.Mode switch { GameMode.GunGame => GameModes.GunLadder.Length, GameMode.Survival => GameModes.SurvivalWaves, _ => _game.Settings.RoundsToWin };
@@ -389,7 +394,7 @@ public partial class HudUI : Control
     {
         float tx = chip.Position.X + (_compact ? 38 : 44), y0 = chip.Position.Y;
         var nameCol = (p.Left || p.Benched) ? Palette.TextDim : Colors.White;
-        if (_compact) ci.DrawString(Fonts.Bold, new Vector2(tx, y0 + 13), Fit(p.Info.Name, CompactName, 11), HorizontalAlignment.Left, -1, 11, nameCol);
+        if (_compact) ci.DrawString(Fonts.Bold, new Vector2(tx, y0 + 13), Fit(p.Info.Name, _compactName, 11), HorizontalAlignment.Left, -1, 11, nameCol);
         else ci.DrawString(Fonts.Bold, new Vector2(tx, y0 + 15), p.Info.Name, HorizontalAlignment.Left, -1, 13, nameCol);
     }
 

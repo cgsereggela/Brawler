@@ -8,17 +8,11 @@ namespace Brawler.Core;
 
 public static class Palette
 {
-    public static readonly Color[] Players =
-    {
-        new("#ff4d5a"), // red
-        new("#3d9bff"), // blue
-        new("#4ee06e"), // green
-        new("#ffd23d"), // yellow
-        new("#b46cff"), // purple
-        new("#ff9233"), // orange
-        new("#3de6e0"), // cyan
-        new("#ff7ad9"), // pink
-    };
+    private static readonly Color[] UsualPlayers = System.Array.ConvertAll(ColorVision.Usual, h => new Color(h));
+    private static readonly Color[] SafePlayers = System.Array.ConvertAll(ColorVision.Safe, h => new Color(h));
+
+    /// <summary>The eight player colors: the usual ones, or the colorblind-safe set when Accessibility asks for it.</summary>
+    public static Color[] Players => Accessibility.ColorblindColors ? SafePlayers : UsualPlayers;
 
     public static readonly string[] Names = { "Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Cyan", "Pink" };
 
