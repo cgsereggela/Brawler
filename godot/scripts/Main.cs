@@ -254,6 +254,8 @@ public partial class Main : Node
     private void PadMenus()
     {
         if (_autoMode != null && !_padCheck) return;
+        // The map editor reads the controller itself while its arena cursor is out (B deletes there, A places).
+        if (_editor.Visible && !_editor.PadMenus) return;
         bool inMenus = !_hud.Visible || _overlay;
         bool nav = false;
         foreach (int d in Pads.Devices)

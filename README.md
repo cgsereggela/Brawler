@@ -196,6 +196,7 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
 - **Editing:**
   - Select drags pieces around; moving a block carries whatever stands on it. Drag a block's edge to resize it, and use the mouse wheel over a selected hill to change its height.
   - Right-click deletes, Ctrl+Z / Ctrl+Y undo and redo, Ctrl+D duplicates.
+  - On a controller: the left stick moves a cursor (the d-pad nudges it a grid step), A places (hold to drag), B deletes, LB/RB change tools, X/Y undo and redo, and View switches to the buttons (Save, Playtest, Back).
   - The status line names anything that would play badly, such as a spawn standing on nothing or one spawn that can't reach another.
 - **Missing spawns:** an arena needs no spawns. Any missing ones are picked on ground everyone can reach, as far apart as fit.
 - **Saving and sharing:**
@@ -342,7 +343,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 # add --couch=N to --autotest, --autohost or --autojoin: N local co-op guests (1-3) join from that machine on autopilot; COUCHCHECK confirms they played and picked cards
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --padcheck        # made-up controller presses: menu focus, + Local Player, guest vs keyboard input, card picks on each pad (PADCHECK)
-"$GODOT" --path godot -- --editorcheck                                 # made-up mouse presses in the map editor: draw, move, resize, undo, delete, save, share, playtest, pick it in a lobby (EDITORCHECK)
+"$GODOT" --path godot -- --editorcheck                                 # made-up mouse presses in the map editor: draw, move, resize, undo, delete, controller cursor, save, share, playtest, pick it in a lobby (EDITORCHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --hazardcheck     # 4 bots fight 300 s on a pit arena with pools, a saw and a mover: limits hazard damage, needs pit crossings (HAZARDCHECK)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots

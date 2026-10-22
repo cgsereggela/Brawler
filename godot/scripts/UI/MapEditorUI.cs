@@ -152,6 +152,7 @@ public partial class MapEditorUI : Control
         };
         _canvas.GuiInput += CanvasInput;
         _canvas.Draw += DrawCanvas;
+        _canvas.Draw += DrawPadCursor;
         _canvas.MouseExited += () => { _hover = (Kind.None, -1); _mouse = new Vector2(-100, -100); _canvas.QueueRedraw(); };
         AddChild(_canvas);
 
@@ -280,7 +281,7 @@ public partial class MapEditorUI : Control
     {
         _tool = tool;
         _toolButtons[tool].ButtonPressed = true;
-        _hint.Text = Tools.First(t => t.Tool == tool).Hint + (tool == EditTool.Select ? "" : " Right-click any piece to delete it.");
+        _hint.Text = Tools.First(t => t.Tool == tool).Hint + (PadCursor ? " " + PadHint : tool == EditTool.Select ? "" : " Right-click any piece to delete it.");
         if (tool != EditTool.Select) _sel = (Kind.None, -1);
         _canvas.QueueRedraw();
     }
@@ -1263,6 +1264,7 @@ public partial class MapEditorUI : Control
     public override void _Process(double delta)
     {
         if (Visible) Paint();
+        if (Visible) PollPads(delta);
         // The undo buttons follow keyboard undo too.
         if (_undoB != null && Visible)
         {

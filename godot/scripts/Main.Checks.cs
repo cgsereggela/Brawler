@@ -313,6 +313,45 @@ public partial class Main
         if (ed.Design.Props.Count != 0) { Fail("right-click didn't delete the crate"); return; }
         Log.Info("EDITORCHECK editing: move, resize, undo, redo and right-click delete work");
 
+        // A controller: the stick moves a cursor, A places, B deletes, X/Y undo/redo, the bumpers change tools, View the buttons.
+        const int padDev = 5;
+        Pads.TestDevices.Add(padDev);
+        async System.Threading.Tasks.Task PadTap(int button)
+        {
+            Input.ParseInputEvent(new InputEventJoypadButton { Device = padDev, ButtonIndex = (JoyButton)button, Pressed = true, Pressure = 1 });
+            await Wait(0.05);
+            Input.ParseInputEvent(new InputEventJoypadButton { Device = padDev, ButtonIndex = (JoyButton)button, Pressed = false });
+            await Wait(0.05);
+        }
+        ed.SetTool(EditTool.Select);
+        await PadTap(PadLayout.RightShoulder);
+        if (ed.Tool != EditTool.Block || !ed.PadCursor) { Fail($"RB on a controller left the {ed.Tool} tool (cursor {ed.PadCursor})"); return; }
+        var padFrom = ed.PadAt;
+        Input.ParseInputEvent(new InputEventJoypadMotion { Device = padDev, Axis = JoyAxis.LeftX, AxisValue = -1 });
+        Input.ParseInputEvent(new InputEventJoypadMotion { Device = padDev, Axis = JoyAxis.LeftY, AxisValue = -1 });
+        await Wait(0.25);
+        Input.ParseInputEvent(new InputEventJoypadMotion { Device = padDev, Axis = JoyAxis.LeftX, AxisValue = 0 });
+        Input.ParseInputEvent(new InputEventJoypadMotion { Device = padDev, Axis = JoyAxis.LeftY, AxisValue = 0 });
+        await Wait(0.05);
+        if (ed.PadAt.X > padFrom.X - 40 || ed.PadAt.Y > padFrom.Y - 40) { Fail($"the stick moved the cursor from {padFrom} to {ed.PadAt}"); return; }
+        int padBlocks = ed.Design.Blocks.Count;
+        await PadTap(PadLayout.A);
+        if (ed.Design.Blocks.Count != padBlocks + 1) { Fail($"A with the block tool left {ed.Design.Blocks.Count} blocks, not {padBlocks + 1}"); return; }
+        await PadTap(PadLayout.B);
+        if (ed.Design.Blocks.Count != padBlocks) { Fail("B on a controller didn't delete the block under the cursor"); return; }
+        await PadTap(PadLayout.X);
+        await PadTap(PadLayout.Y);
+        if (ed.Design.Blocks.Count != padBlocks) { Fail("X then Y (undo, redo) on a controller didn't end where they started"); return; }
+        await PadTap(PadLayout.Back);
+        if (!ed.PadMenus || GetViewport().GuiGetFocusOwner()?.IsVisibleInTree() != true) { Fail("View on a controller didn't move it to the editor's buttons"); return; }
+        await PadTap(PadLayout.B);
+        if (ed.PadMenus || GetViewport().GuiGetFocusOwner() != null) { Fail("B didn't bring the controller back to the arena cursor"); return; }
+        Pads.TestDevices.Remove(padDev);
+        Pads.KeyboardUsed();
+        await Wait(0.05);
+        ed.SetTool(EditTool.Select);
+        Log.Info("EDITORCHECK controller: the stick moves the cursor, A places, B deletes, bumpers change tools, View reaches the buttons");
+
         // Name it, save it, share it, open the code again.
         var name = FindChild<LineEdit>(ed, l => l.PlaceholderText.StartsWith("Name"));
         name.Text = "Check Arena";
