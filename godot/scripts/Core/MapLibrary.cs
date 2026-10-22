@@ -49,6 +49,27 @@ public static class MapLibrary
 
     public static bool Exists(string name) => FileAccess.FileExists(PathOf(name));
 
+    /// <summary>
+    /// The name itself if no saved map has it, otherwise the first free "Name 2", "Name 3"... A count already on the
+    /// end is replaced rather than added to, so a copy of "Map 2" is "Map 3", not "Map 2 2".
+    /// </summary>
+    public static string FreeName(string name)
+    {
+        name = MapCode.Trim(name);
+        if (!Exists(name)) return name;
+        var counted = System.Text.RegularExpressions.Regex.Match(name, @"^(.*\S) \d+$");
+        var stem = counted.Success ? counted.Groups[1].Value : name;
+        for (int n = 2; ; n++)
+        {
+            var suffix = $" {n}";
+            var head = stem;
+            while (head.Length > 0 && MapCode.Trim(head + suffix) != head + suffix) head = head[..^1].TrimEnd(); // room for the count
+            var next = (head + suffix).Trim();
+            if (!Exists(next)) return next;
+        }
+    }
+
+
     public static void Delete(string name)
     {
         if (Exists(name)) DirAccess.RemoveAbsolute(PathOf(name));

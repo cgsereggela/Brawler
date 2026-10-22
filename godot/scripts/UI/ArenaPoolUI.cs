@@ -123,7 +123,7 @@ public partial class ArenaPoolUI : Control
                 var save = UiKit.Button(saved ? "Saved" : "Save", () =>
                 {
                     if (d.Name == "") d.Name = "Shared arena";
-                    while (MapLibrary.Exists(d.Name)) d.Name = MapCode.Trim(d.Name + " 2");
+                    d.Name = MapLibrary.FreeName(d.Name);
                     _message.Text = MapLibrary.Save(d) ? $"Saved {d.Name} to your maps." : "Couldn't save it.";
                     Refresh();
                 }, 0, "Small");
@@ -174,7 +174,7 @@ public partial class ArenaPoolUI : Control
         if (!MapLibrary.All().Exists(e => e.Code == code))
         {
             if (d.Name == "") d.Name = "Shared arena";
-            while (MapLibrary.Exists(d.Name)) d.Name = MapCode.Trim(d.Name + " 2");
+            d.Name = MapLibrary.FreeName(d.Name);
             MapLibrary.Save(d);
             code = MapCode.Encode(d);
         }

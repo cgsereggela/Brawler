@@ -325,9 +325,14 @@ public partial class Main
         saved = MapLibrary.All();
         if (saved.Count != 3 || saved.Select(e => e.Name).Distinct().Count() != 3 || saved.First(e => e.Name == "Check Arena!").Design.Seed != twins[0].Seed)
         { Fail($"maps whose names make the same file name overwrote each other: {string.Join(", ", saved.Select(e => e.Name))}"); return; }
+        var copy = MapCode.Decode(code);
+        copy.Name = MapLibrary.FreeName("Check Arena");
+        MapLibrary.Save(copy);
+        if (copy.Name != "Check Arena 2" || MapLibrary.FreeName("Check Arena 2") != "Check Arena 3") { Fail($"a clashing name became \"{copy.Name}\" / \"{MapLibrary.FreeName("Check Arena 2")}\", not Check Arena 2 / 3"); return; }
+        MapLibrary.Delete(copy.Name);
         foreach (var t in twins) MapLibrary.Delete(t.Name);
         if (MapLibrary.All() is not [{ Name: "Check Arena" }]) { Fail("deleting the look-alike maps took the wrong file"); return; }
-        Log.Info("EDITORCHECK library: look-alike names get files of their own");
+        Log.Info("EDITORCHECK library: look-alike names get files of their own, and clashing names count up");
 
         if (_shotDir != null)
         {
