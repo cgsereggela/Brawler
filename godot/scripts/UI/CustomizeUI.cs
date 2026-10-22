@@ -42,7 +42,6 @@ public partial class CustomizeUI : Control
         var left = UiKit.VBox(4);
         _preview = new AvatarPreview(_net.LocalLook, _net.LocalColor, 6.5f, alive: true) { Pedestal = true };
         left.AddChild(_preview);
-        left.AddChild(UiKit.Label("move the mouse to look around", UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center));
         cols.AddChild(left);
 
         var grid = new GridContainer { Columns = 2, SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
