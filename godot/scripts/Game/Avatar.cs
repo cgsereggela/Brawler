@@ -87,7 +87,7 @@ public partial class Avatar : CharacterBody2D
     private bool _jetting;
     private float _wallNormalX;
     private int _lastJump = -1, _lastBlock = -1;
-    private float _fireCd, _reloadT, _idleT, _burstT;
+    private float _fireCd, _reloadT, _burstT;
     private int _burstLeft;
     private float _hurtFlash, _hpGhost = -1, _ghostHold;
     private Vector2 _netTarget;
@@ -382,7 +382,6 @@ public partial class Avatar : CharacterBody2D
     {
         int maxAmmo = S.Int(Stat.Ammo);
         _fireCd -= dt;
-        _idleT += dt;
 
         if (Reloading)
         {
@@ -394,7 +393,8 @@ public partial class Avatar : CharacterBody2D
                 Ammo = maxAmmo;
             }
         }
-        else if (Ammo < maxAmmo && _burstLeft == 0 && (Ammo == 0 || _idleT > 1.1f))
+        // By itself only once the magazine is empty; earlier when the player asks (the reload key).
+        else if (Ammo < maxAmmo && _burstLeft == 0 && (Ammo == 0 || f.Reload))
         {
             StartReload();
         }
@@ -405,7 +405,6 @@ public partial class Avatar : CharacterBody2D
             _fireCd = S[Stat.FireCooldown] / (1 + Rage);
             _burstLeft = S.Int(Stat.BurstCount);
             _burstT = 0;
-            _idleT = 0;
         }
 
         if (_burstLeft > 0)

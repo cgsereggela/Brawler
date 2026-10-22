@@ -26,7 +26,7 @@ public readonly record struct Binding(BindKind Kind, long Code)
 public sealed class BindTable
 {
     public const int Slots = 3;
-    public static readonly string[] Actions = { "move_left", "move_right", "jump", "shoot", "block", "emote_1", "emote_2", "emote_3", "emote_4", "emote_5", "ping" };
+    public static readonly string[] Actions = { "move_left", "move_right", "jump", "shoot", "block", "reload", "emote_1", "emote_2", "emote_3", "emote_4", "emote_5", "ping" };
 
     private readonly Dictionary<string, Binding[]> _map = new();
 

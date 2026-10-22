@@ -1,5 +1,4 @@
 issues to fix:
-- the reload happens to soon when the player still has ammo, automatic reload should only happen when the user runs out of ammo, otherwise they can press a key (r by default) to reload early
 
 features to add:
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code

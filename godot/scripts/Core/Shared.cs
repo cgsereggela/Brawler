@@ -160,6 +160,7 @@ public struct InputFrame
     public bool JumpHeld;
     public byte JumpPresses;
     public bool Shoot;
+    public bool Reload;   // held: reload now, before the magazine is empty
     public byte BlockPresses;
     public Vector2 Aim; // world-space point
 
@@ -167,7 +168,7 @@ public struct InputFrame
     {
         var w = new Wire();
         w.I8((int)Mathf.Round(Mathf.Clamp(MoveX, -1, 1) * 127));
-        w.U8((JumpHeld ? 1 : 0) | (Shoot ? 2 : 0));
+        w.U8((JumpHeld ? 1 : 0) | (Shoot ? 2 : 0) | (Reload ? 4 : 0));
         w.U8(JumpPresses).U8(BlockPresses);
         w.I16((int)Aim.X).I16((int)Aim.Y);
         return w.Done();
@@ -180,6 +181,7 @@ public struct InputFrame
         int flags = r.U8();
         f.JumpHeld = (flags & 1) != 0;
         f.Shoot = (flags & 2) != 0;
+        f.Reload = (flags & 4) != 0;
         f.JumpPresses = (byte)r.U8();
         f.BlockPresses = (byte)r.U8();
         f.Aim = new Vector2(r.I16(), r.I16());

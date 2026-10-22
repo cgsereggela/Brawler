@@ -48,6 +48,7 @@ public sealed class LocalInput : IInputSource
             JumpHeld = Input.IsActionPressed("jump"),
             JumpPresses = _jumps,
             Shoot = Input.IsActionPressed("shoot"),
+            Reload = Input.IsActionPressed("reload"),
             BlockPresses = _blocks,
             Aim = _world.GetGlobalMousePosition(),
         };

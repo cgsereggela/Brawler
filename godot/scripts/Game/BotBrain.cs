@@ -36,6 +36,9 @@ public sealed class BotBrain : IInputSource
         _jumpHold -= dt;
         _decisionT -= dt;
         _aimWobbleT -= dt;
+        // Top up between fights: with nobody in sight and the magazine under half, reload early.
+        bool lowAmmo = self.Ammo * 2 < self.S.Int(Stat.Ammo);
+        f.Reload = target == null && lowAmmo;
 
         if (target == null && goal == null)
         {
@@ -61,6 +64,7 @@ public sealed class BotBrain : IInputSource
             f.Aim = predicted + _aimWobble;
             bool sight = HasLineOfSight(me, target.GlobalPosition);
             f.Shoot = sight && tDist < 520 && (self.Ammo > 1 || tDist < 180 || _rng.Randf() < 0.05f);
+            f.Reload = !sight && lowAmmo;
         }
 
         // Movement heads for the goal if there is one, else the target.

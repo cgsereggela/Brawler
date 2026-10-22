@@ -24,7 +24,7 @@ public partial class ControlsPanel : VBoxContainer
 
     private static readonly (string Action, string Name)[] Rows = new[]
     {
-        ("move_left", "Move left"), ("move_right", "Move right"), ("jump", "Jump"), ("shoot", "Shoot"), ("block", "Block"),
+        ("move_left", "Move left"), ("move_right", "Move right"), ("jump", "Jump"), ("shoot", "Shoot"), ("block", "Block"), ("reload", "Reload"),
     }.Concat(Enumerable.Range(0, Emotes.All.Length).Select(i => (Emotes.Action(i), $"Say {Emotes.All[i].Text}")))
      .Append(("ping", "Ping")).ToArray();
 
