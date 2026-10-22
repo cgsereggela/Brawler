@@ -45,7 +45,8 @@ extendedKeyUsage = codeSigning
 subjectKeyIdentifier = hash
 EOF
 
-openssl rand -base64 30 | tr -d '\n' > "$out/$name.password"
+# Git Bash's openssl ends lines with CRLF: strip both, or the password silently carries a \r.
+openssl rand -base64 30 | tr -d '\r\n' > "$out/$name.password"
 BRAWLER_SIGNING_PASSWORD="$(cat "$out/$name.password")"
 export BRAWLER_SIGNING_PASSWORD
 openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes -config "$tmp/cert.cnf" \
@@ -55,7 +56,7 @@ openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" -name "Brawler"
   -keypbe AES-256-CBC -certpbe AES-256-CBC -macalg sha256 \
   -passout env:BRAWLER_SIGNING_PASSWORD -out "$out/$name.pfx"
 openssl x509 -in "$tmp/cert.pem" -outform der -out "$out/$name.cer"
-base64 < "$out/$name.pfx" | tr -d '\n' > "$out/$name.pfx.b64"
+base64 < "$out/$name.pfx" | tr -d '\r\n' > "$out/$name.pfx.b64"
 chmod 600 "$out/$name".* 2>/dev/null || true
 
 echo "Made $out/$name.pfx"
