@@ -1,5 +1,4 @@
 issues to fix:
-- draw the player stats on top of the end screen when both are showing at the same time
 - the reload happens to soon when the player still has ammo, automatic reload should only happen when the user runs out of ammo, otherwise they can press a key (r by default) to reload early
 
 features to add:

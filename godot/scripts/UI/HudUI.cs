@@ -24,6 +24,7 @@ public partial class HudUI : Control
     private readonly List<(Rect2 Chip, MatchPlayer P)> _chips = new();
     private bool _compact;
     private Control _base;
+    private Control _hover;
     private int _baseKey;
     private readonly TriBatch _batch = new();
     /// <summary>Test hook (--hudshots): open this chip's hover card as if the mouse were over it.</summary>
@@ -43,6 +44,12 @@ public partial class HudUI : Control
         _base.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _base.Draw += DrawBase;
         AddChild(_base);
+        // The hover card goes on top of every screen in this layer (the match-over screen included), so a player's cards
+        // and stats can still be read over it.
+        _hover = new Control { ZIndex = 1, MouseFilter = MouseFilterEnum.Ignore };
+        _hover.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _hover.Draw += () => DrawHoverCard(_hover, GetViewportRect().Size);
+        AddChild(_hover);
         _game.Banner += (text, color, seconds) =>
         {
             _banner = text;
@@ -64,6 +71,7 @@ public partial class HudUI : Control
             _base.QueueRedraw();
         }
         QueueRedraw();
+        _hover.QueueRedraw();
     }
 
     /// <summary>A hash of everything the cached layer shows; when it changes, the chips are laid out and the layer redrawn.</summary>
@@ -223,7 +231,6 @@ public partial class HudUI : Control
 
         DrawBanner(vs);
         DrawGhostHint(vs);
-        DrawHoverCard(vs);
         DrawKillCam(vs);
     }
 
@@ -384,9 +391,9 @@ public partial class HudUI : Control
     }
 
     /// <summary>Hovering a player chip opens a card under it: the cards they've picked, then their resulting stats.</summary>
-    private void DrawHoverCard(Vector2 vs)
+    private void DrawHoverCard(CanvasItem ci, Vector2 vs)
     {
-        var mouse = GetLocalMousePosition();
+        var mouse = ci.GetLocalMousePosition();
         var hit = DebugHover >= 0 ? Mathf.Min(DebugHover, _chips.Count - 1) : _chips.FindIndex(c => c.Chip.Grow(2).HasPoint(mouse));
         if (hit < 0) return;
         var (chip, p) = _chips[hit];
@@ -409,7 +416,7 @@ public partial class HudUI : Control
         Vector2 CardAt(int i) => new(x0 + i / cardRows * (colW + gap), cardsY + i % cardRows * row);
         Vector2 StatAt(int i) => new(x0 + i % 2 * (colW + gap), statsY + 2 + i / 2 * row + 11.5f);
 
-        BeginBatch(this);
+        BeginBatch(ci);
         var poly = Shapes.RoundRect(r, 10, 6);
         var back = new Color(0.05f, 0.03f, 0.11f, 0.93f);
         _batch.Polygon(poly, back);
@@ -426,29 +433,29 @@ public partial class HudUI : Control
         _batch.Line(new Vector2(x0, ruleY), new Vector2(r.End.X - pad, ruleY), 1, new Color(1, 1, 1, 0.1f));
         _batch.Flush();
 
-        DrawString(bold, new Vector2(x0, top), "CARDS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
+        ci.DrawString(bold, new Vector2(x0, top), "CARDS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
         if (stacks.Count > 0)
-            DrawString(bold, new Vector2(r.End.X - pad - 60, top), $"{p.Cards.Count}", HorizontalAlignment.Right, 60, 10, Palette.Accent);
-        DrawString(bold, new Vector2(x0, statsY), "STATS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
+            ci.DrawString(bold, new Vector2(r.End.X - pad - 60, top), $"{p.Cards.Count}", HorizontalAlignment.Right, 60, 10, Palette.Accent);
+        ci.DrawString(bold, new Vector2(x0, statsY), "STATS", HorizontalAlignment.Left, -1, 10, Palette.TextDim);
         float MaxW(int n) => (cardCols == 1 ? w - pad * 2 : colW) - 12 - (n > 1 ? 22 : 0);
         for (int i = 0; i < stacks.Count; i++)
-            DrawString(bold, CardAt(i) + new Vector2(11, 11.5f), stacks[i].Card.Name, HorizontalAlignment.Left, MaxW(stacks[i].Count), 11, Palette.Text);
+            ci.DrawString(bold, CardAt(i) + new Vector2(11, 11.5f), stacks[i].Card.Name, HorizontalAlignment.Left, MaxW(stacks[i].Count), 11, Palette.Text);
         if (combos.Count > 0)
-            DrawString(bold, new Vector2(x0, cardsY + cardRows * row) + new Vector2(11, 11.5f), "Combo: " + string.Join(", ", combos.Select(c => c.Name)),
+            ci.DrawString(bold, new Vector2(x0, cardsY + cardRows * row) + new Vector2(11, 11.5f), "Combo: " + string.Join(", ", combos.Select(c => c.Name)),
                 HorizontalAlignment.Left, w - pad * 2 - 12, 11, Palette.Accent);
         for (int i = 0; i < stats.Count; i++)
-            DrawString(bold, StatAt(i), stats[i].Value, HorizontalAlignment.Right, colW, 11, stats[i].Changed ? Palette.Accent : Palette.Text);
+            ci.DrawString(bold, StatAt(i), stats[i].Value, HorizontalAlignment.Right, colW, 11, stats[i].Changed ? Palette.Accent : Palette.Text);
         for (int i = 0; i < stacks.Count; i++)
         {
             var (card, n) = stacks[i];
             if (n <= 1) continue;
             float nameW = Mathf.Min(MaxW(n), bold.GetStringSize(card.Name, HorizontalAlignment.Left, -1, 11).X);
-            DrawString(Fonts.Heavy, CardAt(i) + new Vector2(15 + nameW, 11.5f), $"x{n}", HorizontalAlignment.Left, -1, 10, Palette.Accent);
+            ci.DrawString(Fonts.Heavy, CardAt(i) + new Vector2(15 + nameW, 11.5f), $"x{n}", HorizontalAlignment.Left, -1, 10, Palette.Accent);
         }
         if (stacks.Count == 0)
-            DrawString(Fonts.Regular, new Vector2(x0, cardsY + 11), "No cards yet", HorizontalAlignment.Left, -1, 11, Palette.TextDim with { A = 0.7f });
+            ci.DrawString(Fonts.Regular, new Vector2(x0, cardsY + 11), "No cards yet", HorizontalAlignment.Left, -1, 11, Palette.TextDim with { A = 0.7f });
         for (int i = 0; i < stats.Count; i++)
-            DrawString(Fonts.Regular, StatAt(i), stats[i].Label, HorizontalAlignment.Left, colW - 40, 11, Palette.TextDim);
+            ci.DrawString(Fonts.Regular, StatAt(i), stats[i].Label, HorizontalAlignment.Left, colW - 40, 11, Palette.TextDim);
     }
 
     /// <summary>While you're a ghost: when you respawn (respawn modes), or a reminder that you can still emote and ping until the next battle.</summary>

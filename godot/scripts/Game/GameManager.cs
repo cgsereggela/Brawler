@@ -194,6 +194,7 @@ public partial class GameManager : Node2D
             Net.Lobby.DealTeams();
         }
         if (Net.TestFriendlyFire) Net.Lobby.Settings.FriendlyFire = true;
+        if (Net.TestRounds > 0) Net.Lobby.Settings.RoundsToWin = Net.TestRounds; // --rounds=N: a shorter test match
         if (Net.TestMode is { } mode)
         {
             Net.Lobby.Settings.Mode = mode; // --mode=ID

@@ -27,6 +27,8 @@ public partial class NetworkManager : Node
     public bool TestFriendlyFire;
     /// <summary>--mode=ID: the game mode for matches this run hosts.</summary>
     public Brawler.Logic.GameMode? TestMode;
+    /// <summary>--rounds=N: round wins to take the match, for matches this run hosts (0 = the lobby setting).</summary>
+    public int TestRounds;
 
     public NetMode Mode { get; private set; } = NetMode.None;
     public LobbyState Lobby { get; private set; } = new();

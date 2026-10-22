@@ -50,6 +50,7 @@ namespace Brawler;
 ///   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
 ///   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
 ///   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
+///   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -300,7 +301,7 @@ public partial class Main : Node
             t.Timeout += () =>
             {
                 if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
-                else if (_poolCheck && _poolPicks == 0) Finish(1, "poolcheck: the match ended without a card pick");
+                else if (_poolCheck && _poolPicks == 0 && _net.TestRounds != 1) Finish(1, "poolcheck: the match ended without a card pick"); // --rounds=1 has no pick
                 else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
                 else if (ChatCheckProblem() is { } chat) Finish(1, chat);
                 else if (ComboCheckProblem() is { } combo) Finish(1, combo);
@@ -342,6 +343,7 @@ public partial class Main : Node
             else if (a.StartsWith("--teams=") && int.TryParse(a["--teams=".Length..], out int teams)) _net.TestTeamSize = Mathf.Clamp(teams, 0, 4);
             else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
             else if (a.StartsWith("--mode=")) _net.TestMode = GameModes.Parse(a["--mode=".Length..]);
+            else if (a.StartsWith("--rounds=") && int.TryParse(a["--rounds=".Length..], out int rounds)) _net.TestRounds = Mathf.Clamp(rounds, 1, 10);
             else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
@@ -369,7 +371,16 @@ public partial class Main : Node
         if (_shotDir != null && !args.Contains("--readmeshots")) // readme names its own shots
         {
             _game.CardPickBegan += () => GetTree().CreateTimer(0.3).Timeout += SaveShot;
-            _game.MatchEnded += _ => GetTree().CreateTimer(0.3, true, false, true).Timeout += SaveShot;
+            _game.MatchEnded += _ =>
+            {
+                GetTree().CreateTimer(0.3, true, false, true).Timeout += () =>
+                {
+                    SaveShot();
+                    // Then with a hover card open, which must draw over the match-over screen.
+                    _hud.DebugHover = 0;
+                    GetTree().CreateTimer(0.1, true, false, true).Timeout += () => { SaveShot(); _hud.DebugHover = -1; };
+                };
+            };
             // The kill cam's build-up, its slow-motion kill and the aftermath (real seconds: it slows game time).
             _game.KillCamStarted += () =>
             {
