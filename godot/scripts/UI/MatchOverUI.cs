@@ -108,16 +108,10 @@ public partial class MatchOverUI : Control
             var placeCol = team >= 0 ? Palette.Team(team) : place == 1 ? Palette.Accent : Palette.TextDim;
             row.AddChild(UiKit.Label($"#{place}", 18, placeCol, font: Fonts.Heavy));
             row.AddChild(new AvatarPreview(p.Info.Look, p.Info.ColorIdx, 1.1f) { CustomMinimumSize = new Vector2(36, 34), ShowGun = false });
-            var info = UiKit.VBox(0);
-            info.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            info.AddChild(UiKit.Label($"{p.Info.Name}{(p.Left ? "  (left)" : "")}", UiKit.Body, p.Color.Lightened(0.2f), font: Fonts.Bold));
-            var cards = string.Join("  ·  ", CardRegistry.Resolve(p.Cards).Select(c => c.Name)
-                .Concat(Combos.Active(p.Cards).Select(c => $"COMBO: {c.Name}")));
-            var l = UiKit.Label(cards.Length > 0 ? cards : "no cards", UiKit.Tiny, Palette.TextDim);
-            l.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            if (crowded) { l.MaxLinesVisible = 2; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }
-            info.AddChild(l);
-            row.AddChild(info);
+            var name = UiKit.Label($"{p.Info.Name}{(p.Left ? "  (left)" : "")}", UiKit.Body, p.Color.Lightened(0.2f), font: Fonts.Bold);
+            name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            row.AddChild(name);
             row.AddChild(UiKit.Label($"{p.RoundWins}", 22, Colors.White, font: Fonts.Heavy));
             row.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             standings.AddChild(row);
