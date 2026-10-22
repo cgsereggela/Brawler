@@ -87,14 +87,23 @@ public partial class Crosshair : Node2D
 
     public override void _Draw()
     {
+        // Couch guests: a crosshair each on their aim line, in their color (under the keyboard player's).
+        foreach (var g in _game.LocalGuests)
+            if (g.Avatar is { Alive: true } ga && IsInstanceValid(ga))
+                Paint(this, OnAimLine(ga), new CrosshairState
+                {
+                    Tint = g.Color, Armed = true, Ammo = ga.Ammo, Mag = ga.S.Int(Stat.Ammo),
+                    Reloading = ga.Reloading, ReloadFrac = ga.ReloadFrac, Time = _t,
+                });
+
         var me = _game.LocalMatchPlayer;
         // Dead: the ghost floats after the mouse and shows where it is, so the crosshair steps aside (the pointer stays hidden).
         if (me?.Avatar is { Alive: false } dead && IsInstanceValid(dead)) return;
         var a = _tracked;
         var at = GetLocalMousePosition();
-        // On autopilot (test runs) the mouse means nothing: put the crosshair on the bot's aim line instead.
-        if (a != null && _game.AutopilotLocal)
-            at = GetGlobalTransformWithCanvas().AffineInverse() * a.GetGlobalTransformWithCanvas() * (a.AimDir * 70);
+        // On autopilot (test runs) the mouse means nothing, and a controller aims by direction: put the crosshair on the aim line.
+        if (a != null && (_game.AutopilotLocal || me.Input is LocalInput { UsingPad: true }))
+            at = OnAimLine(a);
         Paint(this, at, new CrosshairState
         {
             Tint = me?.Color ?? Palette.Accent,
@@ -108,6 +117,9 @@ public partial class Crosshair : Node2D
             Time = _t,
         });
     }
+
+    /// <summary>A point on the avatar's aim line, in this layer's coordinates.</summary>
+    private Vector2 OnAimLine(Avatar a) => GetGlobalTransformWithCanvas().AffineInverse() * a.GetGlobalTransformWithCanvas() * (a.AimDir * 70);
 
     // ---------- art ----------
 

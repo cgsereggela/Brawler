@@ -134,6 +134,7 @@ public partial class NetworkManager : Node
         Lobby = new LobbyState();
         InMatch = false;
         _keys.Clear();
+        Pads.Couch.Clear();
         CustomCardLoader.RestoreLocal(); // a client may have been using the host's cards
     }
 
@@ -158,12 +159,12 @@ public partial class NetworkManager : Node
         BroadcastLobby();
     }
 
-    /// <summary>Moves a player to the other team, if it has room. The host can move anyone; others only themselves.</summary>
+    /// <summary>Moves a player to the other team, if it has room. The host can move anyone; others only themselves and their couch guests.</summary>
     public void SwapTeam(int slot)
     {
         if (InMatch || !Lobby.TeamMode) return;
         if (IsHost) HostSwapTeam(slot);
-        else if (Mode == NetMode.Client && LocalPlayer?.Slot == slot) RpcId(1, MethodName.RequestSwapTeam);
+        else if (Mode == NetMode.Client && Lobby.BySlot(slot) is { IsBot: false } p && p.PeerId == LocalPeer) RpcId(1, MethodName.RequestSwapTeam, slot);
     }
 
     private void HostSwapTeam(int slot)
@@ -232,6 +233,86 @@ public partial class NetworkManager : Node
     {
         if (!IsHost) return;
         Rpc(MethodName.SyncLobby, Lobby.Serialize());
+    }
+
+    // ---------- local co-op ----------
+
+    /// <summary>
+    /// A second (third, fourth) person on this machine joins with their own controller. Their slot is theirs for the
+    /// session; the host lists them like anyone else. Returns false if there is no room or the controller is taken.
+    /// </summary>
+    public bool AddGuest(int device)
+    {
+        if (Mode == NetMode.None || InMatch || !Lobby.HasRoom()) return false;
+        int guest = Pads.Couch.Add(device);
+        if (guest < 0) return false;
+        string name = GuestName(LocalName, guest);
+        var look = Appearance.Random(_botLooks);
+        Log.Info($"local player {guest + 1} joined on {Pads.Name(device)}");
+        _guestSince[guest] = Time.GetTicksMsec();
+        if (IsHost) HostAddGuest(LocalPeer, guest, name, look, RejoinKey);
+        else RpcId(1, MethodName.RequestAddGuest, guest, name, look.ToBytes());
+        return true;
+    }
+
+    private readonly System.Collections.Generic.Dictionary<int, ulong> _guestSince = new();
+
+    /// <summary>Client: the host turned a guest away (the lobby filled up first), so free their controller. Requests still in flight get a few seconds.</summary>
+    private void DropRefusedGuests()
+    {
+        foreach (var (guest, _) in new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, int>>(Pads.Couch.Guests))
+            if (Lobby.Guest(LocalPeer, guest) == null && (!_guestSince.TryGetValue(guest, out ulong since) || Time.GetTicksMsec() - since > 3000))
+                Pads.Couch.Remove(guest);
+    }
+
+    public void RemoveGuest(int guest)
+    {
+        if (InMatch || !Pads.Couch.Remove(guest)) return;
+        if (IsHost) HostRemoveGuest(LocalPeer, guest);
+        else if (Mode == NetMode.Client) RpcId(1, MethodName.RequestRemoveGuest, guest);
+    }
+
+    /// <summary>"Sam" with guest 1 is "Sam 2": the keyboard player is player 1 of their machine.</summary>
+    public static string GuestName(string owner, int guest)
+    {
+        string suffix = $" {guest + 1}";
+        owner = string.IsNullOrWhiteSpace(owner) ? "Player" : owner.Trim();
+        return owner.Length + suffix.Length > 12 ? owner[..(12 - suffix.Length)] + suffix : owner + suffix;
+    }
+
+    private void HostAddGuest(long peer, int guest, string name, Appearance look, string key)
+    {
+        if (InMatch || !Lobby.HasRoom() || guest is < 1 or > CouchRoster.MaxGuests || Lobby.ByPeer(peer) == null || Lobby.Guest(peer, guest) != null) return;
+        Lobby.Players.Add(new PlayerInfo
+        {
+            Slot = Lobby.FreeSlot(), PeerId = peer, Guest = guest, Name = name, ColorIdx = Lobby.FreeColor(), Look = look,
+            Key = key, Team = Lobby.NewcomerTeam(),
+        });
+        BroadcastLobby();
+    }
+
+    private void HostRemoveGuest(long peer, int guest)
+    {
+        if (InMatch || guest < 1) return;
+        Lobby.Players.RemoveAll(p => p.PeerId == peer && !p.IsBot && p.Guest == guest);
+        BroadcastLobby();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestAddGuest(int guest, string name, byte[] look)
+    {
+        if (!IsHost) return;
+        long sender = Multiplayer.GetRemoteSenderId();
+        name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
+        if (name.Length > 12) name = name[..12];
+        _keys.TryGetValue(sender, out var key);
+        HostAddGuest(sender, guest, name, Appearance.FromBytes(look), key);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestRemoveGuest(int guest)
+    {
+        if (IsHost) HostRemoveGuest(Multiplayer.GetRemoteSenderId(), guest);
     }
 
     // ---------- connection events ----------
@@ -305,11 +386,11 @@ public partial class NetworkManager : Node
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestSwapTeam()
+    private void RequestSwapTeam(int slot)
     {
         if (!IsHost) return;
-        var p = Lobby.ByPeer(Multiplayer.GetRemoteSenderId());
-        if (p != null) HostSwapTeam(p.Slot);
+        // Themselves or one of their couch guests.
+        if (Lobby.BySlot(slot) is { IsBot: false } p && p.PeerId == Multiplayer.GetRemoteSenderId()) HostSwapTeam(slot);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -340,6 +421,7 @@ public partial class NetworkManager : Node
     private void SyncLobby(byte[] data)
     {
         if (!IsHost) Lobby = LobbyState.Deserialize(data);
+        if (Mode == NetMode.Client && !InMatch) DropRefusedGuests();
         LobbyChanged?.Invoke();
     }
 

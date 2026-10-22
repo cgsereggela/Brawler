@@ -303,7 +303,7 @@ public partial class GameManager
         var col = Palette.Player(p.Info.ColorIdx);
         Fx.RingFx(av.GlobalPosition, 26, 4, col.Lightened(0.3f), 0.35f, 2f);
         Fx.Emit(av.GlobalPosition, PKind.Star, col.Lightened(0.5f), 8, 90, 0.5f, 2.2f, -30);
-        if (p == LocalMatchPlayer) Sfx.Play("blink", 0.7f);
+        if (IsLocalHuman(p)) Sfx.Play("blink", 0.7f);
         Log.Info($"{p.Info.Name} respawned");
     }
 

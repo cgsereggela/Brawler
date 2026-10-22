@@ -9,7 +9,10 @@ using Godot;
 
 namespace Brawler.UI;
 
-/// <summary>Everyone picks at once: you see your own offer, plus who is still choosing.</summary>
+/// <summary>
+/// Everyone picks at once: you see your own offer, plus who is still choosing. Couch co-op players at one machine
+/// take turns on this screen, keyboard player first.
+/// </summary>
 public partial class CardPickUI : Control
 {
     private readonly GameManager _game;
@@ -18,6 +21,9 @@ public partial class CardPickUI : Control
     private Label _status;
     private VBoxContainer _combo;
     private readonly List<CardView> _views = new();
+    /// <summary>Who at this machine is choosing now, and who here already chose this pick.</summary>
+    private MatchPlayer _picker;
+    private readonly HashSet<int> _localDone = new();
 
     /// <summary>--readmeshots: under autopilot, show the cards undimmed and highlight the autopilot's pick as if clicked.</summary>
     public bool ShowAutopilotPick;
@@ -49,11 +55,17 @@ public partial class CardPickUI : Control
         _combo.CustomMinimumSize = new Vector2(0, 52);
         v.AddChild(_combo);
 
-        _game.CardPickBegan += Build;
+        _game.CardPickBegan += () =>
+        {
+            _localDone.Clear();
+            _found.Clear();
+            _cursed.Clear();
+            Build();
+        };
         _game.CardWasPicked += (slot, cardId) =>
         {
             UpdateStatus();
-            if (!ShowAutopilotPick || slot != _game.LocalMatchPlayer?.Slot) return;
+            if (!ShowAutopilotPick || slot != _picker?.Slot) return;
             foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
         };
         _game.CurseTaken += (slot, _) =>
@@ -64,7 +76,7 @@ public partial class CardPickUI : Control
         _game.ComboFound += (slot, combo) =>
         {
             _found.Add(slot);
-            if (slot == _game.LocalMatchPlayer?.Slot) ShowCombo(combo);
+            if (_game.IsLocalHuman(slot)) ShowCombo(combo);
             UpdateStatus();
         };
     }
@@ -73,13 +85,12 @@ public partial class CardPickUI : Control
     {
         UiKit.ClearChildren(_cards);
         _views.Clear();
-        _found.Clear();
-        _cursed.Clear();
         UiKit.ClearChildren(_combo);
-        var me = _game.LocalMatchPlayer;
-        bool canPick = me != null && _game.PickOptions.TryGetValue(me.Slot, out _);
+        var me = _picker = _game.LocalHumans().FirstOrDefault(p => _game.PickOptions.ContainsKey(p.Slot) && !_game.Picked.Contains(p.Slot) && !_localDone.Contains(p.Slot));
+        bool canPick = me != null;
 
-        _title.SetText(canPick ? "CHOOSE A CARD" : "OTHERS ARE CHOOSING");
+        // With couch guests, say whose turn it is.
+        _title.SetText(!canPick ? "OTHERS ARE CHOOSING" : _game.LocalGuests.Count > 0 ? $"{me.Info.Name.ToUpperInvariant()}, CHOOSE A CARD" : "CHOOSE A CARD");
         if (canPick)
         {
             var opts = _game.PickOptions[me.Slot];
@@ -95,6 +106,8 @@ public partial class CardPickUI : Control
             }
         }
         UpdateStatus();
+        // On a controller, start on the first card so the d-pad and A work right away.
+        if (canPick && Pads.LastUsed && _views.Count > 0 && !_views[0].Locked) _views[0].GrabFocus();
     }
 
     /// <summary>Extra room before the cursed deal, so it reads as a separate choice.</summary>
@@ -103,7 +116,7 @@ public partial class CardPickUI : Control
     /// <summary>One card to choose; with <paramref name="curse"/> it is the cursed deal and picking it takes both.</summary>
     private void AddView(CardDef card, float delay, float width, CardDef curse)
     {
-        var me = _game.LocalMatchPlayer;
+        var me = _picker;
         int owned = me.Cards.Count(id => id == card.Id);
         var view = new CardView(card, owned, delay, width, Combos.Unlocks(me.Cards, card.Id), curse) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
         int id = card.Id;
@@ -111,7 +124,11 @@ public partial class CardPickUI : Control
         {
             foreach (var other in _views) other.Locked = true;
             view.Chosen = true;
-            _game.LocalPick(id, deal: curse != null);
+            _localDone.Add(me.Slot);
+            _game.LocalPick(id, deal: curse != null, me);
+            // Next player at this machine, after a beat to see the choice land.
+            if (_game.LocalHumans().Any(p => _game.PickOptions.ContainsKey(p.Slot) && !_game.Picked.Contains(p.Slot) && !_localDone.Contains(p.Slot)))
+                GetTree().CreateTimer(0.7).Timeout += () => { if (Visible) Build(); };
         };
         _views.Add(view);
         _cards.AddChild(view);
@@ -153,7 +170,7 @@ public partial class CardView : Control
     private readonly int _owned;
     private readonly List<ComboDef> _combos;
     private float _delay, _appear, _hover, _t;
-    private bool _mouseIn;
+    private bool _mouseIn, _focused;
 
     private readonly float W = 132;
     private const float H = 188;
@@ -181,6 +198,9 @@ public partial class CardView : Control
         MouseDefaultCursorShape = CursorShape.PointingHand;
         MouseEntered += () => _mouseIn = true;
         MouseExited += () => _mouseIn = false;
+        FocusMode = FocusModeEnum.All; // the d-pad moves between cards, A picks
+        FocusEntered += () => _focused = true;
+        FocusExited += () => _focused = false;
 
         var col = UiKit.CategoryColor(card.Category);
         // Name and effects flow top-down below the header, so a two-line name pushes the text down.
@@ -228,7 +248,7 @@ public partial class CardView : Control
 
     public override void _GuiInput(InputEvent e)
     {
-        if (Locked || e is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) return;
+        if (Locked || !(e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } || e is InputEventJoypadButton && e.IsActionPressed("ui_accept"))) return;
         Picked?.Invoke();
         AcceptEvent();
     }
@@ -239,7 +259,7 @@ public partial class CardView : Control
         _t += dt;
         if (_delay > 0) { _delay -= dt; return; }
         _appear = Mathf.Min(1, _appear + dt * 4f);
-        bool lift = Chosen || (_mouseIn && !Locked);
+        bool lift = Chosen || ((_mouseIn || _focused) && !Locked);
         _hover = Mathf.MoveToward(_hover, lift ? 1 : 0, dt * 7f);
         float ease = 1f - Mathf.Pow(1f - _appear, 3);
         float dim = Locked && !Chosen && _appear >= 1 ? 0.45f : 1f;

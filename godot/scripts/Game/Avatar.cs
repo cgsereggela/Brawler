@@ -917,7 +917,7 @@ public partial class Avatar : CharacterBody2D
 
         var hs = HalfSize;
         float top = AvatarArt.TopY(Player.Info.Look) * size;
-        bool mine = Player == Game.LocalMatchPlayer;
+        bool mine = Game.IsLocalHuman(Player);
 
         // HP bar above the head (and hat), with a white "ghost" that drains after a hit.
         float max = S[Stat.MaxHp];

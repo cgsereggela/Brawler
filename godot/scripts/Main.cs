@@ -56,6 +56,10 @@ namespace Brawler;
 ///   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
 ///   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
 ///   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
+///   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
+///                         player input, and a card pick chosen on each controller; exits 0 on success
+///   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
+///                         autopilot; checks at the end that they played and picked cards like everyone else
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -84,6 +88,7 @@ public partial class Main : Node
     public override void _Ready()
     {
         LocalInput.RegisterActions();
+        Pads.RegisterMenuButtons();
         Keybinds.Init();
         AudioSettings.Init();
         DisplaySettings.Init();
@@ -268,6 +273,92 @@ public partial class Main : Node
         GetViewport().SetInputAsHandled();
     }
 
+    // ---------- controllers ----------
+
+    /// <summary>Synthetic Esc presses (Start, or B in menus) carry this device id, so they don't count as keyboard use.</summary>
+    private const int PadEscDevice = 77;
+
+    public override void _Process(double delta)
+    {
+        Pads.Poll();
+        PadMenus();
+    }
+
+    public override void _Input(InputEvent e)
+    {
+        if (e.Device == PadEscDevice) return;
+        if (e is InputEventMouseMotion m && m.Relative.LengthSquared() > 4 || e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true })
+            Pads.KeyboardUsed();
+    }
+
+    /// <summary>
+    /// Start works as Esc everywhere (the options overlay in a match), and B goes back in menus. With nothing focused,
+    /// the first press of the d-pad, stick or A puts the focus on the screen's first button, so menus can be driven
+    /// from the couch; from there the engine's own ui_* actions (which include the pad) move it.
+    /// </summary>
+    private void PadMenus()
+    {
+        if (_autoMode != null && !_padCheck) return;
+        bool inMenus = !_hud.Visible || _overlay;
+        bool nav = false;
+        foreach (int d in Pads.Devices)
+        {
+            if (Pads.JustPressed(d, PadLayout.Start) || (inMenus && Pads.JustPressed(d, PadLayout.B))) PressEscFromPad();
+            nav |= Pads.JustPressedAny(d, MenuButtons) || (Pads.State(d).Move != System.Numerics.Vector2.Zero && !_padStickHeld.Contains(d));
+            if (Pads.State(d).Move != System.Numerics.Vector2.Zero) _padStickHeld.Add(d);
+            else _padStickHeld.Remove(d);
+        }
+        if (!nav || GetViewport().GuiGetFocusOwner() is { } owner && owner.IsVisibleInTree()) return;
+        // In a match only the card pick and the screens over it take the focus; the fight itself is not a menu.
+        if (_hud.Visible && !_overlay && !_pick.Visible && !_over.Visible) return;
+        FirstFocusable(FocusRoot())?.GrabFocus();
+    }
+
+    private static readonly int[] MenuButtons = { PadLayout.A, PadLayout.DpadUp, PadLayout.DpadDown, PadLayout.DpadLeft, PadLayout.DpadRight };
+    private readonly System.Collections.Generic.HashSet<int> _padStickHeld = new();
+
+    private void PressEscFromPad()
+    {
+        foreach (bool down in new[] { true, false })
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = down, Device = PadEscDevice });
+    }
+
+    /// <summary>The screen a controller should land on: whatever is on top.</summary>
+    private Control FocusRoot()
+    {
+        if (_options.Visible) return _options;
+        if (_custom.Visible) return _custom;
+        if (_over.Visible) return _over;
+        if (_pick.Visible) return _pick;
+        if (_lobby.Visible) return _lobby.FocusRoot;
+        return _menu;
+    }
+
+    /// <summary>
+    /// Where a controller starts on a screen: its main call to action (a Primary button, like PLAY VS BOTS), else the
+    /// first card, else the first button, else anything visible and enabled that takes focus.
+    /// </summary>
+    private static Control FirstFocusable(Control root)
+    {
+        Control best = null;
+        int bestRank = int.MaxValue;
+        void Walk(Node n)
+        {
+            foreach (var c in n.GetChildren())
+            {
+                if (c is not Control ctl || !ctl.Visible) continue;
+                if (ctl.FocusMode == Control.FocusModeEnum.All && ctl is not BaseButton { Disabled: true })
+                {
+                    int rank = ctl is Button b && b.ThemeTypeVariation == "Primary" ? 0 : ctl is CardView ? 1 : ctl is BaseButton ? 2 : 3;
+                    if (rank < bestRank) (best, bestRank) = (ctl, rank);
+                }
+                Walk(ctl);
+            }
+        }
+        Walk(root);
+        return best;
+    }
+
     private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
 
     /// <summary>A new lobby starts from the card pool this player last hosted with.</summary>
@@ -311,6 +402,7 @@ public partial class Main : Node
                 else if (ChatCheckProblem() is { } chat) Finish(1, chat);
                 else if (ComboCheckProblem() is { } combo) Finish(1, combo);
                 else if (LavaCheckProblem() is { } lava) Finish(1, lava);
+                else if (CouchCheckProblem() is { } couch) Finish(1, couch);
                 else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
             };
         }
@@ -356,7 +448,15 @@ public partial class Main : Node
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--padcheck")
+            {
+                _autoMode = "padcheck";
+                _padCheck = true;
+                _game.DisableHitStop = true;
+                PadCheck();
+            }
             else if (a == "--nobots") _noBots = true;
+            else if (a.StartsWith("--couch=") && int.TryParse(a["--couch=".Length..], out int couch)) _couch = Mathf.Clamp(couch, 0, CouchRoster.MaxGuests);
             else if (a == "--nofxcull") Fx.FxLayer.Culling = false;
             else if (a == "--rematch") _rematchTest = true;
             else if (a.StartsWith("--cards=")) ParseDebugCards(a["--cards=".Length..]);
@@ -370,7 +470,7 @@ public partial class Main : Node
                 _simMax = Mathf.Clamp(_simMax, _simMin, LobbyState.MaxPlayers);
             }
         }
-        if (args.Any(a => a is "--autotest" or "--readmeshots" or "--videomatch" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
+        if (args.Any(a => a is "--autotest" or "--readmeshots" or "--videomatch" or "--padcheck" || a.StartsWith("--autohost") || a.StartsWith("--autojoin")))
             _game.Stats.Enabled = forceStats;
         if (_overlayCheck) _game.CardPickBegan += () => _ocSawPick = true;
         if (_shotDir != null && !args.Contains("--readmeshots")) // readme names its own shots
@@ -403,6 +503,7 @@ public partial class Main : Node
                 _game.DisableHitStop = true;
                 _net.LocalName = "Auto";
                 _net.StartOffline();
+                AddCouch();
                 AddTestBots();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3, DisabledCards = new(AutoDisabled) });
                 var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
@@ -421,6 +522,7 @@ public partial class Main : Node
                 _net.LocalName = "AutoHost";
                 _net.UseUpnp = false;
                 if (!_net.Host(port)) { Finish(1, "could not host"); return; }
+                AddCouch();
                 if (!_noBots) _net.AddBot();
                 _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, DisabledCards = new(AutoDisabled) });
                 StartPoolCheck();
@@ -1061,6 +1163,144 @@ public partial class Main : Node
     private bool _playersArg; // --players= given: also sets how many play in --autotest, --hudshots and the --menushots lobby
 
     /// <summary>Bots to add beside the local player in the test modes that take --players= (default four players).</summary>
+    // ---------- --padcheck: controllers, driven by synthetic joypad events ----------
+
+    private bool _padCheck;
+
+    private async void PadCheck()
+    {
+        Pads.TestDevices.AddRange(new[] { 0, 1 });
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        void Press(int dev, int button, bool down) => Input.ParseInputEvent(new InputEventJoypadButton { Device = dev, ButtonIndex = (JoyButton)button, Pressed = down, Pressure = down ? 1 : 0 });
+        void Stick(int dev, JoyAxis axis, float v) => Input.ParseInputEvent(new InputEventJoypadMotion { Device = dev, Axis = axis, AxisValue = v });
+        async System.Threading.Tasks.Task Tap(int dev, int button)
+        {
+            Press(dev, button, true);
+            await Wait(0.1);
+            Press(dev, button, false);
+            await Wait(0.1);
+        }
+        string Name(Control c) => c is Button b ? $"button \"{b.Text}\"" : c?.GetType().Name ?? "nothing";
+
+        await Wait(0.5);
+        // The menu: a d-pad press with nothing focused lands on the first button, then moves on from there.
+        await Tap(0, PadLayout.DpadDown);
+        var first = GetViewport().GuiGetFocusOwner();
+        if (first == null || !_menu.IsAncestorOf(first)) { Finish(1, $"padcheck: the d-pad focused {Name(first)}, not a menu button"); return; }
+        await Tap(0, PadLayout.DpadDown);
+        var second = GetViewport().GuiGetFocusOwner();
+        if (second == first) { Finish(1, $"padcheck: the d-pad did not move the focus off {Name(first)}"); return; }
+        Log.Info($"PADCHECK menu: focus landed on {Name(first)}, moved to {Name(second)}");
+
+        // The lobby: + Local Player, then A on the second controller.
+        FindButton(_menu, "PLAY VS BOTS").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!_lobby.Visible) { Finish(1, "padcheck: no lobby"); return; }
+        FindButton(_lobby, "+ Local Player").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.4);
+        await Tap(1, PadLayout.A);
+        if (Pads.Couch.DeviceOf(1) != 1 || _net.Lobby.Guest(_net.LocalPeer, 1) is not { } guest) { Finish(1, "padcheck: A on the second controller did not add a local player"); return; }
+        Log.Info($"PADCHECK lobby: {guest.Name} joined on controller 1, slot {guest.Slot}");
+        if (_shotDir != null) { await Wait(0.3); SaveShot(); }
+
+        // Input: the guest's controller drives the guest, and no longer the keyboard player.
+        var pad = new PadInput(1);
+        var local = new LocalInput(_game);
+        pad.Next(null, 1f / 60);
+        local.Next(null, 1f / 60);
+        Press(1, PadLayout.RightShoulder, true);
+        Press(1, PadLayout.A, true);
+        Stick(1, JoyAxis.LeftX, 1);
+        await Wait(0.1);
+        var f = pad.Next(null, 1f / 60);
+        var mine = local.Next(null, 1f / 60);
+        Press(1, PadLayout.RightShoulder, false);
+        Press(1, PadLayout.A, false);
+        Stick(1, JoyAxis.LeftX, 0);
+        if (!f.Shoot || !f.JumpHeld || f.JumpPresses != 1 || f.MoveX < 0.9f) { Finish(1, $"padcheck: guest frame shoot={f.Shoot} jump={f.JumpHeld}/{f.JumpPresses} move={f.MoveX:0.00}"); return; }
+        if (mine.Shoot || mine.JumpHeld || mine.MoveX != 0) { Finish(1, "padcheck: the guest's controller also drove the keyboard player"); return; }
+        // An unclaimed controller drives the keyboard player.
+        Press(0, PadLayout.RightShoulder, true);
+        Stick(0, JoyAxis.LeftX, -1);
+        await Wait(0.1);
+        mine = local.Next(null, 1f / 60);
+        Press(0, PadLayout.RightShoulder, false);
+        Stick(0, JoyAxis.LeftX, 0);
+        if (!mine.Shoot || mine.MoveX > -0.9f) { Finish(1, $"padcheck: the spare controller did not drive the keyboard player (shoot={mine.Shoot} move={mine.MoveX:0.00})"); return; }
+        Log.Info("PADCHECK input: the guest's controller drives only the guest; the spare one drives the keyboard player");
+
+        // A card pick, chosen on the controllers: the keyboard player first, then the guest.
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 2, LoserChoices = 3, WinnerChoices = 2, KillCam = false });
+        _game.LavaOverride = 2;
+        _game.HostStartMatch();
+        if (_shotDir != null)
+        {
+            // Mid-fight: both crosshairs (the guest's rides their aim line).
+            for (int i = 0; i < 100 && _game.Phase != Phase.Fighting; i++) await Wait(0.1);
+            Stick(1, JoyAxis.RightX, 0.7f);
+            Stick(1, JoyAxis.RightY, -0.7f);
+            await Wait(0.6);
+            SaveShot();
+            Stick(1, JoyAxis.RightX, 0);
+            Stick(1, JoyAxis.RightY, 0);
+        }
+        for (int i = 0; i < 1800 && _game.Phase != Phase.CardPick; i++) await Wait(0.1);
+        if (_game.Phase != Phase.CardPick) { Finish(1, "padcheck: no card pick within 3 minutes"); return; }
+        var me = _game.LocalMatchPlayer;
+        var g = _game.LocalGuests.FirstOrDefault();
+        int mineBefore = me.Cards.Count, guestBefore = g?.Cards.Count ?? 0;
+        await Wait(1.0);
+        if (GetViewport().GuiGetFocusOwner() is not CardView) await Tap(0, PadLayout.DpadRight); // nothing focused yet: the d-pad grabs the first card
+        if (GetViewport().GuiGetFocusOwner() is not CardView) { Finish(1, $"padcheck: the card pick has {Name(GetViewport().GuiGetFocusOwner())} focused, not a card"); return; }
+        await Tap(0, PadLayout.DpadRight);
+        if (_shotDir != null) { await Wait(0.3); SaveShot(); }
+        await Tap(0, PadLayout.A);
+        await Wait(1.5);
+        if (_shotDir != null) SaveShot();
+        if (g != null && _game.PickOptions.ContainsKey(g.Slot))
+        {
+            if (GetViewport().GuiGetFocusOwner() is not CardView) await Tap(1, PadLayout.DpadRight);
+            await Tap(1, PadLayout.A);
+        }
+        await Wait(0.5);
+        bool mePicked = !_game.PickOptions.ContainsKey(me.Slot) || me.Cards.Count > mineBefore;
+        bool guestPicked = g == null || !_game.PickOptions.ContainsKey(g.Slot) || g.Cards.Count > guestBefore || _game.Phase != Phase.CardPick && g.Cards.Count > guestBefore;
+        if (!mePicked || !guestPicked) { Finish(1, $"padcheck: picks by controller: keyboard player {mePicked}, guest {guestPicked}"); return; }
+        Log.Info($"PADCHECK pick: {me.Info.Name} took {CardRegistry.Get(me.Cards.Last())?.Name}, {g?.Info.Name} took {(g?.Cards.Count > 0 ? CardRegistry.Get(g.Cards.Last())?.Name : "-")}");
+        Finish(0, "padcheck: menus, local co-op join, controller input and card picks all work");
+    }
+
+    // ---------- --couch=N: local co-op guests in the automated matches ----------
+
+    private int _couch;
+
+    /// <summary>Adds the --couch guests, on made-up controller ids (they play on autopilot, so no controller is read).</summary>
+    private void AddCouch()
+    {
+        for (int i = 0; i < _couch; i++)
+            if (!_net.AddGuest(100 + i)) Log.Info($"COUCHCHECK could not add guest {i + 1}");
+    }
+
+    private string CouchCheckProblem()
+    {
+        if (_couch == 0) return null;
+        var guests = _game.LocalGuests;
+        if (guests.Count != _couch) return $"couchcheck: {guests.Count} couch guests in the match, expected {_couch}";
+        var me = _game.LocalMatchPlayer;
+        foreach (var g in guests)
+        {
+            if (g.Info.PeerId != _net.LocalPeer || g.Info.Guest < 1) return $"couchcheck: {g.Info.Name} is not a guest of this machine";
+            // When there were card picks, everyone at this machine took cards, not just the keyboard player.
+            if (me != null && me.Cards.Count > 0 && g.Cards.Count == 0) return $"couchcheck: guest {g.Info.Name} never picked a card";
+        }
+        var remote = _net.IsHost ? _net.Lobby.Players.Count(p => p.Guest > 0 && p.PeerId != _net.LocalPeer) : 0;
+        Log.Info($"COUCHCHECK {guests.Count} guests played: {string.Join(", ", guests.Select(g => $"{g.Info.Name} {g.Cards.Count} cards"))}" +
+                 (_net.IsHost ? $"; guests from other machines: {remote}" : ""));
+        return null;
+    }
+
     private void AddTestBots() { for (int i = 1; i < (_playersArg ? _simMax : 4); i++) _net.AddBot(); }
 
     private readonly Rng _simRng = new((ulong)System.DateTime.Now.Ticks);
@@ -1110,7 +1350,8 @@ public partial class Main : Node
 
     private void AutoHostMaybeStart()
     {
-        if (_net.InMatch || _net.Lobby.Players.Count(p => !p.IsBot) < 2) return;
+        // Another machine has joined (couch guests on this one don't count).
+        if (_net.InMatch || _net.Lobby.Players.Where(p => !p.IsBot).Select(p => p.PeerId).Distinct().Count() < 2) return;
         _net.LobbyChanged -= AutoHostMaybeStart;
         Log.Info("AUTOTEST host: client joined, starting match");
         GetTree().CreateTimer(1.0).Timeout += () => _game.HostStartMatch();
@@ -1387,6 +1628,7 @@ public partial class Main : Node
     {
         if (_net.Lobby.Players.Count == 0) return;
         _net.LobbyChanged -= AutoJoinCheckPool;
+        AddCouch();
         var got = _net.Lobby.Settings.DisabledCards;
         if (!got.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: client got disabled [{string.Join(",", got.OrderBy(id => id))}]"); return; }
         Log.Info($"POOLCHECK client has the host's disabled list: {string.Join(",", got.OrderBy(id => id))}");

@@ -29,7 +29,11 @@ public static class UiKit
         t.SetStylebox("hover", "Button", Box(new Color(1, 1, 1, 0.16f), Palette.Cool with { A = 0.9f }));
         t.SetStylebox("pressed", "Button", Box(Palette.Cool with { A = 0.3f }, Palette.Cool));
         t.SetStylebox("disabled", "Button", Box(new Color(1, 1, 1, 0.03f), new Color(1, 1, 1, 0.06f)));
-        t.SetStylebox("focus", "Button", new StyleBoxEmpty());
+        // Focus (controller and keyboard navigation only; a click doesn't show it): a bright ring just outside the button.
+        var focus = Box(Colors.Transparent, Colors.White with { A = 0.9f }, 12, 0, 0, 2);
+        focus.DrawCenter = false;
+        focus.ExpandMarginLeft = focus.ExpandMarginRight = focus.ExpandMarginTop = focus.ExpandMarginBottom = 3;
+        t.SetStylebox("focus", "Button", focus);
         t.SetFont("font", "Button", Fonts.Bold);
         t.SetColor("font_color", "Button", Palette.Text);
         t.SetColor("font_hover_color", "Button", Colors.White);

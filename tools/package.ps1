@@ -15,12 +15,20 @@
 
 .EXAMPLE
   ./tools/package.ps1 -Godot $env:GODOT -Version 0.2.0 -Platforms windows,linux
+
+.PARAMETER SignPfx
+  A code signing certificate (.pfx, see tools/new-signing-cert.sh) to sign Brawler.exe and the game's own Brawler.dll
+  with. Its password comes from -SignPassword or the BRAWLER_SIGNING_PASSWORD environment variable. Signs with
+  Set-AuthenticodeSignature on Windows and osslsigncode elsewhere, with an RFC 3161 timestamp when the timestamp server
+  answers. Without it the Windows build is left unsigned.
 #>
 param(
     [string]$Godot = $env:GODOT,
     [string[]]$Platforms = @('windows', 'linux', 'macos'),
     [string]$Version = '',
-    [switch]$InstallTemplates
+    [switch]$InstallTemplates,
+    [string]$SignPfx = $env:BRAWLER_SIGNING_PFX_FILE,
+    [string]$SignPassword = $env:BRAWLER_SIGNING_PASSWORD
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +47,50 @@ function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 function Invoke-Godot {
     $ErrorActionPreference = 'Continue'
     & $Godot @args 2>&1 | ForEach-Object { "$_" -replace '\x1b\[[0-9;]*m', '' } | Where-Object { $_ -notmatch '^\s*\[\s*\d+% \]' }
+}
+
+if ($SignPfx -and -not (Test-Path $SignPfx)) { Fail "Signing certificate not found at $SignPfx" }
+if ($SignPfx -and -not $SignPassword) { Fail 'Pass -SignPassword or set BRAWLER_SIGNING_PASSWORD for the signing certificate.' }
+if ($SignPfx -and ($IsLinux -or $IsMacOS) -and -not (Get-Command osslsigncode -ErrorAction SilentlyContinue)) { Fail 'Signing on Linux or macOS needs osslsigncode (apt install osslsigncode / brew install osslsigncode).' }
+
+$timestampUrl = 'http://timestamp.digicert.com'
+
+# Authenticode-signs Windows binaries in place. A self-signed certificate isn't trusted by Windows, so the signature
+# shows as "not verified", but it is there: tampering breaks it, and every release carries the same certificate.
+function Sign-Files([string[]]$files) {
+    if ($IsLinux -or $IsMacOS) {
+        $passFile = [System.IO.Path]::GetTempFileName()
+        [System.IO.File]::WriteAllText($passFile, $SignPassword)
+        try {
+            foreach ($f in $files) {
+                $signed = "$f.signed"
+                $common = @('sign', '-pkcs12', $SignPfx, '-readpass', $passFile, '-n', 'Brawler', '-i', 'https://github.com/cgsereggela/Brawler', '-h', 'sha256')
+                $out = & osslsigncode @common -ts $timestampUrl -in $f -out $signed 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "  timestamp server failed, signing without a timestamp: $out"
+                    Remove-Item -Force $signed -ErrorAction SilentlyContinue
+                    $out = & osslsigncode @common -in $f -out $signed 2>&1
+                    if ($LASTEXITCODE -ne 0) { Fail "osslsigncode could not sign $f`: $out" }
+                }
+                Move-Item -Force $signed $f
+                Write-Host "  signed $(Split-Path -Leaf $f)"
+            }
+        }
+        finally { Remove-Item -Force $passFile -ErrorAction SilentlyContinue }
+    }
+    else {
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($SignPfx, $SignPassword)
+        if (-not $cert.HasPrivateKey) { Fail "$SignPfx has no private key." }
+        foreach ($f in $files) {
+            $r = Set-AuthenticodeSignature -FilePath $f -Certificate $cert -HashAlgorithm SHA256 -TimestampServer $timestampUrl -ErrorAction SilentlyContinue
+            if (-not $r -or -not $r.SignerCertificate) {
+                Write-Host '  timestamp server failed, signing without a timestamp'
+                $r = Set-AuthenticodeSignature -FilePath $f -Certificate $cert -HashAlgorithm SHA256
+            }
+            if (-not $r.SignerCertificate) { Fail "Could not sign $f`: $($r.StatusMessage)" }
+            Write-Host "  signed $(Split-Path -Leaf $f) ($($r.Status): $($r.StatusMessage))"
+        }
+    }
 }
 
 if (-not $Godot) { Fail 'Pass -Godot <path to the Godot .NET editor> or set the GODOT environment variable.' }
@@ -132,6 +184,13 @@ foreach ($p in $Platforms) {
     Write-Host "Exporting $($presets[$p])..."
     Invoke-Godot --headless --path $project --export-release $presets[$p] $out | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { Fail "Export for $p failed (exit $LASTEXITCODE). See the log above." }
+    if ($p -eq 'windows') {
+        if ($SignPfx) {
+            Write-Host 'Signing the Windows build...'
+            Sign-Files (@($out) + @(Get-ChildItem $dir -Recurse -Filter 'Brawler.dll' | ForEach-Object { $_.FullName }))
+        }
+        else { Write-Host 'Windows build left unsigned (no -SignPfx).' }
+    }
 
     $zipPath = Join-Path $dist "Brawler-$Version-$p.zip"
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }

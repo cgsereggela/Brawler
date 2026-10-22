@@ -73,6 +73,9 @@ public partial class ControlsPanel : VBoxContainer
             }
         }
 
+        // Controllers have a fixed layout (not rebindable): just show it.
+        AddChild(UiKit.Label(PadLayout.Summary, UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center));
+
         _note = UiKit.Label("", UiKit.Small, Palette.Accent, HorizontalAlignment.Center);
         _note.CustomMinimumSize = new Vector2(0, 16);
         AddChild(_note);

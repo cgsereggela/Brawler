@@ -1,3 +1,12 @@
+## New in 1.0.0
+
+- **Controllers:** play and move through every menu with a gamepad (Xbox, PlayStation, Switch Pro and others).
+- **Couch co-op:** up to four people on one computer, each with a controller. In the lobby click **+ Local Player** and
+  press **A** on the new player's controller. Works vs bots, hosting and joining.
+- **Signed Windows build:** `Brawler.exe` carries Brawler's own signature (thumbprint
+  `15E5691329FCBBDD1C1F8F2438471C47FC1E27D9`), so you can check it hasn't been tampered with. Windows still asks you
+  to confirm the first run.
+
 ## Download
 
 | Your computer | File |

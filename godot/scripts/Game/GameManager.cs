@@ -45,6 +45,19 @@ public partial class GameManager : Node2D
     public Phase Phase { get; private set; } = Phase.Idle;
     public float CountdownLeft { get; private set; }
     public MatchPlayer LocalMatchPlayer { get; private set; }
+    /// <summary>Local co-op guests: other people at this machine, each on their own controller (see Pads.Couch).</summary>
+    public readonly List<MatchPlayer> LocalGuests = new();
+
+    /// <summary>Someone playing at this machine: the keyboard player or a couch guest.</summary>
+    public bool IsLocalHuman(MatchPlayer p) => p != null && (p == LocalMatchPlayer || LocalGuests.Contains(p));
+    public bool IsLocalHuman(int slot) => slot >= 0 && slot < Slots.Length && IsLocalHuman(Slots[slot]);
+
+    /// <summary>Everyone playing at this machine, keyboard player first.</summary>
+    public IEnumerable<MatchPlayer> LocalHumans()
+    {
+        if (LocalMatchPlayer != null) yield return LocalMatchPlayer;
+        foreach (var g in LocalGuests) yield return g;
+    }
     public int BattleNumber { get; private set; }
     public int MatchWinner { get; private set; } = -1;
 
@@ -147,7 +160,7 @@ public partial class GameManager : Node2D
 
     public int ColorOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.ColorIdx : 0;
 
-    public bool IsBotPlayer(MatchPlayer p) => p.Info.IsBot || (p == LocalMatchPlayer && AutopilotLocal);
+    public bool IsBotPlayer(MatchPlayer p) => p.Info.IsBot || (IsLocalHuman(p) && AutopilotLocal);
 
     /// <summary>The live avatar in a slot, or null.</summary>
     public Avatar AvatarOf(int slot) =>
@@ -331,8 +344,10 @@ public partial class GameManager : Node2D
     public void LocalVoteRematch(bool yes)
     {
         if (LocalMatchPlayer == null || Phase != Phase.MatchOver) return;
-        if (IsHost) HostVoteRematch(LocalMatchPlayer.Slot, yes);
-        else RpcId(1, MethodName.RequestRematch, yes);
+        // Couch guests vote with the keyboard player: they share the screen and its buttons.
+        foreach (var p in LocalHumans().ToList())
+            if (IsHost) HostVoteRematch(p.Slot, yes);
+            else RpcId(1, MethodName.RequestRematch, p.Slot, yes);
     }
 
     private void HostVoteRematch(int slot, bool yes)
@@ -366,11 +381,15 @@ public partial class GameManager : Node2D
     private void OnPeerLeft(long peer)
     {
         if (Phase == Phase.Idle) return;
-        var mp = Slots.FirstOrDefault(p => p != null && !p.Info.IsBot && p.Info.PeerId == peer);
-        if (mp == null) return;
+        // Their couch guests go with them.
+        var gone = Slots.Where(p => p != null && !p.Info.IsBot && !p.Left && p.Info.PeerId == peer).ToList();
+        if (gone.Count == 0) return;
         if (KillCam.Playing) Rpc(MethodName.EndKillCam); // back to the real state before anything changes
-        if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar, KillCause.Left);
-        Rpc(MethodName.PlayerLeft, mp.Slot);
+        foreach (var mp in gone)
+        {
+            if (mp.Avatar != null && mp.Avatar.Alive) HostKill(mp.Avatar, KillCause.Left);
+            Rpc(MethodName.PlayerLeft, mp.Slot);
+        }
         if (Phase == Phase.CardPick) HostCheckPicksDone();
         if (Phase == Phase.MatchOver) HostSyncRematch(); // their vote goes, and the rest may now all be in
 
@@ -392,23 +411,30 @@ public partial class GameManager : Node2D
     {
         if (Phase is Phase.Idle or Phase.MatchOver) return false;
         var dropped = Slots.Where(p => p != null && p.Left && !p.Info.IsBot).ToList();
-        var mp = dropped.FirstOrDefault(p => key != null && p.Info.Key == key);
-        if (mp == null && dropped.Count(p => p.Info.Name == name) == 1) mp = dropped.First(p => p.Info.Name == name);
+        var mp = dropped.FirstOrDefault(p => key != null && p.Info.Key == key && p.Info.Guest == 0);
+        if (mp == null && dropped.Count(p => p.Info.Name == name && p.Info.Guest == 0) == 1) mp = dropped.First(p => p.Info.Name == name && p.Info.Guest == 0);
         if (mp == null) return false;
 
-        mp.Info.PeerId = peer;
-        mp.Info.Key = key;
-        mp.Left = false;
-        mp.Input = new RemoteInput();
+        // Their couch guests (who share the rejoin key) come back with them.
+        var back = new List<MatchPlayer> { mp };
+        if (key != null) back.AddRange(dropped.Where(p => p != mp && p.Info.Guest > 0 && p.Info.Key == key));
+        foreach (var p in back)
+        {
+            p.Info.PeerId = peer;
+            p.Info.Key = key;
+            p.Left = false;
+            p.Input = new RemoteInput();
+        }
         Net.SendCards(peer);
         RpcId(peer, MethodName.Rejoined, RejoinBytes());
-        Rpc(MethodName.PlayerBack, mp.Slot, peer);
-        // Back in the lobby list too, for after the match.
-        if (Net.Lobby.BySlot(mp.Slot) == null)
+        foreach (var p in back)
         {
-            Net.Lobby.Players.Add(new PlayerInfo { Slot = mp.Slot, PeerId = peer, Name = mp.Info.Name, ColorIdx = mp.Info.ColorIdx, Look = mp.Info.Look.Clone(), Key = key });
-            Net.Lobby.Players.Sort((a, b) => a.Slot.CompareTo(b.Slot));
+            Rpc(MethodName.PlayerBack, p.Slot, peer);
+            // Back in the lobby list too, for after the match.
+            if (Net.Lobby.BySlot(p.Slot) == null)
+                Net.Lobby.Players.Add(new PlayerInfo { Slot = p.Slot, PeerId = peer, Guest = p.Info.Guest, Name = p.Info.Name, ColorIdx = p.Info.ColorIdx, Look = p.Info.Look.Clone(), Key = key });
         }
+        Net.Lobby.Players.Sort((a, b) => a.Slot.CompareTo(b.Slot));
         Net.BroadcastLobby();
         Log.Info($"{mp.Info.Name} rejoined slot {mp.Slot} with {mp.Cards.Count} cards");
         return true;
@@ -447,11 +473,13 @@ public partial class GameManager : Node2D
     // =====================================================================
 
     /// <param name="deal">Take the cursed deal (its rare card is <paramref name="cardId"/>) instead of an ordinary card.</param>
-    public void LocalPick(int cardId, bool deal = false)
+    /// <param name="who">Which player at this machine is picking (default: the keyboard player).</param>
+    public void LocalPick(int cardId, bool deal = false, MatchPlayer who = null)
     {
-        if (LocalMatchPlayer == null) return;
-        if (IsHost) HostApplyPick(LocalMatchPlayer.Slot, cardId, deal);
-        else RpcId(1, MethodName.RequestPick, cardId, deal);
+        who ??= LocalMatchPlayer;
+        if (!IsLocalHuman(who)) return;
+        if (IsHost) HostApplyPick(who.Slot, cardId, deal);
+        else RpcId(1, MethodName.RequestPick, who.Slot, cardId, deal);
     }
 
     // =====================================================================
@@ -567,11 +595,11 @@ public partial class GameManager : Node2D
         {
             var a = p.Avatar;
             if (a == null) continue;
-            if (p == LocalMatchPlayer && p.Input != null)
+            if (IsLocalHuman(p) && p.Input != null)
             {
                 // Dead, the input still goes to the host: its Aim steers our ghost there too.
                 var f = a.Alive || !AutopilotLocal ? p.Input.Next(a, dt) : new InputFrame { Aim = BotGhostTarget(a) };
-                RpcId(1, MethodName.SubmitInput, f.ToBytes());
+                RpcId(1, MethodName.SubmitInput, p.Slot, f.ToBytes());
                 if (a.Alive) a.Step(f, dt, authority: false);
                 else a.GhostStep(f.Aim, dt);
             }
@@ -650,7 +678,8 @@ public partial class GameManager : Node2D
     {
         if (!KillCam.Playing || SkipAsked || LocalMatchPlayer == null) return;
         SkipAsked = true;
-        if (IsHost) HostSkipKillCam(LocalMatchPlayer.Slot);
+        // One skip speaks for everyone at this machine.
+        if (IsHost) foreach (var p in LocalHumans().ToList()) HostSkipKillCam(p.Slot);
         else RpcId(1, MethodName.RequestSkipKillCam);
     }
 
@@ -659,8 +688,8 @@ public partial class GameManager : Node2D
     {
         if (!IsHost) return;
         long sender = Multiplayer.GetRemoteSenderId();
-        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
-        if (p != null) HostSkipKillCam(p.Slot);
+        foreach (var p in Slots.Where(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender).ToList())
+            HostSkipKillCam(p.Slot);
     }
 
     private void HostSkipKillCam(int slot)
@@ -733,18 +762,21 @@ public partial class GameManager : Node2D
 
     private void ClientAutopilotPick(float dt)
     {
-        if (!AutopilotLocal || LocalMatchPlayer == null || Picked.Contains(LocalMatchPlayer.Slot)) return;
-        if (!PickOptions.TryGetValue(LocalMatchPlayer.Slot, out var opts)) return;
+        if (!AutopilotLocal) return;
+        // Everyone at this machine in turn: the keyboard player, then the couch guests.
+        var me = LocalHumans().FirstOrDefault(p => !Picked.Contains(p.Slot) && PickOptions.ContainsKey(p.Slot));
+        if (me == null) return;
+        var opts = PickOptions[me.Slot];
         if (_autoPickT < 0) _autoPickT = 0.8f;
         _autoPickT -= dt;
         if (_autoPickT > 0) return;
         _autoPickT = -1;
         // Like a bot: a combo card when there is one, mostly, so autotests see combos found.
-        var combos = opts.Where(id => Combos.Unlocks(LocalMatchPlayer.Cards, id).Count > 0).ToList();
+        var combos = opts.Where(id => Combos.Unlocks(me.Cards, id).Count > 0).ToList();
         var from = combos.Count > 0 && GD.Randf() < 0.75f ? combos : opts;
         // Now and then the cursed deal, so autotests take curses too.
-        if (combos.Count == 0 && PickDeals.TryGetValue(LocalMatchPlayer.Slot, out var deal) && GD.Randf() < 0.3f) LocalPick(deal.Rare, deal: true);
-        else LocalPick(from[(int)(GD.Randi() % (uint)from.Count)]);
+        if (combos.Count == 0 && PickDeals.TryGetValue(me.Slot, out var deal) && GD.Randf() < 0.3f) LocalPick(deal.Rare, deal: true, me);
+        else LocalPick(from[(int)(GD.Randi() % (uint)from.Count)], who: me);
     }
 
     /// <summary>
@@ -1091,7 +1123,7 @@ public partial class GameManager : Node2D
         var feet = a.GlobalPosition + new Vector2(0, a.HalfSize.Y);
         Fx.Emit(feet, PKind.Smoke, new Color(1, 1, 1, 0.5f), 4, 50, 0.35f, 2.2f, 0, Vector2.Up, 2.6f, 5);
         if (air) Fx.RingFx(feet, 2, 12 * a.S[Stat.Size], Palette.Player(a.Player.Info.ColorIdx).Lightened(0.4f), 0.25f, 1.5f);
-        if (a.Player == LocalMatchPlayer) Sfx.Play("jump", 0.6f);
+        if (IsLocalHuman(a.Player)) Sfx.Play("jump", 0.6f);
     }
 
     private void OnShotFx(Bullet b)
@@ -1104,13 +1136,13 @@ public partial class GameManager : Node2D
         if (st.Has(Flavor.Fire)) Fx.Emit(b.Pos, PKind.Ember, new Color("#ffa33b"), 2, 60, 0.4f, 1.2f, -40, dir, 1.2f);
         var gun = AvatarOf(b.Owner);
         Sfx.Play(gun != null ? Sfx.ShotFor(gun.S) : "shoot", 0.7f);
-        if (LocalMatchPlayer != null && b.Owner == LocalMatchPlayer.Slot) Shake(0.12f);
+        if (IsLocalHuman(b.Owner)) Shake(0.12f);
         if (b.Child) return;
         var shooter = AvatarOf(b.Owner);
         if (shooter == null) return;
         shooter.OnFired();
         // Recoil Jet: pushed on the host and in the shooter's own client prediction.
-        if (IsHost || shooter.Player == LocalMatchPlayer) shooter.ApplyRecoil(dir);
+        if (IsHost || IsLocalHuman(shooter.Player)) shooter.ApplyRecoil(dir);
     }
 
     // =====================================================================
@@ -1308,17 +1340,12 @@ public partial class GameManager : Node2D
         Settings = lobby.Settings;
         Array.Clear(Slots);
         LocalMatchPlayer = null;
-        long me = Net.LocalPeer;
+        LocalGuests.Clear();
         foreach (var info in lobby.Players)
         {
             var mp = new MatchPlayer { Info = info };
             if (IsHost) info.Key = Net.Lobby.BySlot(info.Slot)?.Key; // keys aren't sent, so take them from our own lobby
-            bool isMine = !info.IsBot && info.PeerId == me;
-            if (isMine)
-            {
-                LocalMatchPlayer = mp;
-                mp.Input = AutopilotLocal ? new BotBrain(this) : new LocalInput(this);
-            }
+            if (AttachLocal(mp)) { }
             else if (IsHost)
             {
                 mp.Input = info.IsBot ? new BotBrain(this) : new RemoteInput();
@@ -1447,18 +1474,14 @@ public partial class GameManager : Node2D
         Settings = lobby.Settings;
         Array.Clear(Slots);
         LocalMatchPlayer = null;
-        long me = Net.LocalPeer;
+        LocalGuests.Clear();
         foreach (var info in lobby.Players)
         {
             var mp = new MatchPlayer { Info = info, Left = r.Bool(), RoundWins = r.U8(), BattleWins = r.U8() };
             int cards = r.U8();
             for (int k = 0; k < cards; k++) mp.Cards.Add(r.I16());
             mp.RecomputeStats();
-            if (!info.IsBot && info.PeerId == me)
-            {
-                LocalMatchPlayer = mp;
-                mp.Input = AutopilotLocal ? new BotBrain(this) : new LocalInput(this);
-            }
+            AttachLocal(mp);
             Slots[info.Slot] = mp;
         }
         BattleNumber = r.I16();
@@ -1479,6 +1502,26 @@ public partial class GameManager : Node2D
             CardPickBegan?.Invoke();
         }
         else Banner?.Invoke("REJOINED! YOU'RE IN FROM THE NEXT BATTLE", Palette.Accent, 2.5f);
+    }
+
+    /// <summary>Gives a player at this machine their input: the keyboard player, or a couch guest's controller. False if they play elsewhere.</summary>
+    private bool AttachLocal(MatchPlayer mp)
+    {
+        var info = mp.Info;
+        if (info.IsBot || info.PeerId != Net.LocalPeer) return false;
+        if (info.Guest == 0)
+        {
+            LocalMatchPlayer = mp;
+            mp.Input = AutopilotLocal ? new BotBrain(this) : new LocalInput(this);
+        }
+        else
+        {
+            LocalGuests.Add(mp);
+            int device = Pads.Couch.DeviceOf(info.Guest);
+            // A guest whose controller is gone (a rejoin after restarting the game) stands still until the next lobby.
+            mp.Input = AutopilotLocal ? new BotBrain(this) : device >= 0 ? new PadInput(device) : null;
+        }
+        return true;
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1518,7 +1561,7 @@ public partial class GameManager : Node2D
         foreach (var combo in unlocked)
         {
             Log.Info($"combo: {p.Info.Name} found {combo.Name}");
-            if (p == LocalMatchPlayer) Sfx.Play("combo", 0.7f);
+            if (IsLocalHuman(p)) Sfx.Play("combo", 0.7f);
             ComboFound?.Invoke(slot, combo);
         }
     }
@@ -1580,13 +1623,13 @@ public partial class GameManager : Node2D
         if (!IsHost)
         {
             a.Hp = newHp;
-            if (Slots[slot] == LocalMatchPlayer) a.Velocity += knockback; // predicted avatar feels the hit
+            if (IsLocalHuman(slot)) a.Velocity += knockback; // predicted avatar feels the hit
         }
         a.OnHurtFx();
         HitFx(slot, attacker, at, knockback, damage);
         Sfx.Play("hit");
         float tierShake = StyleOf(attacker).Tier * 0.04f;
-        Shake((Slots[slot] == LocalMatchPlayer ? 0.45f : 0.2f) + tierShake);
+        Shake((IsLocalHuman(slot) ? 0.45f : 0.2f) + tierShake);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1597,12 +1640,12 @@ public partial class GameManager : Node2D
         if (!IsHost)
         {
             a.Hp = newHp;
-            if (Slots[slot] == LocalMatchPlayer) a.Velocity += knockback;
+            if (IsLocalHuman(slot)) a.Velocity += knockback;
         }
         var k = (HazardHit)kind;
         _lastHazard[slot] = k;
         a.OnHurtFx();
-        bool mine = Slots[slot] == LocalMatchPlayer;
+        bool mine = IsLocalHuman(slot);
         switch (k)
         {
             case HazardHit.Saw:
@@ -1756,7 +1799,7 @@ public partial class GameManager : Node2D
 
             var a = Slots[slot]?.Avatar;
             if (a == null || _clock - a.BornAt < 0.25f) continue; // just respawned: older snapshots still show the dead body
-            bool mine = Slots[slot] == LocalMatchPlayer;
+            bool mine = IsLocalHuman(slot);
             if (a.Alive && (flags & 1) == 0) a.Alive = false;
             a.Hp = hp;
             a.Ammo = ammo;
@@ -1781,7 +1824,7 @@ public partial class GameManager : Node2D
     public event Action<int, Vector2> PingShown;
 
     private readonly EmoteLimiter[] _emoteGuard = NewGuards(), _pingGuard = NewGuards();
-    private readonly EmoteLimiter _myEmotes = new(), _myPings = new();
+    private readonly EmoteLimiter[] _myEmotes = NewGuards(), _myPings = NewGuards(); // per slot, for the players at this machine
     private readonly Rng _chatRng = new((ulong)DateTime.Now.Ticks ^ 0x9e3779b97f4a7c15UL);
 
     private static EmoteLimiter[] NewGuards() => Enumerable.Range(0, LobbyState.MaxPlayers).Select(_ => new EmoteLimiter()).ToArray();
@@ -1789,18 +1832,21 @@ public partial class GameManager : Node2D
     /// <summary>Emotes and pings work while the arena is on screen, alive or as a ghost.</summary>
     public bool CanChat => Phase is Phase.Countdown or Phase.Fighting or Phase.Intermission && Map != null;
 
-    public void LocalEmote(int id)
+    /// <param name="who">Which player at this machine (default: the keyboard player).</param>
+    public void LocalEmote(int id, MatchPlayer who = null)
     {
-        if (!CanChat || LocalMatchPlayer == null || !Emotes.Valid(id) || !_myEmotes.TryUse()) return;
-        if (IsHost) HostEmote(LocalMatchPlayer.Slot, id);
-        else RpcId(1, MethodName.RequestEmote, id);
+        who ??= LocalMatchPlayer;
+        if (!CanChat || !IsLocalHuman(who) || !Emotes.Valid(id) || !_myEmotes[who.Slot].TryUse()) return;
+        if (IsHost) HostEmote(who.Slot, id);
+        else RpcId(1, MethodName.RequestEmote, who.Slot, id);
     }
 
-    public void LocalPing(Vector2 at)
+    public void LocalPing(Vector2 at, MatchPlayer who = null)
     {
-        if (!CanChat || LocalMatchPlayer == null || !_myPings.TryUse()) return;
-        if (IsHost) HostPing(LocalMatchPlayer.Slot, at);
-        else RpcId(1, MethodName.RequestPing, at);
+        who ??= LocalMatchPlayer;
+        if (!CanChat || !IsLocalHuman(who) || !_myPings[who.Slot].TryUse()) return;
+        if (IsHost) HostPing(who.Slot, at);
+        else RpcId(1, MethodName.RequestPing, who.Slot, at);
     }
 
     private void HostEmote(int slot, int id)
@@ -1827,17 +1873,38 @@ public partial class GameManager : Node2D
     {
         foreach (var g in _emoteGuard) g.Tick(dt);
         foreach (var g in _pingGuard) g.Tick(dt);
-        _myEmotes.Tick(dt);
-        _myPings.Tick(dt);
+        foreach (var g in _myEmotes) g.Tick(dt);
+        foreach (var g in _myPings) g.Tick(dt);
     }
 
-    /// <summary>Reads the emote and ping keys for the person at this computer.</summary>
+    /// <summary>Reads the emote and ping keys (and buttons) for the people at this computer.</summary>
     private void ReadChatKeys()
     {
-        if (!CanChat || LocalMatchPlayer == null || LocalInput.Suppressed || AutopilotLocal) return;
-        for (int i = 0; i < Emotes.All.Length; i++)
-            if (Input.IsActionJustPressed(Emotes.Action(i))) LocalEmote(i);
-        if (Input.IsActionJustPressed("ping")) LocalPing(GetGlobalMousePosition());
+        if (!CanChat || AutopilotLocal) return;
+        var me = LocalMatchPlayer;
+        if (me != null && !LocalInput.Suppressed)
+        {
+            for (int i = 0; i < Emotes.All.Length; i++)
+                if (Input.IsActionJustPressed(Emotes.Action(i))) LocalEmote(i);
+            if (Input.IsActionJustPressed("ping")) LocalPing(GetGlobalMousePosition());
+            foreach (int d in Pads.Unclaimed()) PadChat(me, d);
+        }
+        foreach (var g in LocalGuests)
+            if (g.Input is PadInput pad) PadChat(g, pad.Device);
+    }
+
+    private void PadChat(MatchPlayer who, int device)
+    {
+        for (int i = 0; i < Emotes.All.Length && i < PadLayout.Emotes.Length; i++)
+            if (Pads.JustPressed(device, PadLayout.Emotes[i])) LocalEmote(i, who);
+        // A controller pings where its player aims.
+        if (Pads.JustPressed(device, PadLayout.Ping) && who.Avatar is { } a && IsInstanceValid(a))
+            LocalPing(who.Input switch
+            {
+                PadInput p => a.GlobalPosition + p.AimDir * PadReader.Reach,
+                LocalInput l => a.GlobalPosition + l.PadAimDir * PadReader.Reach,
+                _ => a.GlobalPosition,
+            }, who);
     }
 
     /// <summary>Where a bot's ghost (or an autopiloted one) floats: circling over the nearest live player's head.</summary>
@@ -1856,21 +1923,17 @@ public partial class GameManager : Node2D
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestEmote(int id)
+    private void RequestEmote(int slot, int id)
     {
         if (!IsHost) return;
-        long sender = Multiplayer.GetRemoteSenderId();
-        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
-        if (p != null) HostEmote(p.Slot, id);
+        if (SenderOwns(slot) is { } p) HostEmote(p.Slot, id);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestPing(Vector2 at)
+    private void RequestPing(int slot, Vector2 at)
     {
         if (!IsHost) return;
-        long sender = Multiplayer.GetRemoteSenderId();
-        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
-        if (p != null) HostPing(p.Slot, at);
+        if (SenderOwns(slot) is { } p) HostPing(p.Slot, at);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -1898,31 +1961,31 @@ public partial class GameManager : Node2D
     // =====================================================================
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered)]
-    private void SubmitInput(byte[] data)
+    private void SubmitInput(int slot, byte[] data)
     {
         if (!IsHost) return;
+        if (SenderOwns(slot, allowLeft: true) is { Input: RemoteInput ri }) ri.Latest = InputFrame.FromBytes(data);
+    }
+
+    /// <summary>Host: the player in <paramref name="slot"/> if the peer sending this RPC plays it (itself or a couch guest of its), else null.</summary>
+    private MatchPlayer SenderOwns(int slot, bool allowLeft = false)
+    {
         long sender = Multiplayer.GetRemoteSenderId();
-        foreach (var p in Slots)
-            if (p != null && !p.Info.IsBot && p.Info.PeerId == sender && p.Input is RemoteInput ri)
-                ri.Latest = InputFrame.FromBytes(data);
+        return slot >= 0 && slot < Slots.Length && Slots[slot] is { } p && !p.Info.IsBot && p.Info.PeerId == sender && (allowLeft || !p.Left) ? p : null;
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestPick(int cardId, bool deal)
+    private void RequestPick(int slot, int cardId, bool deal)
     {
         if (!IsHost) return;
-        long sender = Multiplayer.GetRemoteSenderId();
-        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && s.Info.PeerId == sender);
-        if (p != null) HostApplyPick(p.Slot, cardId, deal);
+        if (SenderOwns(slot, allowLeft: true) is { } p) HostApplyPick(p.Slot, cardId, deal);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void RequestRematch(bool yes)
+    private void RequestRematch(int slot, bool yes)
     {
         if (!IsHost) return;
-        long sender = Multiplayer.GetRemoteSenderId();
-        var p = Slots.FirstOrDefault(s => s != null && !s.Info.IsBot && !s.Left && s.Info.PeerId == sender);
-        if (p != null) HostVoteRematch(p.Slot, yes);
+        if (SenderOwns(slot) is { } p) HostVoteRematch(p.Slot, yes);
     }
 
     // =====================================================================
@@ -2054,6 +2117,7 @@ public partial class GameManager : Node2D
         Arena.Build(null);
         Array.Clear(Slots);
         LocalMatchPlayer = null;
+        LocalGuests.Clear();
         PickOptions.Clear();
         PickDeals.Clear();
         Picked.Clear();
@@ -2072,6 +2136,14 @@ public partial class GameManager : Node2D
         if (what == NotificationWMCloseRequest) Stats.MatchEnd(-1, false, Slots.Where(p => p != null));
     }
 
+    /// <summary>A, LB or the right trigger on any controller at this machine.</summary>
+    private static bool PadSkipPressed()
+    {
+        foreach (int d in Pads.Devices)
+            if (Pads.JustPressedAny(d, PadLayout.Jump) || Pads.TriggerJustPressed(d, right: true)) return true;
+        return false;
+    }
+
     public void Shake(float amount)
     {
         _trauma = Mathf.Min(1, _trauma + amount);
@@ -2088,7 +2160,7 @@ public partial class GameManager : Node2D
     public override void _Process(double delta)
     {
         ReadChatKeys();
-        if (KillCam.Playing && !AutopilotLocal && (Input.IsActionJustPressed("shoot") || Input.IsActionJustPressed("jump"))) SkipKillCam();
+        if (KillCam.Playing && !AutopilotLocal && (Input.IsActionJustPressed("shoot") || Input.IsActionJustPressed("jump") || PadSkipPressed())) SkipKillCam();
         if (KillCam.Playing) KillCam.Advance((float)delta);
         if (_hitStopUntil != 0 && Time.GetTicksMsec() >= _hitStopUntil && !KillCam.Playing)
         {

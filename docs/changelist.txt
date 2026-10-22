@@ -2,8 +2,6 @@ issues to fix:
 
 features to add:
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
-- controller support and local couch co-op (several players on one machine)
-- add a self-signed certificate to the executable
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame

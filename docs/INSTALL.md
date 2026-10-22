@@ -25,8 +25,12 @@ You don't need to install .NET, Godot or anything else. Everything the game need
 ### Windows
 1. Right-click the zip, choose **Extract All...**, then click **Extract**. Don't run the game from inside the zip.
 2. Open the extracted folder and double-click **Brawler.exe**.
-3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The game isn't
-   code-signed (that costs money each year), so Windows doesn't recognise it yet.
+3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. `Brawler.exe` is signed,
+   but with Brawler's own certificate rather than one bought from a certificate authority (that costs money each
+   year), so Windows doesn't recognise the publisher yet.
+   To check your copy is the real one: right-click `Brawler.exe` → **Properties** → **Digital Signatures**. The signer
+   is **Brawler**; select it, click **Details** → **View Certificate** → **Details**, and the **Thumbprint** is
+   `15e5691329fcbbdd1c1f8f2438471c47fc1e27d9`.
 4. The first time you host a game, Windows Firewall asks whether Brawler may use the network. Tick
    **both Private and Public networks**, then click **Allow**. (Missed it? See *Firewall* in the online guide.)
 
@@ -63,6 +67,14 @@ switches to OpenGL by itself if Vulkan isn't available.
 | Options during a match | Esc. They open over the game, which keeps running; your character stands still while they're open. |
 | Leave match | Esc, then **Leave match**, then **Yes** |
 | Windowed ⇄ full screen | Alt+Enter |
+
+**Controllers** work too: left stick moves, right stick aims, **A**/**LB** jump, **RT**/**RB** shoot, **LT**/**B** block,
+**X** reloads, the d-pad and **Y** are emotes, and **Start** opens the options. In menus, use the d-pad or left stick,
+**A** to choose and **B** to go back.
+
+**Couch co-op:** friends on the same computer can join with their own controllers. In the lobby click
+**+ Local Player**, then the new player presses **A** on their controller. Up to four people per computer, in any
+kind of game (vs bots, hosting or joining). After each round you take turns picking cards on the shared screen.
 
 - **Play vs Bots:** you against bots. Add up to three in the lobby.
 - **Host Game:** opens a lobby that friends can join. You can fill empty slots with bots.

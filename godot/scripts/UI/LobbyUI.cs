@@ -17,7 +17,7 @@ public partial class LobbyUI : Control
     private Button _copy;
     private VBoxContainer _inviteRow;
     private GridContainer _players;
-    private Button _addBot, _start, _color, _cards;
+    private Button _addBot, _addLocal, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
     private Button _lava, _rare, _deals, _killCam, _gameMode, _mode, _friendly;
@@ -107,8 +107,10 @@ public partial class LobbyUI : Control
         buttons.AddThemeConstantOverride("h_separation", 8);
         buttons.AddThemeConstantOverride("v_separation", 8);
         _addBot = UiKit.Button("+ Add Bot", () => _net.AddBot());
+        _addLocal = UiKit.Button(AddLocalText, ToggleWaitForPad);
+        _addLocal.TooltipText = "Local co-op: another person at this computer joins with their own controller";
         _color = UiKit.Button("Customize", () => CustomizePressed?.Invoke());
-        foreach (var b in new[] { _addBot, _color, UiKit.Button("Options", () => OptionsPressed?.Invoke()), UiKit.Button("Leave", () => LeavePressed?.Invoke()) })
+        foreach (var b in new[] { _addBot, _addLocal, _color, UiKit.Button("Options", () => OptionsPressed?.Invoke()), UiKit.Button("Leave", () => LeavePressed?.Invoke()) })
         {
             b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             buttons.AddChild(b);
@@ -358,7 +360,7 @@ public partial class LobbyUI : Control
         nameLabel.ClipText = true;
         nameLabel.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         v.AddChild(nameLabel);
-        string tag = p.IsBot ? "BOT" : p.PeerId == _net.LocalPeer ? "YOU" : "PLAYER";
+        string tag = p.IsBot ? "BOT" : p.PeerId == _net.LocalPeer ? "YOU" : p.Guest > 0 ? "COUCH" : "PLAYER";
         // One line under the name: the team tag (team modes), then remove (the host's bots) or who this is.
         var foot = UiKit.HBox(4);
         v.AddChild(foot);
@@ -366,7 +368,7 @@ public partial class LobbyUI : Control
         if (team >= 0)
         {
             // The host can move anyone, everyone else just themselves.
-            bool canSwap = host || (!p.IsBot && p.PeerId == _net.LocalPeer);
+            bool canSwap = host || (!p.IsBot && p.PeerId == _net.LocalPeer); // yourself and your couch guests
             string name = Teams.Names[team].ToUpperInvariant();
             var t = UiKit.Button(canSwap ? $"{name} ⇄" : name, () => _net.SwapTeam(s), 0, "Small");
             t.Disabled = !canSwap;
@@ -375,7 +377,15 @@ public partial class LobbyUI : Control
             t.AddThemeColorOverride("font_disabled_color", Palette.Team(team).Lightened(0.3f));
             foot.AddChild(t);
         }
-        if (host && p.IsBot)
+        bool myGuest = !p.IsBot && p.Guest > 0 && p.PeerId == _net.LocalPeer;
+        if (myGuest)
+        {
+            int guest = p.Guest;
+            var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveGuest(guest), 0, "Small");
+            x.TooltipText = $"Remove this local player ({PadName(guest)})";
+            foot.AddChild(x);
+        }
+        else if (host && p.IsBot)
         {
             var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveBot(s), 0, "Small");
             x.TooltipText = "Remove this bot";
@@ -388,6 +398,55 @@ public partial class LobbyUI : Control
             foot.AddChild(l);
         }
         return card;
+    }
+
+    // ---------- local co-op ----------
+
+    private const string AddLocalText = "+ Local Player";
+    private const float PadWaitTime = 10f;
+    private float _padWait; // > 0 while waiting for a new controller to press A
+    private float _padWaitAge;
+
+    /// <summary>Where a controller lands in this screen: the card pool when it's open, else the lobby.</summary>
+    public Control FocusRoot => _pool.Visible ? _pool : this;
+
+    private static string PadName(int guest) => Pads.Couch.DeviceOf(guest) is >= 0 and var d ? Pads.Name(d) : "no controller";
+
+    private ulong _joinedAt;
+
+    private void ToggleWaitForPad()
+    {
+        // The A that just joined a guest also presses this button when it has the focus: don't start waiting again.
+        if (Time.GetTicksMsec() - _joinedAt < 400) return;
+        _padWait = _padWait > 0 ? 0 : PadWaitTime;
+        _padWaitAge = 0;
+        RefreshAddLocal();
+    }
+
+    private void RefreshAddLocal()
+    {
+        bool room = _net.Lobby.HasRoom() && Pads.Couch.Count < CouchRoster.MaxGuests;
+        if (!room) _padWait = 0;
+        _addLocal.Disabled = !room;
+        _addLocal.Text = _padWait > 0 ? "Press A on their pad…" : AddLocalText;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_padWait <= 0) return;
+        _padWait -= (float)delta;
+        _padWaitAge += (float)delta;
+        // A short grace, so the press that clicked this button (on a controller) isn't taken as the new player's.
+        if (_padWaitAge > 0.25f)
+            foreach (int d in Pads.Devices)
+                if (!Pads.Couch.Claimed(d) && Pads.JustPressed(d, PadLayout.A))
+                {
+                    _padWait = 0;
+                    _joinedAt = Time.GetTicksMsec();
+                    _net.AddGuest(d);
+                    break;
+                }
+        if (_padWait <= 0) RefreshAddLocal();
     }
 
     private void Refresh()
@@ -448,6 +507,7 @@ public partial class LobbyUI : Control
 
         _addBot.Visible = host;
         _addBot.Disabled = !lobby.HasRoom();
+        RefreshAddLocal();
         _start.Visible = host;
         string problem = lobby.StartProblem();
         _start.Disabled = problem != null;

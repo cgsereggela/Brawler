@@ -10,7 +10,7 @@ public interface IInputSource
     InputFrame Next(Avatar self, float dt);
 }
 
-/// <summary>Keyboard + mouse for the person at this computer.</summary>
+/// <summary>Keyboard + mouse for the person at this computer, plus any controller no couch guest has claimed.</summary>
 public sealed class LocalInput : IInputSource
 {
     private byte _jumps, _blocks;
@@ -18,6 +18,14 @@ public sealed class LocalInput : IInputSource
 
     /// <summary>While true (for example while a menu is open over the game) the local player gets no input.</summary>
     public static bool Suppressed;
+
+    private readonly PadReader _pad = new();
+    private Vector2 _lastMouse = new(-1, -1);
+
+    /// <summary>True while a controller is aiming for this player (until the mouse moves): the crosshair follows the aim, not the mouse.</summary>
+    public bool UsingPad { get; private set; }
+
+    public Vector2 PadAimDir => _pad.AimDir;
 
     public LocalInput(Node2D world) => _world = world;
 
@@ -39,20 +47,108 @@ public sealed class LocalInput : IInputSource
 
     public InputFrame Next(Avatar self, float dt)
     {
-        if (Suppressed) return new InputFrame { JumpPresses = _jumps, BlockPresses = _blocks, Aim = _world.GetGlobalMousePosition() };
+        var mouse = _world.GetGlobalMousePosition();
+        var screenMouse = _world.GetViewport().GetMousePosition();
+        if (screenMouse.DistanceSquaredTo(_lastMouse) > 4) UsingPad = false; // the mouse moved: aim with it again
+        _lastMouse = screenMouse;
+        if (Suppressed)
+        {
+            var idle = new InputFrame();
+            _pad.Merge(ref idle, Pads.Unclaimed(), self); // read and drop, so presses made under a menu don't land after it closes
+            return new InputFrame { JumpPresses = _jumps, BlockPresses = _blocks, Aim = UsingPad && self != null ? _pad.AimAt(self) : mouse };
+        }
         if (Input.IsActionJustPressed("jump")) _jumps++;
         if (Input.IsActionJustPressed("block")) _blocks++;
-        return new InputFrame
+        var f = new InputFrame
         {
             MoveX = Input.GetAxis("move_left", "move_right"),
             JumpHeld = Input.IsActionPressed("jump"),
-            JumpPresses = _jumps,
             Shoot = Input.IsActionPressed("shoot"),
             Reload = Input.IsActionPressed("reload"),
-            BlockPresses = _blocks,
-            Aim = _world.GetGlobalMousePosition(),
+            Aim = mouse,
         };
+        // Any controller no couch guest has claimed drives this player too.
+        if (_pad.Merge(ref f, Pads.Unclaimed(), self)) UsingPad = true;
+        f.JumpPresses = _jumps += _pad.Jumps;
+        f.BlockPresses = _blocks += _pad.Blocks;
+        if (UsingPad && self != null) f.Aim = _pad.AimAt(self);
+        return f;
     }
+}
+
+/// <summary>A local co-op guest: everything from their own controller.</summary>
+public sealed class PadInput : IInputSource
+{
+    public readonly int Device;
+    private readonly PadReader _pad = new();
+    private byte _jumps, _blocks;
+
+    public PadInput(int device) => Device = device;
+
+    public InputFrame Next(Avatar self, float dt)
+    {
+        var f = new InputFrame { Aim = self?.GlobalPosition ?? Vector2.Zero };
+        _pad.Merge(ref f, new[] { Device }, self); // the options overlay mutes only the keyboard player
+        f.JumpPresses = _jumps += _pad.Jumps;
+        f.BlockPresses = _blocks += _pad.Blocks;
+        if (self != null) f.Aim = _pad.AimAt(self);
+        return f;
+    }
+
+    /// <summary>Where this guest's crosshair goes: along their aim, at the same reach as the stick aim point.</summary>
+    public Vector2 AimDir => _pad.AimDir;
+}
+
+/// <summary>Turns controller state into input frames: shared by the keyboard player (spare controllers) and couch guests.</summary>
+public sealed class PadReader
+{
+    /// <summary>How far ahead of the player the stick aim point sits, and how far a ghost drifts per tick of stick.</summary>
+    public const float Reach = 150, GhostReach = 90;
+
+    private readonly PadAim _aim = new();
+    private readonly Dictionary<int, (byte J, byte B)> _seen = new();
+    private System.Numerics.Vector2 _ghost;
+    /// <summary>Jump and block presses since the last <see cref="Merge"/>.</summary>
+    public byte Jumps, Blocks;
+
+    public Vector2 AimDir => new(_aim.Dir.X, _aim.Dir.Y);
+
+    /// <summary>
+    /// Adds what the given controllers hold to <paramref name="f"/> (sticks only where the keyboard is idle). Returns
+    /// true when one of them was used this tick.
+    /// </summary>
+    public bool Merge(ref InputFrame f, IEnumerable<int> devices, Avatar self)
+    {
+        Jumps = Blocks = 0;
+        bool used = false;
+        foreach (int d in devices)
+        {
+            var s = Pads.State(d);
+            var (j, b) = Pads.Presses(d);
+            if (_seen.TryGetValue(d, out var last))
+            {
+                Jumps += (byte)(j - last.J);
+                Blocks += (byte)(b - last.B);
+            }
+            _seen[d] = (j, b);
+            if (!s.Active) continue;
+            used = true;
+            var move = s.Move;
+            if (f.MoveX == 0 && move.X != 0) f.MoveX = move.X;
+            f.JumpHeld |= s.JumpHeld;
+            f.Shoot |= s.ShootHeld;
+            f.Reload |= s.Any(PadLayout.Reload);
+            _aim.Update(s);
+            // A ghost floats where the sticks push it.
+            var push = s.Look != System.Numerics.Vector2.Zero ? s.Look : move;
+            _ghost = push;
+        }
+        if (!used) _ghost = System.Numerics.Vector2.Zero;
+        return used;
+    }
+
+    public Vector2 AimAt(Avatar self) =>
+        self.Alive ? self.GlobalPosition + AimDir * Reach : self.GlobalPosition + new Vector2(_ghost.X, _ghost.Y) * GhostReach;
 }
 
 /// <summary>Host side: latest frame received from a remote client.</summary>

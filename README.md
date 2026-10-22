@@ -1,7 +1,7 @@
 # Brawler
 
 A ROUNDS-style 2–8 player platform shooter: lose a round, pick a card, come back stronger.
-Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
+Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch co-op, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
 
 <p align="center"><img src="docs/media/chaos.gif" alt="Four players trading split, bouncing and exploding shots late in a match in Candy Clouds" width="720"></p>
 
@@ -52,6 +52,26 @@ Defaults; rebind them in Options → Controls.
 | Leave match | Esc → Leave match → Yes |
 | Windowed ⇄ full screen | Alt+Enter |
 
+### Controllers and couch co-op
+Any controller works too, with a fixed layout (shown in Options → Controls). A controller nobody has claimed drives
+you, alongside the keyboard and mouse, and the menus follow the d-pad or left stick with A to choose and B to go back.
+
+| Action | Controller |
+|---|---|
+| Move | Left stick |
+| Aim | Right stick; while it rests, the left stick turns you the way you move. Your crosshair sits on your aim line |
+| Jump | A / LB |
+| Shoot | RT / RB |
+| Block | LT / B |
+| Reload | X |
+| Emotes / ping | D-pad and Y / right stick click |
+| Options | Start |
+
+**Couch co-op:** up to three more people can play on the same computer, each with their own controller. In the lobby
+click **+ Local Player** and the new player presses **A** on their pad. They get the next free slot and color, play in
+offline, hosted and joined games alike (a client's guests come with it), and pick their cards on the shared screen after
+yours ("NAME, CHOOSE A CARD"). Remove one with their *remove* button in the lobby.
+
 Options also has window mode (Windowed / Borderless / Fullscreen) and bloom strength (default 50%). Everything is saved to
 `%APPDATA%\Godot\app_userdata\Brawler\settings.cfg`.
 
@@ -73,6 +93,14 @@ Players download zips from GitHub Releases. Builds come from Godot's export pres
 
 **Automatic (GitHub Actions):** push a version tag and `.github/workflows/release.yml` runs the tests, exports all three
 platforms on Linux, and publishes a release with the zips (notes from `docs/RELEASE_NOTES.md` plus the commit list).
+
+**Code signing:** `Brawler.exe` (and the game's `Brawler.dll`) are Authenticode-signed with Brawler's own self-signed
+certificate, [`docs/brawler-signing.cer`](docs/brawler-signing.cer) (SHA-1 thumbprint
+`15E5691329FCBBDD1C1F8F2438471C47FC1E27D9`). Windows doesn't trust a self-signed certificate, so SmartScreen still warns,
+but the signature shows the exe is untouched and every release comes from the same key. `tools/new-signing-cert.sh` made
+it; the private key lives outside the repo, and the workflow reads it from the `BRAWLER_SIGNING_PFX` (base64 .pfx) and
+`BRAWLER_SIGNING_PASSWORD` secrets. Locally, `tools/package.ps1 -SignPfx <pfx>` signs too (password in
+`BRAWLER_SIGNING_PASSWORD`).
 The tag becomes the game version.
 ```bash
 git tag v0.2.0
@@ -288,7 +316,9 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 # add --mode=koth|ctf|headhunter to --autotest or --autohost: that game mode (ctf without --teams plays even teams); the log notes "hill:", "flag:" and "headhunter:" events and each respawn
 # add --rounds=N to --autotest or --autohost: a match to N round wins (1 skips the card pick); with --shots=DIR the match-over screen is saved plain and with a hover card open
 # add --lavacheck to --autotest, or to both --autohost and --autojoin: lava after 3 s; checks it rises on every peer and nobody lives long in it (LAVACHECK in the log; with --shots=DIR it saves lava_NN.png); --lava=SECS just sets the time
+# add --couch=N to --autotest, --autohost or --autojoin: N local co-op guests (1-3) join from that machine on autopilot; COUCHCHECK confirms they played and picked cards
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --padcheck        # made-up controller presses: menu focus, + Local Player, guest vs keyboard input, card picks on each pad (PADCHECK)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 "$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)
