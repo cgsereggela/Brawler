@@ -94,6 +94,7 @@ public partial class HudUI : Control
             h.Add(p.RoundWins);
             h.Add(p.BattleWins);
             h.Add(p.Cards.Count);
+            h.Add(p.Cards.Count > 0 ? p.Cards[^1] : -1); // Gun Game swaps the one card
         }
         var me = _game.LocalMatchPlayer;
         h.Add(me);
@@ -310,11 +311,11 @@ public partial class HudUI : Control
     private float ChipWidth(MatchPlayer p, bool compact)
     {
         var s = _game.Settings;
-        float badge = p.Cards.Count > 0 ? (compact ? 10 : 12) : 0;
+        float badge = Badge(p) ? (compact ? 10 : 12) : 0;
         if (!compact)
-            return 44 + Mathf.Max(Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 13).X, s.RoundsToWin * 9) + 14 + badge;
+            return 44 + Mathf.Max(Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 13).X, Pips * 9) + 14 + badge;
         float nameW = Mathf.Min(CompactName, Fonts.Bold.GetStringSize(p.Info.Name, HorizontalAlignment.Left, -1, 11).X);
-        return 35 + Mathf.Max(nameW, PipStep(true) * s.RoundsToWin) + 8 + badge;
+        return 35 + Mathf.Max(nameW, PipStep(true) * Pips) + 8 + badge;
     }
 
     /// <summary>The name cut down with an ellipsis until it fits in <paramref name="width"/>.</summary>
@@ -331,7 +332,16 @@ public partial class HudUI : Control
     }
 
     /// <summary>Spacing of the round-win pips; compact chips squeeze long matches into the name's width.</summary>
-    private float PipStep(bool compact) => compact ? Mathf.Min(6, CompactName / Mathf.Max(1, _game.Settings.RoundsToWin)) : 9;
+    private float PipStep(bool compact) => compact ? Mathf.Min(6, CompactName / Mathf.Max(1, Pips)) : 9;
+
+    /// <summary>Pips on a chip: round wins to take the match, or in Gun Game the ladder's cards.</summary>
+    private int Pips => _game.Mode == GameMode.GunGame ? GameModes.GunLadder.Length : _game.Settings.RoundsToWin;
+
+    /// <summary>Pips lit: round wins, or in Gun Game the kills up the ladder so far.</summary>
+    private int PipsLit(MatchPlayer p) => _game.Mode == GameMode.GunGame ? GameManager.GunLevel(p) : p.RoundWins;
+
+    /// <summary>The card-count badge; Gun Game always holds one card, so it has none.</summary>
+    private bool Badge(MatchPlayer p) => p.Cards.Count > 0 && _game.Mode != GameMode.GunGame;
 
     /// <summary>
     /// One player chip's shapes: the backing with a tinted head square, round-win pips with battle-win dots under them,
@@ -354,10 +364,10 @@ public partial class HudUI : Control
         float tx = chip.Position.X + (compact ? 38 : 44), y0 = chip.Position.Y;
         float step = PipStep(compact), pipR = compact ? Mathf.Min(2.7f, step * 0.45f) : 3.6f;
         float pipY = y0 + (compact ? 21 : 24);
-        for (int i = 0; i < s.RoundsToWin; i++)
+        for (int i = 0; i < Pips; i++)
         {
             var c = new Vector2(tx + pipR + i * step, pipY);
-            if (i < p.RoundWins)
+            if (i < PipsLit(p))
             {
                 Dot(c, pipR, Shapes.Hdr(col.Lightened(0.15f), 1.15f));
                 Dot(c + new Vector2(-1, -1) * pipR / 3.6f, 1.1f * pipR / 3.6f, new Color(1, 1, 1, 0.7f));
@@ -365,10 +375,10 @@ public partial class HudUI : Control
             else Dot(c, pipR * 0.94f, new Color(1, 1, 1, 0.14f));
         }
         float dotStep = compact ? 5 : 6;
-        for (int i = 0; i < s.BattlesPerRound; i++)
+        for (int i = 0; i < (_game.Mode == GameMode.GunGame ? 0 : s.BattlesPerRound); i++)
             Dot(new Vector2(tx + 2 + i * dotStep, y0 + (compact ? 28 : 32)), compact ? 1.5f : 1.7f,
                 i < p.BattleWins ? Colors.White : new Color(1, 1, 1, 0.18f));
-        if (p.Cards.Count > 0) Pill(BadgeRect(chip), Palette.Accent);
+        if (Badge(p)) Pill(BadgeRect(chip), Palette.Accent);
     }
 
     private Rect2 BadgeRect(Rect2 chip) =>
@@ -384,7 +394,7 @@ public partial class HudUI : Control
 
     private void ChipBadge(CanvasItem ci, Rect2 chip, MatchPlayer p)
     {
-        if (p.Cards.Count == 0) return;
+        if (!Badge(p)) return;
         var badge = BadgeRect(chip);
         ci.DrawString(Fonts.Heavy, badge.Position + new Vector2(0, _compact ? 10.5f : 12), p.Cards.Count.ToString(), HorizontalAlignment.Center,
             badge.Size.X, _compact ? 10 : 11, new Color(0.15f, 0.08f, 0.02f));

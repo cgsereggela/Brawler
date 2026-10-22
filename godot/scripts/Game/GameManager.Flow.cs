@@ -49,7 +49,7 @@ public partial class GameManager
         if (RareOverride >= 0) Net.Lobby.Settings.RareChance = RareOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         _arenaTurn = 0;
-        if (Settings.Draft) HostBeginDraft();
+        if (Settings.Draft && Mode != GameMode.GunGame) HostBeginDraft(); // Gun Game hands out its own cards
         else HostStartBattle();
     }
 
@@ -116,13 +116,22 @@ public partial class GameManager
         {
             var w = Slots[winner];
             var side = SideOf(winner).ToList(); // in team modes the whole team scores together
-            foreach (var p in side) p.BattleWins++;
-            if (w.BattleWins >= Settings.BattlesPerRound)
+            if (Mode == GameMode.GunGame)
             {
-                roundWon = true;
-                foreach (var p in side) p.RoundWins++;
-                foreach (var p in Slots) if (p != null) p.BattleWins = 0;
-                if (w.RoundWins >= Settings.RoundsToWin) matchWon = true;
+                // Finishing the ladder wins the whole match.
+                w.RoundWins++;
+                roundWon = matchWon = true;
+            }
+            else
+            {
+                foreach (var p in side) p.BattleWins++;
+                if (w.BattleWins >= Settings.BattlesPerRound)
+                {
+                    roundWon = true;
+                    foreach (var p in side) p.RoundWins++;
+                    foreach (var p in Slots) if (p != null) p.BattleWins = 0;
+                    if (w.RoundWins >= Settings.RoundsToWin) matchWon = true;
+                }
             }
         }
         Stats.BattleEnd(winner, roundWon, Active());
@@ -608,6 +617,9 @@ public partial class GameManager
     {
         ApplyScores(scores);
         BattleNumber++;
+        // Gun Game: everyone starts the match on the ladder's first card, and holds only that.
+        if (Mode == GameMode.GunGame && BattleNumber == 1)
+            foreach (var p in Slots) if (p != null) SetGunLevel(p, 0);
         foreach (var c in _avatars.GetChildren()) c.QueueFree();
         foreach (var p in Slots) if (p != null) p.Avatar = null;
         Bullets.Clear();

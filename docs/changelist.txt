@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- Gun Game mode: every kill moves you to the next card in a fixed list; first to finish it wins
 - Survival mode: human players team up against waves of bots
 - unlockable cosmetics (hats, trails) for milestones, with no effect on gameplay
 - clip export: save a kill cam as a GIF (Logic/Gif.cs already exists)

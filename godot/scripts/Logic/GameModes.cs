@@ -6,7 +6,7 @@ using NVec = System.Numerics.Vector2;
 namespace Brawler.Logic;
 
 /// <summary>How a battle is won. Ids are on the wire and in the stats log, so never renumber them.</summary>
-public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, Headhunter = 3 }
+public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, Headhunter = 3, GunGame = 4 }
 
 /// <summary>
 /// The game modes' rules that don't need the engine. A battle is still one point toward the round in every mode;
@@ -16,13 +16,17 @@ public enum GameMode { Elimination = 0, KingOfTheHill = 1, CaptureTheFlag = 2, H
 /// <item>King of the Hill: hold the marked zone alone for <see cref="HoldTime"/> seconds in total. Players respawn.</item>
 /// <item>Capture the Flag (team modes only): bring the other team's flag home while yours is there. Players respawn.</item>
 /// <item>Headhunter: elimination, but one player, the match leader, is marked, and whoever takes them out wins the battle on the spot.</item>
+/// <item>Gun Game (free-for-all only): everyone holds just one card, the first of <see cref="GunLadder"/>; each kill swaps yours for the next. A kill with the last card wins the whole match. Players respawn, and there is no lava.</item>
 /// </list>
-/// In the respawn modes, sudden death starts twice as late as the lobby's lava setting says, and from then on nobody
+/// In the respawn modes (but Gun Game, which has none), sudden death starts twice as late as the lobby's lava setting says, and from then on nobody
 /// respawns, so a stalled battle still ends by elimination.
 /// </summary>
 public static class GameModes
 {
-    public static readonly GameMode[] All = { GameMode.Elimination, GameMode.KingOfTheHill, GameMode.CaptureTheFlag, GameMode.Headhunter };
+    public static readonly GameMode[] All = { GameMode.Elimination, GameMode.KingOfTheHill, GameMode.CaptureTheFlag, GameMode.Headhunter, GameMode.GunGame };
+
+    /// <summary>Gun Game: the cards in order (Minigun, Shotgun, Explosive, Bouncy, Homing, Sniper, Boomerang, One Shot). Card ids, so never reorder lightly.</summary>
+    public static readonly int[] GunLadder = { 31, 10, 6, 1, 5, 30, 57, 65 };
 
     /// <summary>Seconds a side must hold the hill, in total, to win the battle.</summary>
     public const float HoldTime = 10f;
@@ -38,6 +42,7 @@ public static class GameModes
         GameMode.KingOfTheHill => "King of the Hill",
         GameMode.CaptureTheFlag => "Capture the Flag",
         GameMode.Headhunter => "Headhunter",
+        GameMode.GunGame => "Gun Game",
         _ => "Elimination",
     };
 
@@ -47,6 +52,7 @@ public static class GameModes
         GameMode.KingOfTheHill => "koth",
         GameMode.CaptureTheFlag => "ctf",
         GameMode.Headhunter => "headhunter",
+        GameMode.GunGame => "gungame",
         _ => "elimination",
     };
 
@@ -57,14 +63,18 @@ public static class GameModes
 
     public static GameMode Next(GameMode m) => All[(Array.IndexOf(All, m) + 1) % All.Length];
 
-    public static bool Respawns(GameMode m) => m is GameMode.KingOfTheHill or GameMode.CaptureTheFlag;
+    public static bool Respawns(GameMode m) => m is GameMode.KingOfTheHill or GameMode.CaptureTheFlag or GameMode.GunGame;
 
     /// <summary>Why a lobby can't start this mode with this team size, or null.</summary>
     public static string Problem(GameMode m, int teamSize) =>
-        m == GameMode.CaptureTheFlag && teamSize <= 0 ? "Capture the Flag needs teams: pick 2v2, 3v3 or 4v4." : null;
+        m == GameMode.CaptureTheFlag && teamSize <= 0 ? "Capture the Flag needs teams: pick 2v2, 3v3 or 4v4."
+        : m == GameMode.GunGame && teamSize > 0 ? "Gun Game is every player for themselves: pick Free-for-all." : null;
+
+    /// <summary>Gun Game: the card a player holds at <paramref name="level"/> kills (the last one stays once the ladder is done).</summary>
+    public static int GunCard(int level) => GunLadder[Math.Clamp(level, 0, GunLadder.Length - 1)];
 
     /// <summary>When sudden-death lava starts in this mode, from the lobby setting (0 = never).</summary>
-    public static int LavaAfter(GameMode m, int lavaAfter) => Respawns(m) && lavaAfter > 0 ? lavaAfter * 2 : lavaAfter;
+    public static int LavaAfter(GameMode m, int lavaAfter) => m == GameMode.GunGame ? 0 : Respawns(m) && lavaAfter > 0 ? lavaAfter * 2 : lavaAfter;
 
     /// <summary>Whether someone who dies now comes back: a respawn mode, before sudden death.</summary>
     public static bool RespawnsNow(GameMode m, float fightTime, int lavaAfter) =>

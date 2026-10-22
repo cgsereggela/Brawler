@@ -73,6 +73,7 @@ public partial class GameManager
             GameMode.Headhunter when HeadSlot >= 0 && HeadSlot == me => "YOU'RE THE HEAD: SURVIVE!",
             GameMode.Headhunter when HeadSlot >= 0 && Allies(HeadSlot, me) => $"PROTECT {NameOf(HeadSlot).ToUpperInvariant()}!",
             GameMode.Headhunter when HeadSlot >= 0 => $"HUNT {NameOf(HeadSlot).ToUpperInvariant()}!",
+            GameMode.GunGame => $"GUN GAME: {GameModes.GunLadder.Length} KILLS TO WIN!",
             _ => "FIGHT!",
         };
     }
@@ -248,6 +249,13 @@ public partial class GameManager
             _objectiveWinner = killer;
             Rpc(MethodName.ObjectiveEvent, (int)ObjEvent.HeadTaken, slot, killer);
         }
+        // Gun Game: a kill moves the killer up the ladder, and one with its last card wins.
+        if (Mode == GameMode.GunGame && killer >= 0 && killer != slot && Slots[killer] is { } k && Phase == Phase.Fighting && _objectiveWinner < 0)
+        {
+            int level = GunLevel(k) + 1;
+            if (level >= GameModes.GunLadder.Length) _objectiveWinner = killer;
+            else Rpc(MethodName.GunLevelUp, killer, level);
+        }
     }
 
     /// <summary>Where a dropped flag comes to rest: on the ground under <paramref name="at"/>, or null if there's none (a pit, the lava).</summary>
@@ -351,6 +359,42 @@ public partial class GameManager
                 Banner?.Invoke($"{who} TOOK THE HEAD!", Palette.Player(ColorOf(slot)), 1.1f);
                 break;
         }
+    }
+
+    /// <summary>Gun Game: how far up the ladder a player is (0 = its first card).</summary>
+    public static int GunLevel(MatchPlayer p) => Math.Max(0, Array.IndexOf(GameModes.GunLadder, p.Cards.Count > 0 ? p.Cards[0] : -1));
+
+    /// <summary>Gun Game: gives a player the ladder's card for <paramref name="level"/>, and only that.</summary>
+    private static void SetGunLevel(MatchPlayer p, int level)
+    {
+        p.Cards.Clear();
+        p.Cards.Add(GameModes.GunCard(level));
+        p.RecomputeStats();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void GunLevelUp(int slot, int level)
+    {
+        var p = Slots[slot];
+        if (p == null) return;
+        SetGunLevel(p, level);
+        var card = CardRegistry.Get(GameModes.GunCard(level));
+        if (p.Avatar is { Alive: true } av)
+        {
+            if (IsHost)
+            {
+                av.Ammo = av.S.Int(Stat.Ammo); // a fresh gun comes loaded
+                foreach (var e in p.Effects) e.OnBattleStart(av, this);
+            }
+            Fx.RingFx(av.GlobalPosition, 22, 3, Brawler.UI.UiKit.CategoryColor(card.Category).Lightened(0.3f), 0.3f, 2f);
+        }
+        Log.Info($"gun game: {p.Info.Name} is on {card.Name} ({level + 1}/{GameModes.GunLadder.Length})");
+        if (IsLocalHuman(p))
+        {
+            Banner?.Invoke(level == GameModes.GunLadder.Length - 1 ? $"LAST ONE: {card.Name.ToUpperInvariant()}!" : $"LEVEL {level + 1}: {card.Name.ToUpperInvariant()}", Palette.Accent, 1.1f);
+            Sfx.Play("pick", 0.7f);
+        }
+        ScoresChanged?.Invoke();
     }
 
     // =====================================================================

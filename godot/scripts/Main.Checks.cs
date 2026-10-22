@@ -103,7 +103,7 @@ public partial class Main
         t.Timeout += () =>
         {
             if (_overlayCheck && _ocStage != OcDone) Finish(1, $"overlaycheck: match ended at check stage {_ocStage}");
-            else if (_poolCheck && _poolPicks == 0 && _net.TestRounds != 1) Finish(1, "poolcheck: the match ended without a card pick"); // --rounds=1 has no pick
+            else if (_poolCheck && _poolPicks == 0 && _net.TestRounds != 1 && _game.Mode != GameMode.GunGame) Finish(1, "poolcheck: the match ended without a card pick"); // --rounds=1 and Gun Game have no pick
             else if (_dropAt > 0 && !_rejoinChecked) Finish(1, $"droptest: the match ended without a rejoin");
             else if (ChatCheckProblem() is { } chat) Finish(1, chat);
             else if (ComboCheckProblem() is { } combo) Finish(1, combo);

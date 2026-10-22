@@ -1590,7 +1590,7 @@ static List<byte[]> DecodeGif(byte[] g)
 
 // ---------- Game modes ----------
 {
-    Check(GameModes.Next(GameMode.Elimination) == GameMode.KingOfTheHill && GameModes.Next(GameMode.Headhunter) == GameMode.Elimination,
+    Check(GameModes.Next(GameMode.Elimination) == GameMode.KingOfTheHill && GameModes.Next(GameMode.Headhunter) == GameMode.GunGame && GameModes.Next(GameMode.GunGame) == GameMode.Elimination,
         "Modes: the lobby button steps through every mode and wraps");
     Check(GameModes.All.All(m => GameModes.Parse(GameModes.Id(m)) == m) && GameModes.Parse("nope") == null, "Modes: ids parse back");
     Check(GameModes.From(99) == GameMode.Elimination && GameModes.From(2) == GameMode.CaptureTheFlag, "Modes: unknown wire values fall back to elimination");
@@ -1601,6 +1601,13 @@ static List<byte[]> DecodeGif(byte[] g)
     Check(GameModes.RespawnsNow(GameMode.KingOfTheHill, 30, 45) && !GameModes.RespawnsNow(GameMode.KingOfTheHill, 95, 45)
           && GameModes.RespawnsNow(GameMode.KingOfTheHill, 500, 0) && !GameModes.RespawnsNow(GameMode.Elimination, 1, 45),
         "Modes: respawns stop at sudden death, and never happen in elimination");
+
+    // Gun Game: a fixed ladder of real cards; a kill swaps yours for the next one.
+    Check(GameModes.GunLadder.All(id => CardRegistry.All.Any(c => c.Id == id)) && GameModes.GunLadder.Distinct().Count() == GameModes.GunLadder.Length,
+          "Gun Game: the ladder is distinct real cards");
+    Check(GameModes.GunCard(-3) == GameModes.GunLadder[0] && GameModes.GunCard(99) == GameModes.GunLadder[^1], "Gun Game: levels clamp to the ladder");
+    Check(GameModes.Problem(GameMode.GunGame, 2) != null && GameModes.Problem(GameMode.GunGame, 0) == null, "Gun Game: free-for-all only");
+    Check(GameModes.LavaAfter(GameMode.GunGame, 45) == 0 && GameModes.Respawns(GameMode.GunGame), "Gun Game: respawns, and no sudden death");
 
     // The hill: the side alone in it scores; contested or empty, nobody does.
     var hill = new Hill(100, 200, 300);
