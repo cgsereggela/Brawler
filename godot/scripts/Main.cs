@@ -48,6 +48,7 @@ namespace Brawler;
 ///   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
 ///                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
 ///   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
+///   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -337,6 +338,8 @@ public partial class Main : Node
             else if (a == "--streamer") StreamerMode.SetForRun(true);
             else if (a.StartsWith("--lava=") && int.TryParse(a["--lava=".Length..], out int lava)) _game.LavaOverride = lava;
             else if (a.StartsWith("--rarechance=") && int.TryParse(a["--rarechance=".Length..], out int rare)) _game.RareOverride = Mathf.Clamp(rare, 0, 100);
+            else if (a.StartsWith("--teams=") && int.TryParse(a["--teams=".Length..], out int teams)) _net.TestTeamSize = Mathf.Clamp(teams, 0, 4);
+            else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
             else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
@@ -927,6 +930,9 @@ public partial class Main : Node
                         AddTestBots();
                         Show(_lobby);
                     },
+                    // The same lobby as 2v2 (a row per team, team tags, friendly fire), then the mode button once more for 3v3.
+                    () => _net.SetTeamSize(2),
+                    () => _net.SetTeamSize(3),
                     () =>
                     {
                         _net.SetSettings(new MatchSettings { DisabledCards = new(AutoDisabled) });

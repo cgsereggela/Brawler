@@ -92,7 +92,8 @@ public static class StatsReport
         double fightSum = 0;
         int fightN = 0;
 
-        var matches = all.Where(m => f.Mode == null || m.Mode == f.Mode).ToList();
+        // Team matches are left out: a win there is the whole team's, not one player's cards.
+        var matches = all.Where(m => (f.Mode == null || m.Mode == f.Mode) && m.Settings.TeamSize == 0).ToList();
         data.CardHashes = matches.Select(m => m.CardsHash).Distinct().ToList();
         if (f.CardsHash != null) matches = matches.Where(m => m.CardsHash == f.CardsHash).ToList();
 

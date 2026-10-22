@@ -257,7 +257,7 @@ public sealed class BotBrain : IInputSource
         float bestD = float.MaxValue;
         foreach (var a in _game.LiveAvatars())
         {
-            if (a == self) continue;
+            if (a == self || _game.Allies(a.Player.Slot, self.Player.Slot)) continue;
             float d = a.GlobalPosition.DistanceSquaredTo(self.GlobalPosition);
             if (d < bestD) { bestD = d; best = a; }
         }
@@ -428,7 +428,7 @@ public sealed class BotBrain : IInputSource
         var me = self.GlobalPosition;
         foreach (var b in _game.Bullets.Bullets)
         {
-            if (b.Dead || (b.Owner == self.Player.Slot && !b.Bounced)) continue;
+            if (b.Dead || (b.Owner == self.Player.Slot && !b.Bounced) || _game.Spared(b.Owner, self.Player.Slot)) continue;
             var rel = me - b.Pos;
             if (rel.LengthSquared() > 45 * 45) continue;
             if (b.Vel.Dot(rel) <= 0) continue;

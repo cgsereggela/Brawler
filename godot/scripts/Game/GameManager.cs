@@ -153,6 +153,29 @@ public partial class GameManager : Node2D
 
     public string NameOf(int slot) => slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.Name : "?";
 
+    // ---------- teams (2v2, 3v3, 4v4) ----------
+
+    public bool TeamMode => Settings.TeamSize > 0;
+
+    /// <summary>The slot's team in a team mode, else -1.</summary>
+    public int TeamOf(int slot) => TeamMode && slot >= 0 && slot < Slots.Length && Slots[slot] != null ? Slots[slot].Info.Team : -1;
+
+    /// <summary>Two different players on the same team.</summary>
+    public bool Allies(int a, int b) => a != b && TeamOf(a) >= 0 && TeamOf(a) == TeamOf(b);
+
+    /// <summary>The attacker can't hurt the victim: teammates, with friendly fire off.</summary>
+    public bool Spared(int attacker, int victim) => !Settings.FriendlyFire && Allies(attacker, victim);
+
+    /// <summary>Who a win belongs to on screen: the slot's player, or their whole team.</summary>
+    public string WinnerName(int slot) => TeamOf(slot) is >= 0 and var t ? $"{Teams.Names[t].ToUpperInvariant()} TEAM" : NameOf(slot);
+
+    public Color WinnerColor(int slot) =>
+        slot < 0 ? Palette.TextDim : TeamOf(slot) is >= 0 and var t ? Palette.Team(t) : Palette.Player(ColorOf(slot));
+
+    /// <summary>The slot and, in team modes, every teammate (left players included, so their scores stay in step).</summary>
+    public IEnumerable<MatchPlayer> SideOf(int slot) =>
+        Slots.Where(p => p != null && (p.Slot == slot || Allies(p.Slot, slot)));
+
     public bool IsHost => Net.IsHost;
     private bool Networked => Net.Mode is NetMode.Host or NetMode.Client;
 
@@ -162,7 +185,18 @@ public partial class GameManager : Node2D
 
     public void HostStartMatch()
     {
-        if (!IsHost || Net.Lobby.Players.Count < 2) return;
+        if (!IsHost) return;
+        if (Net.TestTeamSize > 0 && Net.Lobby.Settings.TeamSize != Net.TestTeamSize)
+        {
+            Net.Lobby.Settings.TeamSize = Net.TestTeamSize; // --teams=N: deal the test lobby onto teams
+            Net.Lobby.DealTeams();
+        }
+        if (Net.TestFriendlyFire) Net.Lobby.Settings.FriendlyFire = true;
+        if (Net.Lobby.StartProblem() is { } problem)
+        {
+            Log.Info($"can't start: {problem}");
+            return;
+        }
         Net.InMatch = true;
         if (Stats.Mode != "sim") Stats.Mode = Net.Mode == NetMode.Host ? "host" : "offline";
         if (LavaOverride >= 0) Net.Lobby.Settings.LavaAfter = LavaOverride;
@@ -184,12 +218,13 @@ public partial class GameManager : Node2D
         if (winner >= 0 && Slots[winner] != null)
         {
             var w = Slots[winner];
-            w.BattleWins++;
+            var side = SideOf(winner).ToList(); // in team modes the whole team scores together
+            foreach (var p in side) p.BattleWins++;
             if (w.BattleWins >= Settings.BattlesPerRound)
             {
                 roundWon = true;
-                w.RoundWins++;
-                foreach (var p in Active()) p.BattleWins = 0;
+                foreach (var p in side) p.RoundWins++;
+                foreach (var p in Slots) if (p != null) p.BattleWins = 0;
                 if (w.RoundWins >= Settings.RoundsToWin) matchWon = true;
             }
         }
@@ -212,7 +247,8 @@ public partial class GameManager : Node2D
         var entries = new List<PickEntry>();
         foreach (var p in Active())
         {
-            int count = p.Slot == roundWinner ? Settings.WinnerChoices : Settings.LoserChoices;
+            bool won = p.Slot == roundWinner || Allies(p.Slot, roundWinner);
+            int count = won ? Settings.WinnerChoices : Settings.LoserChoices;
             var ids = count > 0 ? CardRegistry.RollOptions(HostRng, count, Settings.DisabledCards, Settings.RareChance / 100f) : null;
             if (ids is not { Count: > 0 }) continue;
             var deal = Settings.CursedDeals ? CardRegistry.RollDeal(HostRng, Settings.DisabledCards, ids) : null;
@@ -232,7 +268,7 @@ public partial class GameManager : Node2D
         {
             bool bot = IsBotPlayer(Slots[slot]);
             if (bot) _botPickT[slot] = HostRng.Range(0.5f, 1.5f);
-            Stats.PickOffered(completedRounds, Slots[slot], bot, slot == roundWinner, ids, deal);
+            Stats.PickOffered(completedRounds, Slots[slot], bot, slot == roundWinner || Allies(slot, roundWinner), ids, deal);
         }
         Rpc(MethodName.BeginCardPick, w.Done());
     }
@@ -278,7 +314,7 @@ public partial class GameManager : Node2D
     /// <summary>The humans whose vote a rematch waits on.</summary>
     public IEnumerable<MatchPlayer> RematchVoters() => Active().Where(p => !p.Info.IsBot);
 
-    public bool CanRematch => Phase == Phase.MatchOver && Active().Count() >= 2;
+    public bool CanRematch => Phase == Phase.MatchOver && Active().Count() >= 2 && Net.Lobby.StartProblem() == null;
 
     public void LocalVoteRematch(bool yes)
     {
@@ -529,7 +565,8 @@ public partial class GameManager : Node2D
     private void HostCheckBattleEnd(float dt)
     {
         var alive = LiveAvatars().ToList();
-        if (alive.Count > 1)
+        bool over = TeamMode ? Teams.Settled(alive.Select(a => a.Player.Info.Team), out _) : alive.Count <= 1;
+        if (!over)
         {
             _endCheckT = -1;
             return;
@@ -539,7 +576,8 @@ public partial class GameManager : Node2D
         _endCheckT -= dt;
         if (_endCheckT > 0) return;
         _endCheckT = -1;
-        _pendingWinner = alive.Count == 1 ? alive[0].Player.Slot : -1;
+        // In team modes a survivor stands for their team (see SideOf).
+        _pendingWinner = alive.Count == 1 || (TeamMode && alive.Count > 0) ? alive[0].Player.Slot : -1;
         HostBotChat(_pendingWinner, 0.45f, 0, 1);
         Phase = Phase.Intermission;
         HostAfter(0.8f, HostKillCamOrResolve);
@@ -732,6 +770,7 @@ public partial class GameManager : Node2D
     /// <param name="reflected">Thorns damage: never reflected again (so two Thorns players can't loop).</param>
     public void HostDamage(Avatar victim, float damage, Vector2 knockback, int attackerSlot, Vector2 at, bool reflected = false)
     {
+        if (Spared(attackerSlot, victim.Player.Slot)) return; // teammates, friendly fire off: blasts, bashes and arcs pass harmlessly
         float hpBefore = victim.Hp;
         damage *= 1f - victim.S[Stat.Armor];
         knockback *= victim.S[Stat.KnockbackTaken];
@@ -787,7 +826,7 @@ public partial class GameManager : Node2D
         float best = 150f;
         foreach (var a in LiveAvatars())
         {
-            if (a == victim || a.Player.Slot == ownerSlot) continue;
+            if (a == victim || a.Player.Slot == ownerSlot || Allies(a.Player.Slot, ownerSlot)) continue;
             float d = a.GlobalPosition.DistanceTo(victim.GlobalPosition);
             if (d < best) { best = d; next = a; }
         }
@@ -830,7 +869,7 @@ public partial class GameManager : Node2D
         float radius = 44 * a.S[Stat.Size] + 10;
         foreach (var e in LiveAvatars().ToList())
         {
-            if (e == a || e.GlobalPosition.DistanceTo(a.GlobalPosition) > radius) continue;
+            if (e == a || Allies(e.Player.Slot, a.Player.Slot) || e.GlobalPosition.DistanceTo(a.GlobalPosition) > radius) continue;
             float before = e.Hp;
             HostDamage(e, amount, Vector2.Zero, a.Player.Slot, e.GlobalPosition);
             float dealt = Mathf.Max(0, before - Mathf.Max(0, e.Hp));
@@ -915,6 +954,7 @@ public partial class GameManager : Node2D
         if (cause != KillCause.Left) Stats.Death(a.Player.Slot, fell: cause == KillCause.Fall);
         a.Alive = false;
         if (killer == a.Player.Slot) killer = -1;
+        if (Allies(killer, a.Player.Slot)) Log.Info($"team kill: {NameOf(killer)} took out teammate {NameOf(a.Player.Slot)}");
         if (cause != KillCause.Left)
         {
             Book.Add(killer >= 0 ? killer : a.Player.Slot, killer >= 0 ? AwardStat.Kills : AwardStat.SelfKills);
@@ -1271,7 +1311,7 @@ public partial class GameManager : Node2D
         Net.InMatch = true;
         Visible = true;
         if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
-        Log.Info($"match begins: {lobby.Players.Count} players, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
+        Log.Info($"match begins: {lobby.Players.Count} players, {Teams.ModeName(Settings.TeamSize)}{(TeamMode && Settings.FriendlyFire ? " (friendly fire)" : "")}, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
         MatchBegan?.Invoke();
     }
 
@@ -1304,6 +1344,14 @@ public partial class GameManager : Node2D
         {
             int j = rng.Range(0, i);
             (order[i], order[j]) = (order[j], order[i]);
+        }
+        if (TeamMode && order.Count >= active.Count)
+        {
+            // Teams start on opposite sides (swapping each battle): Red takes spawns from one end, Blue from the other.
+            var byX = Enumerable.Range(0, layout.Spawns.Count).OrderBy(k => layout.Spawns[k].X).ToList();
+            if (BattleNumber % 2 == 0) byX.Reverse();
+            int lo = 0, hi = byX.Count - 1;
+            for (int i = 0; i < active.Count; i++) order[i] = active[i].Info.Team == 0 ? byX[lo++] : byX[hi--];
         }
         for (int i = 0; i < active.Count; i++)
         {
@@ -1342,8 +1390,8 @@ public partial class GameManager : Node2D
     {
         KillCam.End();
         ApplyScores(scores);
-        string name = NameOf(winner);
-        Color col = winner >= 0 ? Palette.Player(ColorOf(winner)) : Palette.TextDim;
+        string name = WinnerName(winner);
+        Color col = WinnerColor(winner);
         Log.Info($"battle over: winner {winner} ({(winner >= 0 ? name : "draw")}) round={roundWon} match={matchWon} | {ScoreLine()}");
 
         if (matchWon)
@@ -1965,7 +2013,7 @@ public partial class GameManager : Node2D
         return w.Done();
     }
 
-    public string ScoreLine() => string.Join(", ", Active().Select(p => $"{p.Info.Name} R{p.RoundWins}/B{p.BattleWins}"));
+    public string ScoreLine() => string.Join(", ", Active().Select(p => $"{p.Info.Name}{(TeamMode ? $" [{Teams.Names[p.Info.Team]}]" : "")} R{p.RoundWins}/B{p.BattleWins}"));
 
     // =====================================================================
     // World reset & juice

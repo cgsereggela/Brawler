@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Brawler.Logic;
 using Godot;
 
@@ -23,6 +24,9 @@ public static class Palette
 
     public static Color Player(int idx) => Players[((idx % Players.Length) + Players.Length) % Players.Length];
 
+    /// <summary>Team colors in team modes: Red and Blue, the first two player colors.</summary>
+    public static Color Team(int team) => Players[team == 1 ? 1 : 0];
+
     public static readonly Color Text = new("#ece6d8");
     public static readonly Color TextDim = new("#9c978c");
     public static readonly Color Accent = new("#e6cf8f");  // numbers, ammo, highlights
@@ -41,6 +45,7 @@ public sealed class PlayerInfo
     public string Name = "Player";
     public int ColorIdx;
     public bool IsBot;
+    public int Team; // 0 or 1 in team modes (see Teams)
     public Appearance Look = Appearance.Default();
     public string Key; // host only, never sent: the player's rejoin key (see NetworkManager.RejoinKey)
 }
@@ -55,12 +60,14 @@ public sealed class MatchSettings
     public int RareChance = 10;      // percent chance that each offered card is a rare one (0 = rares only come in deals)
     public bool CursedDeals = true;  // each pick also offers a rare card bundled with a curse
     public bool KillCam = true;      // replay the final kill of each battle in slow motion
+    public int TeamSize;             // 0 = free-for-all, else 2v2 / 3v3 / 4v4 (see Teams)
+    public bool FriendlyFire;        // team modes: your shots and blasts hurt teammates too
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
 
     public MatchSettings Copy() => new()
     {
         BattlesPerRound = BattlesPerRound, RoundsToWin = RoundsToWin, LoserChoices = LoserChoices, WinnerChoices = WinnerChoices,
-        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, DisabledCards = new(DisabledCards),
+        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, DisabledCards = new(DisabledCards),
     };
 }
 
@@ -80,6 +87,26 @@ public sealed class LobbyState
         return -1;
     }
 
+    public bool TeamMode => Settings.TeamSize > 0;
+
+    /// <summary>Why the match can't start yet, or null when it can.</summary>
+    public string StartProblem() =>
+        Players.Count < 2 ? "Needs at least two players." : Teams.Problem(Players.Select(p => p.Team), Settings.TeamSize);
+
+    /// <summary>The team a newcomer joins: the emptier one.</summary>
+    public int NewcomerTeam() => TeamMode ? System.Math.Max(0, Teams.Emptier(Players.Select(p => p.Team), Settings.TeamSize)) : 0;
+
+    /// <summary>Whether another player fits: a free slot, and in team modes room on a team.</summary>
+    public bool HasRoom() => FreeSlot() >= 0 && (!TeamMode || Teams.Emptier(Players.Select(p => p.Team), Settings.TeamSize) >= 0);
+
+    /// <summary>Deal everyone onto alternating teams in slot order (when a team mode is picked).</summary>
+    public void DealTeams()
+    {
+        var order = Players.OrderBy(p => p.Slot).ToList();
+        var t = Teams.Deal(order.Count);
+        for (int i = 0; i < order.Count; i++) order[i].Team = t[i];
+    }
+
     public int FreeColor()
     {
         for (int c = 0; c < Palette.Players.Length; c++)
@@ -90,12 +117,12 @@ public sealed class LobbyState
     public byte[] Serialize()
     {
         var w = new Wire();
-        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam);
+        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(Players.Count);
         foreach (var p in Players)
             {
-            w.U8(p.Slot).I64(p.PeerId).Str(p.Name).U8(p.ColorIdx).Bool(p.IsBot);
+            w.U8(p.Slot).I64(p.PeerId).Str(p.Name).U8(p.ColorIdx).Bool(p.IsBot).U8(p.Team);
             w.Bytes(p.Look.ToBytes());
         }
         return w.Done();
@@ -113,10 +140,12 @@ public sealed class LobbyState
         s.Settings.RareChance = r.U8();
         s.Settings.CursedDeals = r.Bool();
         s.Settings.KillCam = r.Bool();
+        s.Settings.TeamSize = r.U8();
+        s.Settings.FriendlyFire = r.Bool();
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)
-            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Look = Appearance.FromBytes(r.Bytes()) });
+            s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Team = r.U8(), Look = Appearance.FromBytes(r.Bytes()) });
         return s;
     }
 }

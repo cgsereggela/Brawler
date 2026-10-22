@@ -7,7 +7,6 @@ issues to fix:
 - performance: with vsync on (the default) on this 59 Hz screen, frames that miss 16.9 ms judder between 59 and 30 fps. Once the fixes above land this mostly goes away; an adaptive vsync option (DisplayServer.VSyncMode.Adaptive) in the display settings would soften it on slower machines. Not measured separately
 
 features to add:
-- team modes: 2v2, 3v3, 4v4, with a lobby setting for friendly fire
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
 - game modes: king of the hill, capture the flag, a "headhunter" mode where the leader is marked
 - controller support and local couch co-op (several players on one machine)

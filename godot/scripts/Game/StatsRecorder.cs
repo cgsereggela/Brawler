@@ -45,6 +45,7 @@ public sealed class StatsRecorder
             {
                 BattlesPerRound = s.BattlesPerRound, RoundsToWin = s.RoundsToWin,
                 LoserChoices = s.LoserChoices, WinnerChoices = s.WinnerChoices, RareChance = s.RareChance, CursedDeals = s.CursedDeals,
+                TeamSize = s.TeamSize,
             },
         };
         foreach (var p in players.OrderBy(p => p.Slot))

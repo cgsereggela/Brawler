@@ -73,6 +73,7 @@ public partial class HudUI : Control
         h.Add(vs);
         h.Add(_game.Settings.RoundsToWin);
         h.Add(_game.Settings.BattlesPerRound);
+        h.Add(_game.Settings.TeamSize);
         h.Add(_game.BattleNumber);
         if (_game.BattleNumber > 0) h.Add(_game.MapNode.Theme.Name);
         h.Add(_game.Phase == Phase.CardPick);
@@ -101,13 +102,15 @@ public partial class HudUI : Control
         _chips.Clear();
         var widths = new List<(MatchPlayer P, float W)>();
         bool compact = false;
+        // Team modes: Red's chips, then a wider gap, then Blue's.
+        var order = _game.Slots.Where(p => p != null).OrderBy(p => _game.TeamOf(p.Slot)).ThenBy(p => p.Slot).ToList();
+        const float teamGap = 10;
         for (int pass = 0; pass < 2; pass++)
         {
             widths.Clear();
-            float total = 10;
-            foreach (var p in _game.Slots)
+            float total = 10 + (_game.TeamMode ? teamGap : 0);
+            foreach (var p in order)
             {
-                if (p == null) continue;
                 float w = ChipWidth(p, compact);
                 widths.Add((p, w));
                 total += w + (compact ? 5 : 8);
@@ -117,8 +120,12 @@ public partial class HudUI : Control
         }
         _compact = compact;
         float x = 10;
+        int lastTeam = -1;
         foreach (var (p, w) in widths)
         {
+            int team = _game.TeamOf(p.Slot);
+            if (lastTeam >= 0 && team != lastTeam) x += teamGap;
+            lastTeam = team;
             _chips.Add((new Rect2(x, 8, w, compact ? 34 : 38), p));
             x += w + (compact ? 5 : 8);
         }
@@ -333,6 +340,9 @@ public partial class HudUI : Control
         _batch.Polygon(outline, new Color(0.06f, 0.03f, 0.13f, 0.72f));
         _batch.Polygon(Shapes.RoundRect(new Rect2(chip.Position, new Vector2(head, head)), radius, 6), col with { A = 0.3f });
         _batch.Stroke(outline, 1f, col with { A = 0.55f }, closed: true);
+        if (_game.TeamOf(p.Slot) is >= 0 and var team)
+            _batch.Polygon(Shapes.RoundRect(new Rect2(chip.Position.X + head + 2, chip.End.Y + 2, chip.Size.X - head - 6, 2.5f), 1.2f),
+                p.Left ? Palette.TextDim : Palette.Team(team));
 
         float tx = chip.Position.X + (compact ? 38 : 44), y0 = chip.Position.Y;
         float step = PipStep(compact), pipR = compact ? Mathf.Min(2.7f, step * 0.45f) : 3.6f;

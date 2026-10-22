@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Brawler.Core;
 using Brawler.Logic;
 using Godot;
@@ -21,6 +22,9 @@ public partial class NetworkManager : Node
     /// <summary>Router port forwarding for the host. Off for automated test runs.</summary>
     public readonly PortOpener Ports = new();
     public bool UseUpnp = true;
+    /// <summary>Test runs (--teams=N, --friendlyfire): the team mode for matches this run hosts (applied at match start).</summary>
+    public int TestTeamSize;
+    public bool TestFriendlyFire;
 
     public NetMode Mode { get; private set; } = NetMode.None;
     public LobbyState Lobby { get; private set; } = new();
@@ -139,11 +143,30 @@ public partial class NetworkManager : Node
 
     public void AddBot()
     {
-        if (!IsHost || InMatch) return;
+        if (!IsHost || InMatch || !Lobby.HasRoom()) return;
         int slot = Lobby.FreeSlot();
-        if (slot < 0) return;
         int color = Lobby.FreeColor();
-        Lobby.Players.Add(new PlayerInfo { Slot = slot, PeerId = 1, IsBot = true, Name = $"Bot {Palette.Names[color]}", ColorIdx = color, Look = Appearance.Random(_botLooks) });
+        Lobby.Players.Add(new PlayerInfo
+        {
+            Slot = slot, PeerId = 1, IsBot = true, Name = $"Bot {Palette.Names[color]}", ColorIdx = color,
+            Team = Lobby.NewcomerTeam(), Look = Appearance.Random(_botLooks),
+        });
+        BroadcastLobby();
+    }
+
+    /// <summary>Moves a player to the other team, if it has room. The host can move anyone; others only themselves.</summary>
+    public void SwapTeam(int slot)
+    {
+        if (InMatch || !Lobby.TeamMode) return;
+        if (IsHost) HostSwapTeam(slot);
+        else if (Mode == NetMode.Client && LocalPlayer?.Slot == slot) RpcId(1, MethodName.RequestSwapTeam);
+    }
+
+    private void HostSwapTeam(int slot)
+    {
+        var p = Lobby.BySlot(slot);
+        if (p == null || InMatch || !Lobby.TeamMode) return;
+        p.Team = Teams.Swap(Lobby.Players.Where(o => o != p).Select(o => o.Team), p.Team, Lobby.Settings.TeamSize);
         BroadcastLobby();
     }
 
@@ -158,6 +181,15 @@ public partial class NetworkManager : Node
     {
         if (!IsHost) return;
         Lobby.Settings = s;
+        BroadcastLobby();
+    }
+
+    /// <summary>Host: switch between free-for-all and the team modes, dealing everyone onto fresh teams.</summary>
+    public void SetTeamSize(int size)
+    {
+        if (!IsHost || InMatch) return;
+        Lobby.Settings.TeamSize = size;
+        if (Lobby.TeamMode) Lobby.DealTeams();
         BroadcastLobby();
     }
 
@@ -235,14 +267,14 @@ public partial class NetworkManager : Node
         if (name.Length > 12) name = name[..12];
         _keys.TryGetValue(sender, out var key);
         if (InMatch && TryRejoin?.Invoke(sender, key, name) == true) return;
-        if (InMatch || Lobby.FreeSlot() < 0)
+        if (InMatch || !Lobby.HasRoom())
         {
             RpcId(sender, MethodName.Rejected, InMatch ? "A match is already in progress." : "Lobby is full.");
             return;
         }
         if (Lobby.Players.Exists(p => p.ColorIdx == color)) color = Lobby.FreeColor();
         SendCards(sender);
-        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look), Key = key });
+        Lobby.Players.Add(new PlayerInfo { Slot = Lobby.FreeSlot(), PeerId = sender, Name = name, ColorIdx = color, Look = Appearance.FromBytes(look), Key = key, Team = Lobby.NewcomerTeam() });
         BroadcastLobby();
     }
 
@@ -266,6 +298,14 @@ public partial class NetworkManager : Node
         if (p == null) return;
         p.ColorIdx = color;
         BroadcastLobby();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestSwapTeam()
+    {
+        if (!IsHost) return;
+        var p = Lobby.ByPeer(Multiplayer.GetRemoteSenderId());
+        if (p != null) HostSwapTeam(p.Slot);
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

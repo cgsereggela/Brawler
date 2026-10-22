@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Brawler.Core;
 using Brawler.Fx;
 using Brawler.Logic;
@@ -19,7 +20,10 @@ public partial class LobbyUI : Control
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava, _rare, _deals, _killCam;
+    private Button _lava, _rare, _deals, _killCam, _mode, _friendly;
+    private Label _problem, _friendlyLabel;
+    private ScrollContainer _scroll;
+    private VBoxContainer _middle;
 
     public LobbyUI(NetworkManager net) => _net = net;
     public LobbyUI() { }
@@ -44,14 +48,21 @@ public partial class LobbyUI : Control
         _inviteRow.AddChild(_copy);
         body.AddChild(_inviteRow);
 
+        // Players and settings scroll when the window is too short for them all (see FitScroll), so the
+        // title and the Start row always stay on screen.
+        _scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        body.AddChild(_scroll);
+        _middle = UiKit.VBox(8);
+        _middle.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _scroll.AddChild(_middle);
+
         _players = new GridContainer { Columns = 4 };
         _players.AddThemeConstantOverride("h_separation", 8);
         _players.AddThemeConstantOverride("v_separation", 8);
         _players.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-        body.AddChild(_players);
+        _middle.AddChild(_players);
 
-
-        body.AddChild(UiKit.Label("MATCH SETTINGS", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
+        _middle.AddChild(UiKit.Label("MATCH SETTINGS", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var grid = new GridContainer { Columns = 4 };
         grid.AddThemeConstantOverride("h_separation", 10);
         grid.AddThemeConstantOverride("v_separation", 6);
@@ -59,28 +70,13 @@ public partial class LobbyUI : Control
         _rounds = AddSpin(grid, "Round wins to win", 1, 10);
         _loserCards = AddSpin(grid, "Card choices (losers)", 1, CardPool.MaxChoices);
         _winnerCards = AddSpin(grid, "Card choices (winner)", 0, CardPool.MaxChoices);
-        var lavaLabel = UiKit.Label("Lava rises after", UiKit.Small, Palette.Text);
-        lavaLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        lavaLabel.TooltipText = "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.";
-        lavaLabel.MouseFilter = MouseFilterEnum.Pass;
-        grid.AddChild(lavaLabel);
-        _lava = UiKit.Button("", CycleLava, 70, "Small");
-        grid.AddChild(_lava);
-        var rareLabel = UiKit.Label("Rare cards", UiKit.Small, Palette.Text);
-        rareLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        rareLabel.TooltipText = "How often each card in a pick is a rare one: strong, build-defining cards with a gold frame.";
-        rareLabel.MouseFilter = MouseFilterEnum.Pass;
-        grid.AddChild(rareLabel);
-        _rare = UiKit.Button("", CycleRare, 70, "Small");
-        grid.AddChild(_rare);
-        var camLabel = UiKit.Label("Kill cam", UiKit.Small, Palette.Text);
-        camLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        camLabel.TooltipText = "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.";
-        camLabel.MouseFilter = MouseFilterEnum.Pass;
-        grid.AddChild(camLabel);
-        _killCam = UiKit.Button("", ToggleKillCam, 70, "Small");
-        grid.AddChild(_killCam);
-        body.AddChild(grid);
+        _lava = AddToggle(grid, "Lava rises after", "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.", CycleLava, out _);
+        _rare = AddToggle(grid, "Rare cards", "How often each card in a pick is a rare one: strong, build-defining cards with a gold frame.", CycleRare, out _);
+        _killCam = AddToggle(grid, "Kill cam", "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.", ToggleKillCam, out _);
+        _mode = AddToggle(grid, "Mode", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
+        // Only in team modes, so the free-for-all lobby stays a row shorter.
+        _friendly = AddToggle(grid, "Friendly fire", "Whether your shots and blasts hurt your teammates. Off, they pass straight through.", ToggleFriendlyFire, out _friendlyLabel);
+        _middle.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
         var poolRow = UiKit.HBox(8);
@@ -93,7 +89,10 @@ public partial class LobbyUI : Control
         poolRow.AddChild(_deals);
         _cards = UiKit.Button("Cards", () => _pool.Open(), 120, "Small");
         poolRow.AddChild(_cards);
-        body.AddChild(poolRow);
+        _middle.AddChild(poolRow);
+
+        _problem = UiKit.Label("", UiKit.Small, Palette.Hot.Lightened(0.35f), HorizontalAlignment.Center);
+        body.AddChild(_problem);
 
         var bottom = UiKit.HBox(8);
         _start = UiKit.Primary("START MATCH", () => StartPressed?.Invoke());
@@ -116,6 +115,28 @@ public partial class LobbyUI : Control
         _net.PortsChanged += Refresh;
         StreamerMode.Changed += Refresh;
         Refresh();
+    }
+
+    // Every frame while shown: cheap, and catches every change (new cards, window size, the invite line wrapping).
+    public override void _Process(double delta)
+    {
+        if (IsVisibleInTree()) FitScroll();
+    }
+
+    /// <summary>
+    /// Sizes the scrolling middle: all of it when the panel fits on screen, else just what's left once the title, info
+    /// and Start row have their room.
+    /// </summary>
+    private void FitScroll()
+    {
+        if (!IsInsideTree()) return;
+        var panel = (Control)_scroll.GetParent().GetParent();
+        float want = _middle.GetCombinedMinimumSize().Y;
+        float rest = panel.GetCombinedMinimumSize().Y - _scroll.CustomMinimumSize.Y; // everything but the middle
+        float room = GetViewportRect().Size.Y - 4 - rest;
+        var size = new Vector2(0, Mathf.Clamp(want, 80, Mathf.Max(80, room)));
+        if (size != _scroll.CustomMinimumSize) _scroll.CustomMinimumSize = size;
+        _scroll.VerticalScrollMode = want > room ? ScrollContainer.ScrollMode.Auto : ScrollContainer.ScrollMode.Disabled;
     }
 
     public override void _ExitTree()
@@ -200,6 +221,19 @@ public partial class LobbyUI : Control
         return s;
     }
 
+    /// <summary>A setting the host steps through by clicking: its label (hover for the tip) and button.</summary>
+    private static Button AddToggle(GridContainer grid, string label, string tip, Action pressed, out Label l)
+    {
+        l = UiKit.Label(label, UiKit.Small, Palette.Text);
+        l.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        l.TooltipText = tip;
+        l.MouseFilter = MouseFilterEnum.Pass;
+        grid.AddChild(l);
+        var b = UiKit.Button("", pressed, 70, "Small");
+        grid.AddChild(b);
+        return b;
+    }
+
     private void PushSettings()
     {
         if (!_net.IsHost) return;
@@ -213,6 +247,8 @@ public partial class LobbyUI : Control
             RareChance = _net.Lobby.Settings.RareChance,
             CursedDeals = _net.Lobby.Settings.CursedDeals,
             KillCam = _net.Lobby.Settings.KillCam,
+            TeamSize = _net.Lobby.Settings.TeamSize,
+            FriendlyFire = _net.Lobby.Settings.FriendlyFire,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
     }
@@ -257,14 +293,30 @@ public partial class LobbyUI : Control
         PushSettings();
     }
 
-    /// <summary>One player slot: a little glass card with the character on a pedestal.</summary>
-    private Control SlotCard(PlayerInfo p, bool host)
+    /// <summary>Host: step through free-for-all, 2v2, 3v3 and 4v4 (everyone is dealt onto fresh teams).</summary>
+    private void CycleMode()
     {
-        var card = new PanelContainer { CustomMinimumSize = new Vector2(122, 112) };
+        if (!_net.IsHost) return;
+        _net.SetTeamSize(Teams.NextSize(_net.Lobby.Settings.TeamSize));
+    }
+
+    private void ToggleFriendlyFire()
+    {
+        if (!_net.IsHost) return;
+        _net.Lobby.Settings.FriendlyFire = !_net.Lobby.Settings.FriendlyFire;
+        PushSettings();
+    }
+
+    /// <summary>One player slot: a little glass card with the character on a pedestal.</summary>
+    /// <param name="team">Team modes: the team this card sits in (an open slot there still shows the team's tint).</param>
+    private Control SlotCard(PlayerInfo p, bool host, int team = -1)
+    {
+        var card = new PanelContainer { CustomMinimumSize = new Vector2(122, 100) };
+        var edge = team >= 0 ? Palette.Team(team) : p != null ? Palette.Player(p.ColorIdx) : Colors.White;
         var box = new StyleBoxFlat
         {
-            BgColor = p == null ? new Color(1, 1, 1, 0.03f) : Palette.Player(p.ColorIdx) with { A = 0.14f },
-            BorderColor = p == null ? new Color(1, 1, 1, 0.08f) : Palette.Player(p.ColorIdx) with { A = 0.6f },
+            BgColor = p == null ? edge with { A = team >= 0 ? 0.05f : 0.03f } : Palette.Player(p.ColorIdx) with { A = 0.14f },
+            BorderColor = p == null ? edge with { A = team >= 0 ? 0.25f : 0.08f } : edge with { A = 0.6f },
             BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
             CornerRadiusTopLeft = 14, CornerRadiusTopRight = 14, CornerRadiusBottomLeft = 14, CornerRadiusBottomRight = 14,
             ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 6, ContentMarginBottom = 8,
@@ -280,20 +332,41 @@ public partial class LobbyUI : Control
             v.AddChild(empty);
             return card;
         }
-        var preview = new AvatarPreview(p.Look, p.ColorIdx, 2.1f, alive: p.PeerId == _net.LocalPeer && !p.IsBot) { ShowGun = false, Pedestal = true };
+        var preview = new AvatarPreview(p.Look, p.ColorIdx, 1.9f, alive: p.PeerId == _net.LocalPeer && !p.IsBot) { ShowGun = false, Pedestal = true };
         var pc = new CenterContainer();
         pc.AddChild(preview);
         v.AddChild(pc);
         v.AddChild(UiKit.Label(p.Name, UiKit.Body, Colors.White, HorizontalAlignment.Center, Fonts.Bold));
         string tag = p.IsBot ? "BOT" : p.PeerId == _net.LocalPeer ? "YOU" : "PLAYER";
+        // One line under the name: the team tag (team modes), then remove (the host's bots) or who this is.
+        var foot = UiKit.HBox(4);
+        foot.Alignment = BoxContainer.AlignmentMode.Center;
+        v.AddChild(foot);
+        int s = p.Slot;
+        if (team >= 0)
+        {
+            // The host can move anyone, everyone else just themselves.
+            bool canSwap = host || (!p.IsBot && p.PeerId == _net.LocalPeer);
+            string name = Teams.Names[team].ToUpperInvariant();
+            var t = UiKit.Button(canSwap ? $"{name} ⇄" : name, () => _net.SwapTeam(s), 0, "Small");
+            t.Disabled = !canSwap;
+            t.TooltipText = canSwap ? "Move to the other team" : "";
+            t.AddThemeColorOverride("font_color", Palette.Team(team).Lightened(0.3f));
+            t.AddThemeColorOverride("font_disabled_color", Palette.Team(team).Lightened(0.3f));
+            foot.AddChild(t);
+        }
         if (host && p.IsBot)
         {
-            int s = p.Slot;
-            var x = UiKit.Button("remove", () => _net.RemoveBot(s), 0, "Small");
-            x.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-            v.AddChild(x);
+            var x = UiKit.Button(team >= 0 ? "✕" : "remove", () => _net.RemoveBot(s), 0, "Small");
+            x.TooltipText = "Remove this bot";
+            foot.AddChild(x);
         }
-        else v.AddChild(UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold));
+        else
+        {
+            var l = UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold);
+            l.VerticalAlignment = VerticalAlignment.Center;
+            foot.AddChild(l);
+        }
         return card;
     }
 
@@ -314,10 +387,25 @@ public partial class LobbyUI : Control
         RefreshInvite();
 
         UiKit.ClearChildren(_players);
-        for (int slot = 0; slot < LobbyState.MaxPlayers; slot++)
-            _players.AddChild(SlotCard(lobby.BySlot(slot), host));
-
         var st = lobby.Settings;
+        if (lobby.TeamMode)
+        {
+            // One row per team, with its open places.
+            _players.Columns = st.TeamSize;
+            for (int team = 0; team < Teams.Count; team++)
+            {
+                var members = lobby.Players.Where(p => p.Team == team).OrderBy(p => p.Slot).ToList();
+                for (int i = 0; i < Math.Max(st.TeamSize, members.Count); i++)
+                    _players.AddChild(SlotCard(i < members.Count ? members[i] : null, host, team));
+            }
+        }
+        else
+        {
+            _players.Columns = 4;
+            for (int slot = 0; slot < LobbyState.MaxPlayers; slot++)
+                _players.AddChild(SlotCard(lobby.BySlot(slot), host));
+        }
+
         _battles.SetValueNoSignal(st.BattlesPerRound);
         _rounds.SetValueNoSignal(st.RoundsToWin);
         _loserCards.SetValueNoSignal(st.LoserChoices);
@@ -331,11 +419,20 @@ public partial class LobbyUI : Control
         _deals.Disabled = !host;
         _killCam.Text = st.KillCam ? "On" : "Off";
         _killCam.Disabled = !host;
+        _mode.Text = Teams.ModeName(st.TeamSize);
+        _mode.Disabled = !host;
+        _friendly.Text = st.FriendlyFire ? "On" : "Off";
+        _friendly.Disabled = !host;
+        _friendly.Visible = _friendlyLabel.Visible = lobby.TeamMode;
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
 
         _addBot.Visible = host;
-        _addBot.Disabled = lobby.FreeSlot() < 0;
+        _addBot.Disabled = !lobby.HasRoom();
         _start.Visible = host;
-        _start.Disabled = lobby.Players.Count < 2;
+        string problem = lobby.StartProblem();
+        _start.Disabled = problem != null;
+        // Two players short is the usual empty lobby; only explain the team rules.
+        _problem.Text = lobby.Players.Count >= 2 ? problem ?? "" : "";
+        _problem.Visible = _problem.Text != "";
     }
 }

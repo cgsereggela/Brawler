@@ -37,11 +37,15 @@ public partial class MatchOverUI : Control
     {
         UiKit.ClearChildren(_body);
         // Five or more players: the standings go in two columns on a wider panel, so the list still fits on screen.
-        var players = _game.Slots.Where(p => p != null).OrderByDescending(p => p.RoundWins).ToList();
+        // Team modes: the winning team first, then the rest; both share a place.
+        int champTeam = _game.TeamOf(winner);
+        var players = _game.Slots.Where(p => p != null)
+            .OrderBy(p => champTeam >= 0 && _game.TeamOf(p.Slot) != champTeam ? 1 : 0)
+            .ThenByDescending(p => p.RoundWins).ToList();
         bool crowded = players.Count > 4;
         ((Control)_body.GetParent()).CustomMinimumSize = new Vector2(crowded ? 760 : _game.MatchAwards.Count > 0 ? 540 : 460, 0);
-        var champCol = winner >= 0 ? Palette.Player(_game.ColorOf(winner)) : Palette.Text;
-        _body.AddChild(new TitleText(winner >= 0 ? $"{_game.NameOf(winner).ToUpperInvariant()} WINS!" : "MATCH OVER", 34, 2.5f,
+        var champCol = winner >= 0 ? _game.WinnerColor(winner) : Palette.Text;
+        _body.AddChild(new TitleText(winner >= 0 ? $"{_game.WinnerName(winner).ToUpperInvariant()} WINS!" : "MATCH OVER", 34, 2.5f,
             champCol, champCol.Lightened(0.3f), Palette.Accent));
         // The champion on a pedestal, with the awards either side of them.
         var awards = _game.MatchAwards;
@@ -56,12 +60,20 @@ public partial class MatchOverUI : Control
         for (int i = 0; i < awards.Count; i++)
             (i % 2 == 0 ? left : right).AddChild(AwardCard(awards[i], i % 2 == 0 ? HorizontalAlignment.Right : HorizontalAlignment.Left));
         stage.AddChild(left);
-        if (winner >= 0 && _game.Slots[winner] is { } champ)
+        if (winner >= 0 && _game.Slots[winner] != null)
         {
-            // Wider than the figure, so the gun it holds out never reaches the awards beside it.
-            float zoom = crowded ? 2.2f : 3.2f;
-            var podium = new CenterContainer { CustomMinimumSize = new Vector2(56 * zoom, 0) };
-            podium.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, zoom, alive: true) { Pedestal = true });
+            // The champion (or the whole winning team, smaller), wider than the figure so the gun it holds out never
+            // reaches the awards beside it.
+            var champs = _game.SideOf(winner).ToList();
+            float zoom = (crowded ? 2.2f : 3.2f) * (champs.Count > 1 ? 0.6f : 1);
+            var podium = UiKit.HBox(0);
+            podium.Alignment = BoxContainer.AlignmentMode.Center;
+            foreach (var champ in champs)
+            {
+                var spot = new CenterContainer { CustomMinimumSize = new Vector2(56 * zoom, 0) };
+                spot.AddChild(new AvatarPreview(champ.Info.Look, champ.Info.ColorIdx, zoom, alive: true) { Pedestal = true });
+                podium.AddChild(spot);
+            }
             stage.AddChild(podium);
         }
         stage.AddChild(right);
@@ -82,9 +94,11 @@ public partial class MatchOverUI : Control
         {
             int idx = crowded ? cell % 2 * rows + cell / 2 : cell;
             var p = players[idx];
-            int place = idx + 1;
+            int team = _game.TeamOf(p.Slot);
+            int place = team >= 0 && champTeam >= 0 ? (team == champTeam ? 1 : 2) : idx + 1;
             var row = UiKit.HBox(10);
-            row.AddChild(UiKit.Label($"#{place}", 18, place == 1 ? Palette.Accent : Palette.TextDim, font: Fonts.Heavy));
+            var placeCol = team >= 0 ? Palette.Team(team) : place == 1 ? Palette.Accent : Palette.TextDim;
+            row.AddChild(UiKit.Label($"#{place}", 18, placeCol, font: Fonts.Heavy));
             row.AddChild(new AvatarPreview(p.Info.Look, p.Info.ColorIdx, 1.1f) { CustomMinimumSize = new Vector2(36, 34), ShowGun = false });
             var info = UiKit.VBox(0);
             info.SizeFlagsHorizontal = SizeFlags.ExpandFill;

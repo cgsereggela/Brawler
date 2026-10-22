@@ -13,7 +13,7 @@ namespace Brawler.Logic;
 /// </summary>
 public sealed class MatchRecord
 {
-    public const int CurrentVersion = 2; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal)
+    public const int CurrentVersion = 3; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal); 3: SettingsRec.TeamSize
 
     public int V { get; set; } = CurrentVersion;
     public string Id { get; set; }
@@ -39,6 +39,8 @@ public sealed class SettingsRec
     public int WinnerChoices { get; set; }
     public int RareChance { get; set; }
     public bool CursedDeals { get; set; }
+    /// <summary>0 = free-for-all, else players a side (team matches stay out of the card win rates).</summary>
+    public int TeamSize { get; set; }
 }
 
 public sealed class PlayerRec

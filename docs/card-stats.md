@@ -36,11 +36,11 @@ tools/CardStats (dotnet run) ◀── StatsJson.ParseLines + StatsReport.Build 
 - **Automated tests:** `--autotest`, `--autohost` and `--autojoin` don't record, so the log stays clean. Add `--stats` to record anyway.
 - **`--simulate=N [--players=A-B]`:** plays N bot-only matches with the lobby's default rules and records them with `mode: "sim"`. A match takes about 5 seconds headless. A simulated match that runs past 30 simulated minutes is abandoned and saved as incomplete.
 
-## Record schema (version 1)
+## Record schema (version 3)
 
 ```jsonc
 {
-  "v": 1,                        // MatchRecord.CurrentVersion
+  "v": 3,                        // MatchRecord.CurrentVersion (2 added rare cards and cursed deals, 3 the team size)
   "id": "c1792a05b491",
   "startedUtc": "2026-10-19T03:28:40Z",
   "mode": "sim",                 // "offline" | "host" | "sim"
@@ -48,7 +48,10 @@ tools/CardStats (dotnet run) ◀── StatsJson.ParseLines + StatsReport.Build 
   "complete": true,
   "winner": 2,                   // match winner slot, -1 if none
   "durationSec": 446.05,         // simulated time, including countdowns and picks
-  "settings": { "battlesPerRound": 2, "roundsToWin": 5, "loserChoices": 5, "winnerChoices": 3 },
+  "settings": { "battlesPerRound": 2, "roundsToWin": 5, "loserChoices": 5, "winnerChoices": 3,
+                "rareChance": 10, "cursedDeals": true,
+                "teamSize": 0 },         // 0 = free-for-all; team matches (2-4 a side) are left out of the report
+  // in a team match, "winner" (match and battle) is a slot standing for its whole team
   "players": [
     { "slot": 0, "name": "Sim", "bot": true, "finalCards": [11, 3, 13], "roundWins": 0, "left": false }
   ],

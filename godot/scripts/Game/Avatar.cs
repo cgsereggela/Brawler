@@ -723,7 +723,7 @@ public partial class Avatar : CharacterBody2D
         var nTo = new System.Numerics.Vector2(from.X + delta.X, from.Y + delta.Y);
         foreach (var a in Game.LiveAvatars())
         {
-            if (a == this) continue;
+            if (a == this || Game.Spared(Player.Slot, a.Player.Slot)) continue;
             var r = a.Bounds;
             if (Sweep.SegmentTouchesRect(nFrom, nTo, radius, r.Position.X, r.Position.Y, r.Size.X, r.Size.Y)) return from;
         }
@@ -921,6 +921,9 @@ public partial class Avatar : CharacterBody2D
         float frac = Mathf.Clamp(Hp / max, 0, 1), ghost = Mathf.Clamp(_hpGhost / max, 0, 1);
         const float barW = 24, barH = 3.4f;
         var barPos = new Vector2(-barW / 2, top - 9);
+        // Team modes: the bar sits in a frame of the team color, so sides read at a glance.
+        if (Game.TeamOf(Player.Slot) is >= 0 and var team)
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(barPos - new Vector2(2, 2), new Vector2(barW + 4, barH + 4)), 2.8f), Palette.Team(team));
         DrawColoredPolygon(Shapes.RoundRect(new Rect2(barPos - new Vector2(1, 1), new Vector2(barW + 2, barH + 2)), 2.2f), new Color(0.05f, 0.04f, 0.1f, 0.75f));
         if (ghost > frac)
             DrawColoredPolygon(Shapes.RoundRect(new Rect2(barPos, new Vector2(barW * ghost, barH)), 1.6f), new Color(1, 1, 1, 0.85f));

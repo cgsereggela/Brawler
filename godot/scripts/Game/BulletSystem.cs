@@ -168,7 +168,7 @@ public partial class BulletSystem : Node2D
         float bestD = 260f;
         foreach (var a in Game.LiveAvatars())
         {
-            if (a.Player.Slot == b.Owner) continue;
+            if (a.Player.Slot == b.Owner || Game.Allies(a.Player.Slot, b.Owner)) continue;
             float d = a.GlobalPosition.DistanceTo(b.Pos);
             if (d < bestD) { bestD = d; best = a; }
         }
@@ -278,7 +278,7 @@ public partial class BulletSystem : Node2D
     {
         foreach (var a in Game.LiveAvatars())
         {
-            if (b.Hit.Contains(a.Player.Slot)) continue;
+            if (b.Hit.Contains(a.Player.Slot) || Game.Spared(b.Owner, a.Player.Slot)) continue; // shots pass through teammates
             if (a.Player.Slot == b.Owner && ((!b.Bounced && b.Age < 0.5f) || b.Boomerang || b.Stuck)) continue; // no instant self-hits
             var r = a.Bounds;
             if (!Sweep.SegmentTouchesRect(ToN(start), ToN(b.Pos), b.Radius, r.Position.X, r.Position.Y, r.Size.X, r.Size.Y))
@@ -361,7 +361,7 @@ public partial class BulletSystem : Node2D
     public void HostErase(Vector2 at, float radius, int keepOwner)
     {
         foreach (var b in Bullets)
-            if (!b.Dead && b.Owner != keepOwner && b.Pos.DistanceTo(at) <= radius + b.Radius) HostDestroy(b, false);
+            if (!b.Dead && b.Owner != keepOwner && !Game.Allies(b.Owner, keepOwner) && b.Pos.DistanceTo(at) <= radius + b.Radius) HostDestroy(b, false);
     }
 
     /// <summary>Bullets spawned during Step are queued so the list isn't modified mid-iteration.</summary>
