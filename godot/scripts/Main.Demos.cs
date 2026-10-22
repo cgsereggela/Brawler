@@ -29,6 +29,7 @@ public partial class Main
             case "thumbs": await DemoThumbs(); break;
             case "botskill": await DemoBotSkill(); break;
             case "draft": await DemoDraft(); break;
+            case "gungame": await DemoGunGame(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -148,5 +149,44 @@ public partial class Main
         DemoMark("battle");
         await DemoWait(14.0);
         DemoMark("end");
+    }
+
+    // Gun Game: pick it with the lobby's Game mode button, then a free-for-all where every kill swaps your card.
+    private async Task DemoGunGame()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        await DemoWait(1.0);
+        DemoMark("lobby");
+        for (int i = 0; i < 6 && _net.Lobby.Settings.Mode != GameMode.GunGame; i++)
+        {
+            _gameModeButton()?.EmitSignal(BaseButton.SignalName.Pressed);
+            await DemoWait(0.6);
+        }
+        if (_net.Lobby.Settings.Mode != GameMode.GunGame) { Finish(1, "demo gungame: the Game mode button never reached Gun Game"); return; }
+        await DemoWait(1.6);
+        DemoMark("match");
+        _game.HostStartMatch();
+        var levels = new int[LobbyState.MaxPlayers];
+        double t = 0;
+        while (_game.Phase != Phase.MatchOver && t < 150)
+        {
+            foreach (var p in _game.Slots)
+                if (p != null && GameManager.GunLevel(p) is var lv && lv != levels[p.Slot])
+                {
+                    levels[p.Slot] = lv;
+                    DemoMark($"level {p.Slot} {lv}");
+                }
+            await DemoWait(0.1);
+            t += 0.1;
+        }
+        DemoMark("over");
+        await DemoWait(5.0);
+        DemoMark("end");
+
+        Button _gameModeButton() => FindChild<Label>(_lobby, l => l.Text == "Game mode") is { } label ? label.GetParent().GetChild(label.GetIndex() + 1) as Button : null;
     }
 }

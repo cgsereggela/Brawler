@@ -97,7 +97,7 @@ public partial class Main
     {
     if (_autoMode == "sim") SimMatchEnded(winner);
     else if (_rematchTest && _rematches == 0 && _autoMode is "offline" or "host" or "join") AutoVoteRematch();
-    else if (_autoMode is not (null or "readme" or "video")) // readme and video quit after their match-over screen
+    else if (_autoMode is not (null or "readme" or "video" or "demo")) // readme, video and demos quit after their match-over screen
     {
         var t = GetTree().CreateTimer(_autoMode == "host" ? 2.0 : 0.5, true, false, true);
         t.Timeout += () =>
