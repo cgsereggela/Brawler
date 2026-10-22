@@ -598,6 +598,30 @@ public partial class Main
         Add(LookPart.Mouth, Appearance.MouthNames);
         Add(LookPart.Hair, Appearance.HairNames);
         Add(LookPart.Hat, Appearance.HatNames);
+        if (OS.GetCmdlineUserArgs().Contains("--lookcombos"))
+        {
+            // Every hat over every hair style (dyes vary so clashing colors show), then every mouth with every eyes.
+            looks.Clear();
+            for (int hat = 0; hat < Appearance.HatNames.Length; hat++)
+                for (int hair = 0; hair < Appearance.HairNames.Length; hair++)
+                {
+                    var look = Appearance.Default();
+                    look[LookPart.Hat] = hat;
+                    look[LookPart.Hair] = hair;
+                    look[LookPart.HairColor] = (hat + hair) % Appearance.Dyes.Length;
+                    look[LookPart.HatColor] = (hat * 3 + 6) % Appearance.Dyes.Length;
+                    looks.Add(($"{Appearance.HatNames[hat]} / {Appearance.HairNames[hair]}", look));
+                }
+            for (int mouth = 0; mouth < Appearance.MouthNames.Length; mouth++)
+                for (int eyes = 0; eyes < Appearance.EyeNames.Length; eyes++)
+                {
+                    var look = Appearance.Default();
+                    look[LookPart.Mouth] = mouth;
+                    look[LookPart.Eyes] = eyes;
+                    look[LookPart.Hair] = (mouth + eyes) % Appearance.HairNames.Length;
+                    looks.Add(($"{Appearance.MouthNames[mouth]} / {Appearance.EyeNames[eyes]}", look));
+                }
+        }
         const int perPage = 21;
         int page = 0;
         canvas.Draw += () =>

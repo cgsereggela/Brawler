@@ -63,7 +63,33 @@ public static class AvatarArt
 
     /// <summary>Topmost point used by this look (hair and hat), for placing the HP bar.</summary>
     public static float TopY(Appearance look)
-        => Mathf.Min(HairTop[Math.Clamp(look.Hair, 0, HairTop.Length - 1)], HatTop[Math.Clamp(look.Hat, 0, HatTop.Length - 1)] + HatDrop[Math.Clamp(look.Hat, 0, HatDrop.Length - 1)]);
+    {
+        int hat = Math.Clamp(look.Hat, 0, HatTop.Length - 1), hair = Math.Clamp(look.Hair, 0, HairTop.Length - 1);
+        float hairTop = Covers(hat) || (hair == 3 && HidesMohawk(hat)) ? Mathf.Max(HairTop[hair], -11.8f) : HairTop[hair]; // a covering hat tucks tall hair away
+        return Mathf.Min(hairTop, HatTop[hat] + HatDrop[hat] - HatLift(hat, hair));
+    }
+
+    /// <summary>
+    /// Hats that sit over the whole crown. Under one of these, hair that would stand up through it is tucked in
+    /// instead: a mohawk is hidden, spikes stick out at the sides and an afro puffs out under the brim.
+    /// </summary>
+    private static bool Covers(int hat) => hat is 1 or 2 or 3 or 7 or 9 or 10 or 11 or 14;
+
+    /// <summary>Hats a mohawk hides under: the covering ones, and the crown and party hat, which would only perch on it.</summary>
+    private static bool HidesMohawk(int hat) => Covers(hat) || hat is 4 or 5;
+
+    /// <summary>
+    /// How far a hat that sits on top of the head (crown, party hat, halo, horns) rises to sit on tall hair rather
+    /// than sink into it, in sprite units.
+    /// </summary>
+    private static float HatLift(int hat, int hair) => (hat, hair) switch
+    {
+        (4, 7) => 6f, (4, 2) => 1.5f,   // Crown on an afro, spikes
+        (5, 7) => 6.5f, (5, 2) => 2f,   // Party hat
+        (8, _) => Mathf.Max(0, -14.8f + HatDrop[8] - (HairTop[Math.Clamp(hair, 0, HairTop.Length - 1)] - 1.6f)), // Halo floats clear of the hair
+        (13, 7) => 2f,                                     // Horns poke out of an afro
+        _ => 0,
+    };
 
     /// <summary>
     /// Muzzle position relative to the body center, matching what Draw renders with no recoil. The geometry lives in
@@ -181,9 +207,11 @@ public static class AvatarArt
         DrawBody(c, rig.Breathe);
         DrawEyes(c, look.Eyes, facing);
         DrawMouth(c, look.Mouth, bodyOrigin, scale);
-        DrawHair(c, look.Hair);
-        // Hats are drawn with their brim on the crown; HatDrop pulls each one down so it fits over the mask.
-        c.SetTransform(bodyOrigin + new Vector2(0, HatDrop[Math.Clamp(look.Hat, 0, HatDrop.Length - 1)] * s), 0, scale);
+        int hat = Math.Clamp(look.Hat, 0, HatDrop.Length - 1);
+        DrawHair(c, look.Hair, hat);
+        // Hats are drawn with their brim on the crown; HatDrop pulls each one down so it fits over the mask, and HatLift
+        // raises the ones that sit on top of the head onto tall hair.
+        c.SetTransform(bodyOrigin + new Vector2(0, (HatDrop[hat] - HatLift(hat, look.Hair)) * s), 0, scale);
         DrawHat(c, look.Hat);
         c.SetTransform(bodyOrigin, 0, scale);
 
@@ -511,17 +539,41 @@ public static class AvatarArt
     }
 
     // ---------- mouth ----------
-    // Thin carved lines on the mask, drawn 1.4 px higher than the old cartoon mouths so they sit above the collar.
+    // Carved hollows in the mask, like the eyes: filled shapes thick enough to read at play size, never hairlines.
+    // Drawn 1.4 px higher than the old cartoon mouths so they sit above the collar. Mouth space: x 1.4 is the middle.
 
+    /// <summary>
+    /// A curved slit, thickest in the middle and rounded off at the ends: <paramref name="sag"/> &gt; 0 bows down (a
+    /// smile), &lt; 0 bows up (a frown).
+    /// </summary>
+    private static Vector2[] Crescent(float cx, float cy, float halfWidth, float sag, float thick)
+    {
+        const int n = 12;
+        var pts = new Vector2[(n + 1) * 2];
+        for (int i = 0; i <= n; i++)
+        {
+            float u = -1 + 2f * i / n, y = cy + sag * (1 - u * u);
+            float half = thick * 0.5f * Mathf.Sqrt(Mathf.Max(0, 1 - u * u)) + 0.14f;
+            pts[i] = new Vector2(cx + u * halfWidth, y - half);
+            pts[pts.Length - 1 - i] = new Vector2(cx + u * halfWidth, y + half);
+        }
+        return pts;
+    }
+
+    private static readonly Vector2[] SmileShape = Crescent(1.4f, 0.2f, 2.3f, 0.9f, 0.85f);
+    private static readonly Vector2[] FrownShape = Crescent(1.4f, 1.6f, 2.1f, -0.85f, 0.8f);
+    private static readonly Vector2[] FangSmileShape = Crescent(1.4f, 0.3f, 2.4f, 0.7f, 0.75f);
+    private static readonly Vector2[] TongueSmileShape = Crescent(1.4f, 0.1f, 2.2f, 0.9f, 1.15f);
     private static readonly Vector2[] GrinShape = BuildGrin();
 
+    /// <summary>A wide D: flat along the top, round underneath.</summary>
     private static Vector2[] BuildGrin()
     {
         var pts = new List<Vector2>();
-        for (int i = 0; i <= 12; i++)
+        for (int i = 0; i <= 14; i++)
         {
-            float a = i * Mathf.Pi / 12;
-            pts.Add(new Vector2(1.5f + Mathf.Cos(a) * 2.5f, Mathf.Sin(a) * 1.9f));
+            float a = i * Mathf.Pi / 14;
+            pts.Add(new Vector2(1.4f + Mathf.Cos(a) * 2.6f, -0.2f + Mathf.Sin(a) * 2f));
         }
         return pts.ToArray();
     }
@@ -535,42 +587,51 @@ public static class AvatarArt
     private static void DrawMouth(Ctx c, int style, Vector2 bodyOrigin, Vector2 scale)
     {
         c.SetTransform(bodyOrigin + new Vector2(0, -1.4f * scale.Y), 0, scale);
-        var ink = Ink with { A = 0.85f };
+        var hole = c.H(Hollow);
+        var tongue = c.H(new Color("#b0606f"));
         switch (style)
         {
             case 0: // Smile
-                c.Arc(new Vector2(1.4f, -0.6f), 2.2f, 0.55f, Mathf.Pi - 0.55f, 14, ink, 0.6f);
+                c.Poly(SmileShape, hole);
                 break;
             case 1: // Flat
-                c.Line(new Vector2(0f, 1.1f), new Vector2(3f, 1.1f), ink, 0.6f);
+                c.Poly(Shapes.Capsule(new Vector2(0.1f, 1f), new Vector2(2.9f, 1f), 0.45f), hole);
                 break;
-            case 2: // Open
-                c.Poly(Shapes.Ellipse(new Vector2(1.4f, 1f), 1.1f, 1.25f, 16), c.H(Hollow));
+            case 2: // Open: a round "oh" with the tongue showing at the bottom.
+                c.Poly(Shapes.Ellipse(new Vector2(1.4f, 0.9f), 1.3f, 1.5f, 18), hole);
+                c.Poly(Shapes.Ellipse(new Vector2(1.4f, 1.75f), 0.85f, 0.5f, 14), tongue);
                 break;
-            case 3: // Grin: a dark crescent with bone teeth.
-                c.Poly(GrinShape, c.H(Hollow));
-                for (float x = -0.4f; x <= 3.4f; x += 1.25f)
-                    c.Poly(new[] { new Vector2(x, 0), new Vector2(x + 0.9f, 0), new Vector2(x + 0.45f, 0.8f) }, c.H(c.Mask));
+            case 3: // Grin: a wide D with a row of bone teeth along the top.
+                c.Poly(GrinShape, hole);
+                c.Poly(Shapes.RoundRect(new Rect2(-0.8f, -0.2f, 4.4f, 0.95f), 0.25f), c.H(c.Mask));
+                foreach (float x in new[] { 0.5f, 1.4f, 2.3f })
+                    c.Line(new Vector2(x, -0.2f), new Vector2(x, 0.75f), hole, 0.28f);
                 break;
             case 4: // Frown
-                c.Arc(new Vector2(1.4f, 2.9f), 2.1f, Mathf.Pi + 0.6f, Mathf.Tau - 0.6f, 14, ink, 0.6f);
+                c.Poly(FrownShape, hole);
                 break;
-            case 5: // Fangs
-                c.Arc(new Vector2(1.4f, -3f), 3.6f, 1.1f, Mathf.Pi - 1.1f, 14, ink, 0.6f);
-                foreach (float fx in new[] { 0.2f, 2.6f })
-                    c.Fill(new[] { new Vector2(fx - 0.55f, 0.4f), new Vector2(fx + 0.55f, 0.4f), new Vector2(fx, 1.9f) }, c.H(c.Mask), Ink, 0.3f);
+            case 5: // Fangs: a smile with two long bone fangs hanging from it.
+                c.Poly(FangSmileShape, hole);
+                foreach (float fx in new[] { 0.3f, 2.5f })
+                {
+                    float top = 0.3f + 0.7f * (1 - Mathf.Pow((fx - 1.4f) / 2.4f, 2)) - 0.2f;
+                    c.Fill(new[] { new Vector2(fx - 0.48f, top), new Vector2(fx + 0.48f, top), new Vector2(fx, top + 1.35f) }, c.H(c.Mask), Ink, 0.3f);
+                }
                 break;
-            case 6: // Tongue
-                c.Arc(new Vector2(1.4f, -0.6f), 2.2f, 0.55f, Mathf.Pi - 0.55f, 14, ink, 0.6f);
-                c.Fill(Shapes.Capsule(new Vector2(2.4f, 1.4f), new Vector2(2.5f, 2.4f), 0.85f), c.H(new Color("#a86a76")), Ink, 0.35f);
+            case 6: // Tongue: an open smile with the tongue poking out over the lip.
+                c.Poly(TongueSmileShape, hole);
+                var tip = Shapes.Capsule(new Vector2(2.1f, 1.1f), new Vector2(2.3f, 2.3f), 0.85f);
+                c.Fill(tip, tongue, Ink, 0.3f);
+                c.Line(new Vector2(2.2f, 1.3f), new Vector2(2.25f, 2.3f), c.H(new Color("#7d3a48")), 0.25f);
                 break;
-            case 7: // Mustache (hair dye), a little higher still.
-                c.Line(new Vector2(0.6f, 1.5f), new Vector2(2.3f, 1.5f), ink, 0.5f);
+            case 7: // Mustache (hair dye) over a small smile.
+                c.Poly(Crescent(1.4f, 1.6f, 1.2f, 0.35f, 0.55f), hole);
                 c.Fill(Shapes.Offset(MustacheShape, new Vector2(0, 0.4f)), c.H(c.Hair), Ink, 0.45f);
                 break;
-            case 8: // Cat
-                c.Arc(new Vector2(0.4f, 0.3f), 1f, 0.2f, Mathf.Pi - 0.2f, 10, ink, 0.6f);
-                c.Arc(new Vector2(2.4f, 0.3f), 1f, 0.2f, Mathf.Pi - 0.2f, 10, ink, 0.6f);
+            case 8: // Cat: a little nose over a "w".
+                c.Poly(new[] { new Vector2(0.9f, -0.5f), new Vector2(1.9f, -0.5f), new Vector2(1.4f, 0.15f) }, hole);
+                c.Poly(Crescent(0.45f, 0.5f, 0.95f, 0.5f, 0.55f), hole);
+                c.Poly(Crescent(2.35f, 0.5f, 0.95f, 0.5f, 0.55f), hole);
                 break;
         }
         c.SetTransform(bodyOrigin, 0, scale);
@@ -623,6 +684,19 @@ public static class AvatarArt
         (new(-2.6f, -13.8f), 3.8f), (new(2.8f, -13.8f), 3.7f), (new(0f, -15.4f), 3.3f), (new(-6.4f, -12.4f), 2.8f), (new(6.6f, -12.4f), 2.6f),
     };
 
+    // Under a hat that covers the crown (see Covers): spikes only stick out at the sides, below the brim.
+    private static readonly Vector2[] SpikyTucked = Cap(
+        new(-7.8f, -2.5f), new(-8.3f, -4.2f), new(-10.6f, -4.6f), new(-8.5f, -6.2f), new(-10.4f, -8.2f), new(-7.6f, -8.3f),
+        new(-6.8f, -10.4f), new(0f, -11.3f), new(6.8f, -10.4f), new(8.2f, -9.6f), new(10.6f, -9.4f), new(8.4f, -7.8f), new(9.6f, -6.4f),
+        new(7.6f, -6.6f));
+
+    // Under a covering hat an afro puffs out round the sides instead of standing up through it.
+    private static readonly (Vector2 C, float R)[] AfroTucked =
+    {
+        (new(0f, -8.4f), 2.8f), (new(-4.4f, -7.8f), 3f), (new(4.4f, -8f), 2.8f), (new(-7.4f, -6.4f), 3.4f), (new(-8f, -3.4f), 2.6f),
+        (new(7.6f, -7.6f), 2.8f),
+    };
+
     private static void DrawHairBack(Ctx c, int style)
     {
         if (style != 6) return;
@@ -637,8 +711,9 @@ public static class AvatarArt
         c.Line(new Vector2(-10.6f, -8.6f), new Vector2(-12.2f + sw, -4f), c.H(c.Hair.Lightened(0.3f)) with { A = 0.7f }, 0.5f);
     }
 
-    private static void DrawHair(Ctx c, int style)
+    private static void DrawHair(Ctx c, int style, int hat)
     {
+        bool underHat = Covers(hat);
         var main = c.H(c.Hair);
         var line = c.Hair.Darkened(0.5f);
         var shine = c.H(c.Hair.Lightened(0.35f)) with { A = 0.75f };
@@ -648,10 +723,15 @@ public static class AvatarArt
                 c.Fill(ShortHair, main, line, 0.8f);
                 c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.7f), 2.8f, 0.75f, 12), shine);
                 break;
+            case 2 when underHat:
+                c.Fill(SpikyTucked, main, line, 0.8f);
+                break;
             case 2:
                 c.Fill(SpikyHair, main, line, 0.8f);
                 c.Line(new Vector2(-1f, -14.6f), new Vector2(-1.4f, -11f), shine, 0.6f);
                 c.Line(new Vector2(3.6f, -13.8f), new Vector2(3f, -11f), shine, 0.5f);
+                break;
+            case 3 when HidesMohawk(hat): // shaved sides: nothing shows under the hat
                 break;
             case 3:
                 c.Fill(Mohawk, main, line, 0.8f);
@@ -674,10 +754,13 @@ public static class AvatarArt
                 c.Fill(Shapes.Ellipse(new Vector2(-7.4f, -7.4f), 1.1f, 1.4f, 12), c.H(Red), DarkRed, 0.4f);
                 break;
             case 7:
-                foreach (var (pc, r) in AfroPuffs) c.Circle(pc, r + 0.8f, line);
-                foreach (var (pc, r) in AfroPuffs) c.Circle(pc, r, main);
-                foreach (var (pc, r) in AfroPuffs) c.Arc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.45f }, 0.5f);
+            {
+                var puffs = underHat ? AfroTucked : AfroPuffs;
+                foreach (var (pc, r) in puffs) c.Circle(pc, r + 0.8f, line);
+                foreach (var (pc, r) in puffs) c.Circle(pc, r, main);
+                foreach (var (pc, r) in puffs) c.Arc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.45f }, 0.5f);
                 break;
+            }
         }
     }
 

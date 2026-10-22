@@ -364,6 +364,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked
 "$GODOT" --path godot -- --walkshots=C:/tmp/shots                      # leg poses on a ground line: walk cycle frames, idle, air, wall slides, landing, ramps
 "$GODOT" --path godot -- --lookshots=C:/tmp/shots --lookscale=1       # every eye, mouth, hair and hat option (at in-match size with --lookscale=1), to compare art before and after a change
+"$GODOT" --path godot -- --lookshots=C:/tmp/shots --lookcombos --lookscale=4.2 # every hat over every hair style, then every mouth with every eyes, to check the parts fit together
 "$GODOT" --path godot -- --crosshairshots=C:/tmp/shots                 # the crosshair at several ammo/reload states over every arena theme
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --bloom=100         # override the saved bloom (0-100) for one run, not saved
 "$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed

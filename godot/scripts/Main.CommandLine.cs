@@ -42,6 +42,7 @@ namespace Brawler;
 //   --walkshots=DIR       screenshot leg poses (walk cycle frames, idle, air, wall slide, landing, ramps) into DIR, then quit
 //   --lookshots=DIR       screenshot every eye, mouth, hair and hat option (some firing, some blinking) into DIR, then quit;
 //                         --lookscale=S draws them at size S (default 3.2; 1 is their size in a match)
+//                         --lookcombos instead draws every hat over every hair style, then every mouth with every eyes
 //   --upnpcheck           look for a UPnP router and print its public address (read-only, forwards nothing), then quit
 //   --cards=ID,ID,...     (offline) every player starts each battle holding these cards; --cards=random:N deals N random
 //                         cards to each player every battle, to exercise the whole card pool
