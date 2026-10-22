@@ -1,6 +1,7 @@
 using System;
 using Brawler.Core;
 using Brawler.Fx;
+using Brawler.Game;
 using Brawler.Logic;
 using Godot;
 
@@ -25,6 +26,8 @@ public partial class OptionsUI : Control
     private TabContainer _tabs;
     private Control _controlsTab;
     private HBoxContainer _arenaRow;
+    private HBoxContainer _clipRow;
+    private Button _clipButton;
     private Label _arenaLabel;
     private Button _arenaSave;
     private string _arenaCode;
@@ -39,6 +42,7 @@ public partial class OptionsUI : Control
         if (_dim == null) return;
         _dim.Visible = overlay;
         SetArena(overlay ? _arenaCode : null);
+        ShowClip();
         ShowLeaveConfirm(false);
     }
 
@@ -48,13 +52,26 @@ public partial class OptionsUI : Control
         _arenaCode = code;
         if (_arenaRow == null) return;
         var d = code != null ? MapCode.Decode(code) : null;
-        _arenaRow.Visible = _overlay && d != null;
+        _arenaRow.Visible = _overlay && d != null && !OnControls;
         if (d == null) return;
         bool saved = MapLibrary.Holds(code);
         _arenaLabel.Text = $"Arena: {(d.Name != "" ? d.Name : "Untitled")}";
         _arenaSave.Text = saved ? "SAVED" : "SAVE ARENA";
         _arenaSave.Disabled = saved;
     }
+
+    /// <summary>The Controls tab fills the panel, so the arena and kill cam rows step aside while it's open.</summary>
+    private bool OnControls => _tabs != null && _tabs.GetCurrentTabControl() == _controlsTab;
+
+    private void ShowClip()
+    {
+        if (_clipRow == null || !IsInstanceValid(_clipRow)) return;
+        _clipRow.Visible = _overlay && KillCamClips.HasClip && !OnControls;
+        _clipButton.Text = KillCamClips.ButtonText;
+        _clipButton.Disabled = KillCamClips.Saving;
+    }
+
+    public override void _ExitTree() => KillCamClips.Changed -= ShowClip;
 
     private void SaveArena()
     {
@@ -114,6 +131,17 @@ public partial class OptionsUI : Control
             _arenaLabel.Text = "Code copied: friends paste it in their map editor or lobby.";
         }, 0, "Small")));
 
+        // In a match, once a kill cam has played: save it as a GIF.
+        _clipRow = UiKit.HBox(8);
+        body.AddChild(_clipRow);
+        var clipLabel = UiKit.Label("Last kill cam", UiKit.Small, Palette.TextDim);
+        clipLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        clipLabel.VerticalAlignment = VerticalAlignment.Center;
+        _clipRow.AddChild(clipLabel);
+        _clipButton = NoFocus(UiKit.Button("", KillCamClips.Press, 0, "Small"));
+        _clipRow.AddChild(_clipButton);
+        KillCamClips.Changed += ShowClip;
+
         // Footer: Done fills it, sharing it with Reset to defaults on the Controls tab (the tab is too tall for a row of its own);
         // in a match Leave sits to its left and swaps the row for a confirm prompt.
         var footer = UiKit.HBox(10);
@@ -123,7 +151,12 @@ public partial class OptionsUI : Control
         _reset = UiKit.Button("RESET TO DEFAULTS", controls.ResetToDefaults);
         _reset.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         footer.AddChild(_reset);
-        tabs.TabChanged += _ => ShowLeaveConfirm(false);
+        tabs.TabChanged += _ =>
+        {
+            ShowLeaveConfirm(false);
+            SetArena(_arenaCode);
+            ShowClip();
+        };
         _done = UiKit.Primary("DONE", Close);
         _done.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         footer.AddChild(_done);

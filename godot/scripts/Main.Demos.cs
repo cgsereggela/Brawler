@@ -36,6 +36,7 @@ public partial class Main
             case "gungame": await DemoGunGame(); break;
             case "survival": await DemoSurvival(); break;
             case "cosmetics": await DemoCosmetics(); break;
+            case "clips": await DemoClips(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -296,6 +297,49 @@ public partial class Main
         DemoMark("fight");
         _game.HostStartMatch();
         await DemoWait(16.0);
+        DemoMark("end");
+    }
+
+    // Clip export: a one-battle match, its kill cam, Save kill cam GIF on the results, then the GIF itself playing.
+    private async Task DemoClips()
+    {
+        _game.AutopilotLocal = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 1 });
+        _game.KillCamStarted += () => DemoMark("killcam");
+        DemoMark("match");
+        _game.HostStartMatch();
+        for (int i = 0; i < 240 && !(_over.Visible && KillCamClips.HasClip); i++) await DemoWait(0.5);
+        await DemoWait(1.5);
+        DemoMark("results");
+        await DemoWait(1.2);
+        Press(_over, "SAVE KILL CAM GIF");
+        for (int i = 0; i < 60 && !KillCamClips.Saved; i++) await DemoWait(0.25);
+        DemoMark("saved");
+        await DemoWait(1.8);
+        if (KillCamClips.LastSaved != null) System.IO.File.Delete(KillCamClips.LastSaved); // the demo's clip isn't kept
+
+        // The saved GIF, played back over the results the way a friend would see it.
+        var frames = KillCamClips.Frames;
+        var shade = new ColorRect { Color = new Color(0, 0, 0, 0.75f) };
+        shade.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _over.GetParent().AddChild(shade);
+        var box = UiKit.VBox(12);
+        box.Alignment = BoxContainer.AlignmentMode.Center;
+        shade.AddChild(box);
+        box.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        box.AddChild(UiKit.Label("brawler-killcam.gif", UiKit.Body, Palette.TextDim, HorizontalAlignment.Center, Brawler.Fx.Fonts.Bold));
+        var shot = new TextureRect { CustomMinimumSize = new Vector2(KillCamClips.W, KillCamClips.H) * 2.6f, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered };
+        box.AddChild(shot);
+        DemoMark("gif");
+        for (int loop = 0; loop < 2; loop++)
+            for (int f = 0; f < frames.Count; f++)
+            {
+                shot.Texture = ImageTexture.CreateFromImage(Image.CreateFromData(KillCamClips.W, KillCamClips.H, false, Image.Format.Rgb8, frames[f]));
+                await DemoWait(0.05);
+            }
         DemoMark("end");
     }
 }

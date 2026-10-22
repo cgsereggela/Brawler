@@ -114,6 +114,7 @@ public partial class Main : Node
         aimLayer.AddChild(_crosshair);
 
         Wire();
+        KillCamClips.Attach(_game);
         Show(_menu);
         HandleCommandLine();
         CareerBook.Enabled = _autoMode == null; // test runs earn nothing (a demo turns it back on with its own career)

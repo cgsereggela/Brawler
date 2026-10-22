@@ -1089,6 +1089,8 @@ public partial class Main
         // The lobby's options, then the in-match overlay version (with Leave match), on every tab.
         OpenOptions(_lobby);
         var tabs = FindAll<TabContainer>(_options, _ => true).First();
+        KillCamClips.KeepBlankForCheck(10); // the overlay then shows the kill cam row, and the arena row too:
+        _options.SetArena(MapCode.Encode(MapDesign.Generate(MapStyle.Tiers, ThemeId.SunsetPeaks, 7)));
         foreach (bool overlay in new[] { false, true })
         {
             _options.SetOverlay(overlay);
@@ -1101,5 +1103,65 @@ public partial class Main
             }
         }
         Finish(0, $"lobbycheck: all {layouts} lobby and options layouts fit on screen");
+    }
+
+    // ---------- --clipcheck: a kill cam saves as a GIF ----------
+
+    /// <summary>Image descriptors in a GIF, walking its blocks (a byte search also matches inside the image data).</summary>
+    private static int CountGifFrames(byte[] b)
+    {
+        int i = 13, frames = 0;
+        if ((b[10] & 0x80) != 0) i += 3 << ((b[10] & 7) + 1); // global colour table
+        void SkipSubBlocks() { while (i < b.Length && b[i] != 0) i += b[i] + 1; i++; }
+        while (i < b.Length && b[i] != 0x3B)
+        {
+            if (b[i] == 0x21) { i += 2; SkipSubBlocks(); }
+            else if (b[i] == 0x2C)
+            {
+                frames++;
+                byte flags = b[i + 9];
+                i += 10;
+                if ((flags & 0x80) != 0) i += 3 << ((flags & 7) + 1); // local colour table
+                i++; // LZW minimum code size
+                SkipSubBlocks();
+            }
+            else return -1;
+        }
+        return frames;
+    }
+
+    /// <summary>
+    /// An offline match on autopilot until a kill cam has been kept, then saves it from the Esc overlay's button and
+    /// checks the GIF on disk (header, size, frame count). Needs a window (headless draws nothing to grab).
+    /// </summary>
+    private async void ClipCheck()
+    {
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s, true, false, true), SceneTreeTimer.SignalName.Timeout);
+        _game.AutopilotLocal = true;
+        _net.StartOffline();
+        AddTestBots();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 3, RoundsToWin = 9 });
+        _game.HostStartMatch();
+        for (int i = 0; i < 240 && !KillCamClips.HasClip; i++) await Wait(0.5);
+        if (!KillCamClips.HasClip) { Finish(1, "clipcheck: no kill cam was kept in 2 minutes"); return; }
+        OpenOverlay();
+        await Wait(0.2);
+        var button = FindAll<Button>(_options, b => b.IsVisibleInTree() && b.Text == "SAVE KILL CAM GIF").FirstOrDefault();
+        if (button == null) { Finish(1, "clipcheck: the Esc overlay has no SAVE KILL CAM GIF button"); return; }
+        button.EmitSignal(BaseButton.SignalName.Pressed);
+        for (int i = 0; i < 120 && (KillCamClips.Saving || !KillCamClips.Saved); i++) await Wait(0.25);
+        string path = KillCamClips.LastSaved;
+        if (!KillCamClips.Saved || path == null || !System.IO.File.Exists(path)) { Finish(1, "clipcheck: the GIF wasn't written"); return; }
+        var bytes = System.IO.File.ReadAllBytes(path);
+        int w = bytes[6] | bytes[7] << 8, h = bytes[8] | bytes[9] << 8;
+        int frames = CountGifFrames(bytes);
+        string line = $"{System.IO.Path.GetFileName(path)}: {w}x{h}, {frames} frames, {bytes.Length / 1024} KB; button now reads {button.Text}";
+        if (_shotDir != null) System.IO.File.Copy(path, $"{_shotDir}/killcam.gif", true);
+        System.IO.File.Delete(path);
+        if (System.Text.Encoding.ASCII.GetString(bytes, 0, 6) != "GIF89a" || w != KillCamClips.W || h != KillCamClips.H || frames != KillCamClips.FrameCount)
+            Finish(1, $"clipcheck: bad GIF ({line})");
+        else if (button.Text != "OPEN CLIPS FOLDER") Finish(1, $"clipcheck: the button didn't change after saving ({line})");
+        else Finish(0, $"clipcheck: {line}");
     }
 }

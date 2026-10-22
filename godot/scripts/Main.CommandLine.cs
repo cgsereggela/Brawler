@@ -61,6 +61,8 @@ namespace Brawler;
 //   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 //   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
 //                         player input, and a card pick chosen on each controller; exits 0 on success
+//   --clipcheck           (windowed) an offline match on autopilot until a kill cam is kept, then saves it as a GIF from
+//                         the Esc overlay and checks the file, then quits
 //   --lobbycheck          fills the lobby (a couch guest and bots) and walks every game mode and team size, then every
 //                         Options tab (menu and in-match overlay), failing if
 //                         anything ends up off screen (with --shots=DIR, saves each layout), then quits
@@ -127,6 +129,11 @@ public partial class Main
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--clipcheck")
+            {
+                _autoMode = "clipcheck";
+                ClipCheck();
+            }
             else if (a == "--lobbycheck")
             {
                 _autoMode = "lobbycheck";

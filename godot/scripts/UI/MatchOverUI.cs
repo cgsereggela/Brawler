@@ -39,6 +39,21 @@ public partial class MatchOverUI : Control
         _game.MatchEnded += Build;
         _game.RematchVotesChanged += ShowVotes;
         _game.ScoresChanged += ShowVotes; // someone left
+        KillCamClips.Changed += ShowClip;
+    }
+
+    public override void _ExitTree() => KillCamClips.Changed -= ShowClip;
+
+    private Button _clip;
+
+    /// <summary>The match-winning kill cam (the last one played) can be saved as a GIF once it has been kept.</summary>
+    private void ShowClip()
+    {
+        if (_clip == null || !IsInstanceValid(_clip)) return;
+        _clip.Visible = KillCamClips.HasClip;
+        _clip.Text = KillCamClips.ButtonText;
+        _clip.Disabled = KillCamClips.Saving;
+        _clip.TooltipText = KillCamClips.Saved ? $"Saved {System.IO.Path.GetFileName(KillCamClips.LastSaved)}" : "Save the last kill cam as an animated GIF to share";
     }
 
     private void Build(int winner)
@@ -130,6 +145,11 @@ public partial class MatchOverUI : Control
         _votes = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         _votes.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _body.AddChild(_votes);
+
+        _clip = UiKit.Button("", KillCamClips.Press, 0, "Small");
+        _clip.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+        _body.AddChild(_clip);
+        ShowClip();
 
         var buttons = UiKit.HBox(8);
         _rematch = UiKit.Primary("REMATCH", () => _game.LocalVoteRematch(!_game.RematchVotes.Contains(_game.LocalMatchPlayer?.Slot ?? -1)));
