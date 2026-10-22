@@ -167,6 +167,7 @@ public partial class GameManager
     {
         if (!victim.Alive) return;
         if (victim.Guarded) return;
+        HazardDamaged?.Invoke(victim.Player.Slot, kind, damage);
         float hpBefore = victim.Hp;
         damage *= 1f - victim.S[Stat.Armor];
         knockback *= victim.S[Stat.KnockbackTaken];

@@ -8,7 +8,8 @@ namespace Brawler.Game;
 
 /// <summary>
 /// Simple but scrappy AI: keeps a fighting distance from the nearest enemy, leads its shots
-/// (compensating for bullet gravity), jumps over gaps and walls, and blocks incoming bullets.
+/// (compensating for bullet gravity), jumps over gaps and walls, keeps out of pools and away from sawblades, rides
+/// moving platforms, and blocks incoming bullets.
 /// It only reads world state, so it works the same on the host or driving a client.
 /// </summary>
 public sealed class BotBrain : IInputSource
@@ -111,9 +112,21 @@ public sealed class BotBrain : IInputSource
         // Lava coming up under our surface: climb to one well above it, whatever the target is doing.
         float lava = _game.Arena.LavaY;
         bool flee = _surface >= 0 && map.Surfaces[_surface].Y > lava - LavaMargin;
-        bool navigating = false, dropping = false;
+        bool navigating = false, dropping = false, riding = false;
         int goalSurface = SurfaceUnder(map, focus + new Vector2(0, focusHalfY));
         bool far = goal != null ? goalSurface >= 0 && goalSurface != _surface : !los || Mathf.Abs(to.Y) > 75;
+        // On a moving platform, or one is the way to the target (across a pit, say): follow the jump graph even with
+        // the target in plain sight, or we'd walk straight at it, off the edge.
+        if (!far && !flee && _surface >= 0 && goalSurface >= 0 && goalSurface != _surface)
+        {
+            if (_navT <= 0)
+            {
+                _navT = 0.3f;
+                _hop = MapGenerator.NextHop(map, _surface, goalSurface);
+            }
+            far = _hop >= 0 && map.MoverOf.ContainsKey(_hop);
+        }
+        if (_surface >= 0 && map.MoverOf.ContainsKey(_surface)) far = true;
         if ((flee || far) && _surface >= 0)
         {
             if (flee && _navT <= 0)
@@ -133,8 +146,8 @@ public sealed class BotBrain : IInputSource
         }
         if (navigating)
         {
-            var hop = map.Surfaces[_hop];
-            var cur = map.Surfaces[_surface];
+            var hop = Live(map, _hop);
+            var cur = Live(map, _surface);
             float x = me.X, aimX;
             if (MapGenerator.SlopeLinks(map, cur, hop)) aimX = Inside(x, hop, 10); // a ramp leads there: just run
             else if (hop.Y < cur.Y - 4)
@@ -187,12 +200,20 @@ public sealed class BotBrain : IInputSource
                 aimX = goLeft ? cur.X1 - 10 : cur.X2 + 10;
             }
             else aimX = Inside(x, hop, 10); // same level, or already falling: steer onto it
+            // Riding a moving platform, or waiting for one: stay put at the end facing the other, until they're close.
+            if (onFloor && !InReach(map, cur, hop))
+            {
+                aimX = Inside(hop.CenterX, cur, self.HalfSize.X + 3);
+                wantJump = false;
+                riding = true;
+            }
             move = Mathf.Abs(aimX - x) < 3 ? 0 : Mathf.Sign(aimX - x);
         }
 
         // Unstick: if we haven't really moved for a while and can't see anyone, wander and hop for a bit.
         _stuckT += dt;
         if (me.DistanceTo(_stuckFrom) > 24) { _stuckFrom = me; _stuckT = 0; }
+        if (riding) _stuckT = 0; // waiting for a moving platform is not being stuck
         if (_stuckT > 2.5f && !los && _wanderT <= 0)
         {
             _wanderT = _rng.RandfRange(1f, 2f);
@@ -211,16 +232,37 @@ public sealed class BotBrain : IInputSource
         // Wall ahead: jump it / wall-jump up it, but not on the way down, where kicking off a ledge's side just
         // bounces us back up next to it (bots wall-jumped against the same 8 px ledge end for minutes).
         if (self.IsOnWall() && move * self.GetWallNormal().X < 0 && !descending) wantJump = true;
-        if (onFloor && !dropping && !GroundAhead(self, move)) wantJump = true;        // edge or pit ahead
+        if (onFloor && !dropping && !riding && !GroundAhead(self, move)) wantJump = true; // edge or pit ahead
+        // Standing in a pool: get out by the nearer side, unless we're crossing it on the way somewhere.
+        if (onFloor && !navigating && PoolUnder(feet, self.HalfSize.X) is { } pool)
+            move = feet.X - pool.X1 < pool.X2 - feet.X ? -1 : 1;
         if (onFloor && _game.Arena.DangerAhead(self, move))
         {
-            // A pool or sawblade in the way (or underfoot): hop it, and keep going rather than stopping in it.
-            wantJump = true;
-            if (Mathf.Abs(move) < 0.1f) move = _strafeDir;
+            // A pool or sawblade in the way (or underfoot). Only milling about (strafing, backing off): turn round if
+            // that way is clear. Going somewhere: hop it, and keep going rather than stopping in it.
+            bool heading = navigating || goal != null || !los || (move * to.X > 0 && dist > pref + band);
+            if (!heading && Mathf.Abs(move) >= 0.1f && !_game.Arena.DangerAhead(self, -move))
+            {
+                move = -move;
+                _strafeDir = Mathf.Sign(move);
+            }
+            else
+            {
+                wantJump = true;
+                if (Mathf.Abs(move) < 0.1f) move = _strafeDir;
+            }
+        }
+        // A sawblade about to run into us: jump one coming along the ground, and steer clear of one higher up or one
+        // we are coming down onto.
+        if (SawComing(self, out var saw))
+        {
+            if (onFloor && saw.Y > me.Y - 2) wantJump = true;
+            else move = Mathf.Sign(me.X - saw.X);
         }
         if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 175)) move = -move; // falling into a pit: steer back
+        if (!onFloor && PoolLanding(self) is float side and not 0) move = side; // coming down in a pool: steer for its nearer side
         if (feet.Y > lava - 2) wantJump = true; // in the lava: jump out of it (it pops us up too)
-        if (onFloor && _rng.Randf() < 0.008f) wantJump = true;
+        if (onFloor && !riding && _rng.Randf() < 0.008f) wantJump = true;
 
         // Card abilities: spend air jumps or jetpack fuel to climb toward the target or out of a fall,
         // and glide over pits. Without this, movement cards would only measure how well bots ignore them.
@@ -389,24 +431,92 @@ public sealed class BotBrain : IInputSource
         return best >= 0 ? best : highest;
     }
 
+    /// <summary>Surface <paramref name="i"/> as it is right now: a moving platform's lane narrows to where the platform is.</summary>
+    private Surface Live(MapLayout map, int i)
+    {
+        if (!map.MoverOf.TryGetValue(i, out int m)) return map.Surfaces[i];
+        var mv = map.Movers[m];
+        int x = Mathf.RoundToInt(mv.XAt(_game.Arena.Clock));
+        return new Surface(x, x + mv.W, mv.Y);
+    }
+
+    /// <summary>
+    /// Whether we can get from <paramref name="cur"/> to <paramref name="hop"/> right now (both as they are now, see
+    /// <see cref="Live"/>). To or from a moving platform that means close: it won't wait for us while we jump.
+    /// </summary>
+    private bool InReach(MapLayout map, Surface cur, Surface hop)
+    {
+        if (!map.MoverOf.ContainsKey(_surface) && !map.MoverOf.ContainsKey(_hop)) return true;
+        int gap = Mathf.Max(0, Mathf.Max(cur.X1, hop.X1) - Mathf.Min(cur.X2, hop.X2));
+        return gap <= 12 && MapGenerator.CanTraverse(map, cur, hop);
+    }
+
+    /// <summary>The pool our feet are in, if any.</summary>
+    private Hazard? PoolUnder(Vector2 feet, float hw)
+    {
+        foreach (var h in _game.Map.Hazards)
+            if (Mathf.Abs(feet.Y - h.Y) < 3 && feet.X + hw > h.X1 + 2 && feet.X - hw < h.X2 - 2) return h;
+        return null;
+    }
+
+    /// <summary>
+    /// Falling: if we'd land in a pool on the way we're going, the way to its nearer side (-1 or 1); else 0. Only the
+    /// first pool down is checked, and nothing in between.
+    /// </summary>
+    private float PoolLanding(Avatar self)
+    {
+        var v = self.Velocity;
+        if (v.Y <= 0) return 0;
+        var feet = self.GlobalPosition + new Vector2(0, self.HalfSize.Y);
+        float g = self.S[Stat.Gravity], hw = self.HalfSize.X, bestY = float.MaxValue, side = 0;
+        foreach (var h in _game.Map.Hazards)
+        {
+            float dy = h.Y - feet.Y;
+            if (dy < 0 || h.Y >= bestY) continue;
+            float t = (-v.Y + Mathf.Sqrt(v.Y * v.Y + 2 * g * dy)) / g;
+            float x = feet.X + v.X * t;
+            if (x + hw <= h.X1 + 2 || x - hw >= h.X2 - 2) continue;
+            bestY = h.Y;
+            side = x - h.X1 < h.X2 - x ? -1 : 1;
+        }
+        return side;
+    }
+
+    /// <summary>True if a sawblade will touch us within the next 0.3 s; <paramref name="at"/> is where it will be.</summary>
+    private bool SawComing(Avatar self, out Vector2 at)
+    {
+        at = default;
+        foreach (var s in _game.Map.Saws)
+            for (float t = 0; t <= 0.3f; t += 0.1f)
+            {
+                var p = s.At(_game.Arena.Clock + t);
+                var c = new Vector2(p.X, p.Y);
+                var b = self.Bounds;
+                b.Position += self.Velocity * t; // where we'll be by then, too
+                var closest = new Vector2(Mathf.Clamp(c.X, b.Position.X, b.End.X), Mathf.Clamp(c.Y, b.Position.Y, b.End.Y));
+                if (closest.DistanceTo(c) < s.Radius + 4) { at = c; return true; }
+            }
+        return false;
+    }
+
     /// <summary>The surface whose top is at <paramref name="feet"/> (within <paramref name="tol"/> px), or -1.</summary>
-    private static int SurfaceAt(MapLayout map, Vector2 feet, float tol)
+    private int SurfaceAt(MapLayout map, Vector2 feet, float tol)
     {
         for (int i = 0; i < map.Surfaces.Count; i++)
         {
-            var s = map.Surfaces[i];
+            var s = Live(map, i);
             if (Mathf.Abs(feet.Y - s.Y) < tol && feet.X >= s.X1 - 4 && feet.X <= s.X2 + 4) return i;
         }
         return -1;
     }
 
     /// <summary>The highest surface at or below a point (where someone in the air will land), or -1.</summary>
-    private static int SurfaceUnder(MapLayout map, Vector2 p)
+    private int SurfaceUnder(MapLayout map, Vector2 p)
     {
         int best = -1;
         for (int i = 0; i < map.Surfaces.Count; i++)
         {
-            var s = map.Surfaces[i];
+            var s = Live(map, i);
             if (s.Y >= p.Y - 4 && p.X >= s.X1 - 4 && p.X <= s.X2 + 4 && (best < 0 || s.Y < map.Surfaces[best].Y)) best = i;
         }
         return best;
@@ -431,7 +541,8 @@ public sealed class BotBrain : IInputSource
 
     private bool SolidInColumn(float x, float y, float depth)
     {
-        foreach (var r in _game.Map.Solids)
+        // The arena's live solids: moving platforms where they are now, and crates and barrels still standing.
+        foreach (var r in _game.Arena.Solids)
             if (x >= r.X && x < r.Right && r.Bottom > y && r.Y < y + depth) return true;
         foreach (var s in _game.Map.Slopes)
             if (x >= s.X1 && x < s.X2 && s.Bottom > y && s.YAt(x) < y + depth) return true;

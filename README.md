@@ -343,6 +343,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --padcheck        # made-up controller presses: menu focus, + Local Player, guest vs keyboard input, card picks on each pad (PADCHECK)
 "$GODOT" --path godot -- --editorcheck                                 # made-up mouse presses in the map editor: draw, move, resize, undo, delete, save, share, playtest, pick it in a lobby (EDITORCHECK)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --hazardcheck     # 4 bots fight 300 s on a pit arena with pools, a saw and a mover: limits hazard damage, needs pit crossings (HAZARDCHECK)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part

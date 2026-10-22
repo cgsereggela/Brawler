@@ -473,6 +473,7 @@ public partial class Main
         if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
         if (_chatCheck) PollGhosts();
         if (_lavaCheck) PollLava();
+        if (_autoMode == "hazardcheck") PollHazards();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -867,6 +868,88 @@ public partial class Main
                 _ocStage = OcDone;
                 return;
         }
+    }
+
+    // ---------- --hazardcheck: bots on an arena full of hazards ----------
+
+    private const float HazardCheckSeconds = 300;
+    private float _hzBotSeconds, _hzMoverSeconds, _hzFight;
+    private readonly float[] _hzDamage = new float[3];
+    private readonly System.Collections.Generic.Dictionary<int, int> _hzSide = new();
+    private int _hzCrossings, _hzFalls;
+
+    // The pit in the middle: a moving platform ferries across it, under a wall hanging from the ceiling.
+    private const int HzPit1 = 400, HzPit2 = 600;
+
+    /// <summary>
+    /// Bots only, on a hand-made arena split in two by a pit with a wall over it, which only a moving platform
+    /// crosses (under the wall). Each half has a pool on its floor (magma on one, poison on the other), and a sawblade
+    /// runs along one. Logs hazard damage per bot-minute, time spent on the mover and how often bots crossed the pit,
+    /// and fails if bots walk into hazards or never cross.
+    /// </summary>
+    private void StartHazardCheck()
+    {
+        _autoMode = "hazardcheck";
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        int floor = MapGenerator.FloorY;
+        var d = MapDesign.Empty(ThemeId.MagmaCore, 1);
+        d.Pits.Add((HzPit1, HzPit2));
+        d.Blocks.Add(new RectI(490, MapGenerator.Wall, 20, 470 - MapGenerator.Wall));
+        d.Blocks.Add(new RectI(120, 475, 140, 12));
+        d.Blocks.Add(new RectI(740, 475, 140, 12));
+        d.Movers.Add(new Mover(HzPit1, HzPit2 - ArenaFeatures.MoverW, 500, ArenaFeatures.MoverW, ArenaFeatures.MoverH, 6, 0));
+        d.Hazards.Add(new Hazard(HazardKind.Poison, 250, 340, floor));
+        d.Hazards.Add(new Hazard(HazardKind.Magma, 660, 740, floor));
+        d.Saws.Add(new SawTrack(780, floor - 10, 920, floor - 10, ArenaFeatures.SawRadius, MapDesign.SawPeriod(780, floor - 10, 920, floor - 10), 0));
+        d.Spawns.Add(new SpawnPoint(40, floor));
+        d.Spawns.Add(new SpawnPoint(960, floor));
+        d.Spawns.Add(new SpawnPoint(180, 475));
+        d.Spawns.Add(new SpawnPoint(820, 475));
+        _game.HazardDamaged += (_, kind, dmg) => _hzDamage[(int)kind] += dmg;
+        _game.BattleStarted += _hzSide.Clear; // being put on the other side by a new battle is no crossing
+        _net.LocalName = "Hazard";
+        _net.StartOffline();
+        for (int i = 1; i < 4; i++) _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 50, RoundsToWin = 50, LoserChoices = 3, WinnerChoices = 0, KillCam = false, Maps = { MapCode.Pack(d) } });
+        _game.HostStartMatch();
+    }
+
+    private void PollHazards()
+    {
+        if (_game.Phase != Phase.Fighting || _game.Map == null) return;
+        const float dt = 1f / 60;
+        _hzFight += dt;
+        float clock = _game.Arena.Clock;
+        foreach (var a in _game.LiveAvatars())
+        {
+            _hzBotSeconds += dt;
+            var feet = a.GlobalPosition + new Vector2(0, a.HalfSize.Y);
+            bool onFloor = a.IsOnFloor();
+            foreach (var m in _game.Map.Movers)
+            {
+                float x = m.XAt(clock);
+                if (onFloor && Mathf.Abs(feet.Y - m.Y) < 3 && feet.X > x - 2 && feet.X < x + m.W + 2) _hzMoverSeconds += dt;
+            }
+            int slot = a.Player.Slot;
+            if (feet.Y > MapGenerator.FloorY + 40) { if (!_hzSide.TryGetValue(slot, out int fell) || fell != 2) _hzFalls++; _hzSide[slot] = 2; continue; }
+            if (!onFloor || feet.X > HzPit1 && feet.X < HzPit2) continue;
+            int side = feet.X < HzPit1 ? -1 : 1;
+            if (_hzSide.TryGetValue(slot, out int was) && was == -side) _hzCrossings++;
+            _hzSide[slot] = side;
+        }
+        if (_hzFight < HazardCheckSeconds) return;
+        float minutes = _hzBotSeconds / 60;
+        float pools = (_hzDamage[0] + _hzDamage[1]) / minutes, saws = _hzDamage[2] / minutes;
+        string line = $"magma {_hzDamage[0] / minutes:0.0}, poison {_hzDamage[1] / minutes:0.0}, saw {saws:0.0} damage per bot-minute; "
+            + $"{_hzMoverSeconds:0}s on the mover, crossed the pit {_hzCrossings} times, fell in {_hzFalls} times, in {_hzFight:0}s of fighting ({_game.BattleNumber} battles)";
+        Log.Info($"HAZARDCHECK {line}");
+        if (pools > 40) Finish(1, $"hazardcheck: bots stand in pools ({line})");
+        else if (saws > 30) Finish(1, $"hazardcheck: bots walk into sawblades ({line})");
+        else if (_hzCrossings < 5) Finish(1, $"hazardcheck: bots don't ride the mover across ({line})");
+        else Finish(0, line);
     }
 
     private void Finish(int code, string why)

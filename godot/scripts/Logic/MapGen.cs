@@ -58,6 +58,8 @@ public sealed class MapLayout
     public int Headroom { get; init; } = MapGenerator.Headroom;
     /// <summary>Whether the jump graph counts jump pad launches (bots plan with them; map validation never does).</summary>
     public bool UsePads { get; init; }
+    /// <summary>Bots' jump graph only (see NavLayout): surfaces that are a moving platform's lane, and which mover runs it.</summary>
+    public Dictionary<int, int> MoverOf { get; } = new();
 
     /// <summary>True if a rect overlaps any solid or slope.</summary>
     public bool Blocked(RectI r)
@@ -861,7 +863,8 @@ public static class MapGenerator
     /// overhangs too low to stand under, and jumps need headroom for exactly this body. The generator's graph assumes
     /// 26 px everywhere, so a Giant would try to walk under a 32 px gap forever and a normal bot believed it couldn't
     /// walk under a 24 px bar out of a floor pocket. It also counts jump pad launches (the generator never relies
-    /// on pads, but a bot stuck in a pocket with one should use it).
+    /// on pads, but a bot stuck in a pocket with one should use it). Pools are cut out of the surfaces they lie on,
+    /// and each moving platform's lane is added as a surface (<see cref="MapLayout.MoverOf"/>).
     /// </summary>
     public static MapLayout NavLayout(MapLayout map, float bodyW, float bodyH)
     {
@@ -882,20 +885,38 @@ public static class MapGenerator
             {
                 // Only overhangs (solids ending above this surface) that leave less room than the body needs.
                 if (o.Bottom > s.Y || o.Bottom <= s.Y - bodyH - 1 || o.Right <= s.X1 - hw || o.X >= s.X2 + hw) continue;
-                int x1 = o.X - hw, x2 = o.Right + hw;
-                var next = new List<(int a, int b)>();
-                foreach (var (a, b) in open)
-                {
-                    if (x2 <= a || x1 >= b) { next.Add((a, b)); continue; }
-                    if (x1 > a) next.Add((a, x1));
-                    if (x2 < b) next.Add((x2, b));
-                }
-                open = next;
+                open = Cut(open, o.X - hw, o.Right + hw);
             }
+            // Pools: standing in one hurts, so the graph treats them as gaps. Bots land beside them and jump across.
+            foreach (var h in map.Hazards)
+                if (h.Y == s.Y) open = Cut(open, h.X1 - hw, h.X2 + hw);
             foreach (var (a, b) in open)
                 if (b - a >= 4) nav.Surfaces.Add(new Surface(a, b, s.Y));
         }
+        // Moving platforms: each one's whole lane is a surface, which bots ride by waiting for the platform (BotBrain).
+        for (int i = 0; i < map.Movers.Count; i++)
+        {
+            var m = map.Movers[i];
+            nav.MoverOf[nav.Surfaces.Count] = i;
+            nav.Surfaces.Add(new Surface(m.X1, m.X2 + m.W, m.Y));
+        }
+        nav.Hazards.AddRange(map.Hazards);
+        nav.Saws.AddRange(map.Saws);
+        nav.Movers.AddRange(map.Movers);
         return nav;
+    }
+
+    /// <summary>Spans with [x1, x2) taken out.</summary>
+    private static List<(int a, int b)> Cut(List<(int a, int b)> spans, int x1, int x2)
+    {
+        var next = new List<(int a, int b)>();
+        foreach (var (a, b) in spans)
+        {
+            if (x2 <= a || x1 >= b) { next.Add((a, b)); continue; }
+            if (x1 > a) next.Add((a, x1));
+            if (x2 < b) next.Add((x2, b));
+        }
+        return next;
     }
 
     public static int SurfaceIndexOf(MapLayout map, SpawnPoint sp)

@@ -96,6 +96,8 @@ public partial class GameManager : Node2D
     public event Action<int, int> CurseTaken;
     /// <summary>A pick unlocked a card combo for this slot (on every peer, right after <see cref="CardWasPicked"/>).</summary>
     public event Action<int, ComboDef> ComboFound;
+    /// <summary>Host: a hazard hurt someone (slot, what, damage asked for), for the hazard check.</summary>
+    public event Action<int, HazardHit, float> HazardDamaged;
     public event Action<string, Color, float> Banner;
     public void ShowBanner(string text, Color color, float seconds) => Banner?.Invoke(text, color, seconds);
 
