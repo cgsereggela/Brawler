@@ -316,6 +316,19 @@ public partial class Main
         if (!ed.Import(" " + code + "\n") || MapCode.Encode(ed.Design) != code) { Fail("pasting the code back didn't reopen the same arena"); return; }
         if (ed.Import(code[..^4])) { Fail("a cut-off code was accepted"); return; }
         Log.Info($"EDITORCHECK sharing: saved, and the {code.Length}-character code reopens it: {code}");
+
+        // Names that make the same file name ("check_arena") each keep a file of their own.
+        var twins = new[] { "Check Arena!", "Check Arena?" }.Select(n => { var t = MapCode.Decode(code); t.Name = n; return t; }).ToList();
+        foreach (var t in twins) MapLibrary.Save(t);
+        twins[0].Seed++;
+        MapLibrary.Save(twins[0]); // a second save replaces its own file only
+        saved = MapLibrary.All();
+        if (saved.Count != 3 || saved.Select(e => e.Name).Distinct().Count() != 3 || saved.First(e => e.Name == "Check Arena!").Design.Seed != twins[0].Seed)
+        { Fail($"maps whose names make the same file name overwrote each other: {string.Join(", ", saved.Select(e => e.Name))}"); return; }
+        foreach (var t in twins) MapLibrary.Delete(t.Name);
+        if (MapLibrary.All() is not [{ Name: "Check Arena" }]) { Fail("deleting the look-alike maps took the wrong file"); return; }
+        Log.Info("EDITORCHECK library: look-alike names get files of their own");
+
         if (_shotDir != null)
         {
             ed.SetTool(EditTool.Select);

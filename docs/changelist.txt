@@ -1,5 +1,4 @@
 issues to fix:
-- two map names can share one file: MapLibrary.PathOf turns "My Map!" and "My Map?" into the same my_map.map, and the editor's overwrite check compares names rather than files, so saving can silently replace a different map
 - clashing names pile up as "Map 2 2 2": the rename in ArenaPoolUI appends " 2" on every clash; count up instead (Map 2, Map 3)
 - leaving the map editor gives no warning about unsaved changes. The draft is kept, but nothing says the work isn't in My maps
 - check the lobby settings packet size with 12 custom arenas plus disabled cards, and keep it well inside ENet's reliable-packet limits (split or compress if needed)

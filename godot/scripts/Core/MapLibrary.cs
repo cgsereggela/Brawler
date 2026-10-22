@@ -54,12 +54,28 @@ public static class MapLibrary
         if (Exists(name)) DirAccess.RemoveAbsolute(PathOf(name));
     }
 
-    /// <summary>A file name for a map name: letters, digits, spaces, dashes and underscores; lowercase.</summary>
+    /// <summary>
+    /// The file for a map name. Names are cut down to letters, digits, dashes and underscores, so two names can share
+    /// a base (my_map for "My Map!" and "My Map?"): the file already holding this name wins, otherwise the first free
+    /// one of my_map.map, my_map_2.map, my_map_3.map...
+    /// </summary>
     private static string PathOf(string name)
     {
-        var safe = new string(MapCode.Trim(name).ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : c == ' ' ? '_' : '-').ToArray());
-        return $"{Dir}/{(safe.Trim('-', '_') is { Length: > 0 } s ? s : "untitled")}{Ext}";
+        name = MapCode.Trim(name);
+        var safe = new string(name.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : c == ' ' ? '_' : '-').ToArray());
+        var stem = safe.Trim('-', '_') is { Length: > 0 } s ? s : "untitled";
+        string free = null;
+        for (int n = 1, misses = 0; misses < 10; n++) // keep looking past a few free ones: deleting a map leaves a gap
+        {
+            var path = $"{Dir}/{stem}{(n == 1 ? "" : $"_{n}")}{Ext}";
+            if (!FileAccess.FileExists(path)) { free ??= path; misses++; }
+            else if (NameIn(path) == name) return path;
+        }
+        return free;
     }
+
+    /// <summary>The map name stored in a saved file, or null if it doesn't hold a map.</summary>
+    private static string NameIn(string path) => MapCode.Decode(FileAccess.GetFileAsString(path).Trim()) is { } d ? MapCode.Trim(d.Name) : null;
 
     // ---------- settings.cfg ----------
 
