@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- add a bug report button on the main menu that links to: https://github.com/cgsereggela/Brawler/issues
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame

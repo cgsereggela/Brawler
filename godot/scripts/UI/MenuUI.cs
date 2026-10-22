@@ -10,6 +10,9 @@ public partial class MenuUI : Control
 {
     public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor;
 
+    /// <summary>Where Report Bug sends people: the issues page of the GitHub repository.</summary>
+    public const string IssuesUrl = "https://github.com/cgsereggela/Brawler/issues";
+
     public LineEdit NameEdit, AddressEdit, PortEdit;
     private Label _status;
     private AvatarPreview _preview;
@@ -78,9 +81,13 @@ public partial class MenuUI : Control
         body.AddChild(_status);
         var bottomRow = UiKit.HBox(6);
         var options = UiKit.Button("Options", () => Options?.Invoke());
+        // Opens the GitHub issues page in the browser, where a bug can be reported (or an existing report found).
+        var bug = UiKit.Button("Report Bug", () => OS.ShellOpen(IssuesUrl));
+        bug.TooltipText = "Opens the Brawler issues page on GitHub in your browser";
         var quit = UiKit.Button("Quit", () => GetTree().Quit());
-        options.SizeFlagsHorizontal = quit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        options.SizeFlagsHorizontal = bug.SizeFlagsHorizontal = quit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         bottomRow.AddChild(options);
+        bottomRow.AddChild(bug);
         bottomRow.AddChild(quit);
         body.AddChild(bottomRow);
 

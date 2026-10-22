@@ -31,6 +31,8 @@ You don't need anything else installed. Step-by-step guides:
 - **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.
 - **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
 
+Found a bug? **Report Bug** on the main menu opens the [issues page](https://github.com/cgsereggela/Brawler/issues) in your browser.
+
 ## Run from source
 
 1. Open `godot/project.godot` in **Godot 4.7 .NET** (you already have `Godot_v4.7.2-stable_mono_win64`).
