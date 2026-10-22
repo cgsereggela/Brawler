@@ -40,7 +40,13 @@ $build = Join-Path $root 'build'
 $dist = Join-Path $root 'dist'
 $projectFile = Join-Path $project 'project.godot'
 
-function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
+function Fail($msg) {
+    Write-Host "ERROR: $msg" -ForegroundColor Red
+    if ($env:GITHUB_ACTIONS) { Write-Host "::error::$($msg -replace '\r?\n', ' ')" } # an annotation shows without signing in to read the log
+    exit 1
+}
+# Anything else that stops the script gets the same treatment.
+trap { Fail "$($_.Exception.Message) (package.ps1 line $($_.InvocationInfo.ScriptLineNumber))" }
 
 # Runs Godot and returns its output as plain text lines. Godot logs to stderr, which Windows PowerShell 5.1 would
 # otherwise turn into terminating errors; colour codes and progress lines are dropped.
@@ -58,6 +64,7 @@ $timestampUrl = 'http://timestamp.digicert.com'
 # Authenticode-signs Windows binaries in place. A self-signed certificate isn't trusted by Windows, so the signature
 # shows as "not verified", but it is there: tampering breaks it, and every release carries the same certificate.
 function Sign-Files([string[]]$files) {
+    $ErrorActionPreference = 'Continue' # osslsigncode writes notes to stderr; only its exit code means failure
     if ($IsLinux -or $IsMacOS) {
         $passFile = [System.IO.Path]::GetTempFileName()
         [System.IO.File]::WriteAllText($passFile, $SignPassword)
@@ -73,7 +80,7 @@ function Sign-Files([string[]]$files) {
                     if ($LASTEXITCODE -ne 0) { Fail "osslsigncode could not sign $f`: $out" }
                 }
                 Move-Item -Force $signed $f
-                Write-Host "  signed $(Split-Path -Leaf $f)"
+                Write-Host "  signed $(Split-Path -Leaf $f): $(($out | ForEach-Object { "$_" }) -join ' ')"
             }
         }
         finally { Remove-Item -Force $passFile -ErrorAction SilentlyContinue }
@@ -182,8 +189,9 @@ foreach ($p in $Platforms) {
     $out = Join-Path $dir $outputs[$p]
 
     Write-Host "Exporting $($presets[$p])..."
-    Invoke-Godot --headless --path $project --export-release $presets[$p] $out | ForEach-Object { Write-Host "  $_" }
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { Fail "Export for $p failed (exit $LASTEXITCODE). See the log above." }
+    $exportLog = @(Invoke-Godot --headless --path $project --export-release $presets[$p] $out)
+    $exportLog | ForEach-Object { Write-Host "  $_" }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { Fail "Export for $p failed (exit $LASTEXITCODE): $(($exportLog | Select-Object -Last 6) -join ' | ')" }
     if ($p -eq 'windows') {
         if ($SignPfx) {
             Write-Host 'Signing the Windows build...'
