@@ -31,6 +31,7 @@ public partial class MapNode : Node2D
     private ImageTexture _ground, _groundGlow;
     private System.Threading.Tasks.Task<(Raster Body, Raster Glow)> _bake;
     private float _groundFade;
+    private bool _backdropSet;
     private List<Vector2[]> _groundPolys;
     private List<Rect2> _borderRects;
 
@@ -58,7 +59,9 @@ public partial class MapNode : Node2D
         if (layout != null)
         {
             Theme = ArenaTheme.ForSeed(layout.Seed);
-            Backdrop.Set(Theme, layout.Seed);
+            // The same scenery again (the editor rebuilding after an edit, a custom arena played twice) keeps its painting.
+            if (Backdrop.Theme != Theme || Backdrop.Seed != layout.Seed || !_backdropSet) Backdrop.Set(Theme, layout.Seed);
+            _backdropSet = true;
             foreach (var r in layout.Solids)
             {
                 var body = new StaticBody2D { CollisionLayer = 1, CollisionMask = 0, Position = new Vector2(r.X + r.W / 2f, r.Y + r.H / 2f) };
@@ -313,6 +316,7 @@ public partial class MapNode : Node2D
         _groundPolys = ground;
         _borderRects = border;
         (_ground, _groundGlow) = (null, null);
+        _groundFade = 0; // the silhouettes stand in from now until the new painting lands
         // Paint on a worker thread so starting a battle doesn't stall a frame; the plain silhouettes stand in until
         // it lands (Process), then the painting fades in over them.
         PaintNoise.Warm();

@@ -118,6 +118,15 @@ public static class TerrainGen
             else features.Add(f);
         }
         if (features.Count == 0) return;
+        Apply(map, floor, features);
+    }
+
+    /// <summary>
+    /// Turns features (each a list of (x, height above the floor) corners, from one foot to the other) into raised
+    /// rects, slopes and the ground outlines of the floor segments they stand on. Sorts the features by x.
+    /// </summary>
+    public static void Apply(MapLayout map, List<(int x1, int x2)> floor, List<List<(int x, int h)>> features)
+    {
         features.Sort((a, b) => a[0].x.CompareTo(b[0].x));
 
         foreach (var f in features)
@@ -158,6 +167,58 @@ public static class TerrainGen
             if (pts[^1].X != s2) Point(s2, FloorY);
             map.Ground.Add(pts.ToArray());
         }
+    }
+
+    /// <summary>
+    /// The features back out of a layout's ground outlines (the reverse of <see cref="Apply"/>): each run of raised
+    /// corners with the floor-level corners either side of it. A shelf against a wall has no floor corner on that side.
+    /// </summary>
+    public static List<List<(int x, int h)>> Features(MapLayout map)
+    {
+        var features = new List<List<(int x, int h)>>();
+        foreach (var outline in map.Ground)
+        {
+            List<(int x, int h)> f = null;
+            for (int i = 0; i < outline.Length; i++)
+            {
+                int h = FloorY - outline[i].Y;
+                if (h > 0)
+                {
+                    if (f == null)
+                    {
+                        f = new List<(int x, int h)>();
+                        if (i > 0) f.Add((outline[i - 1].X, 0));
+                    }
+                    f.Add((outline[i].X, h));
+                }
+                else if (f != null)
+                {
+                    f.Add((outline[i].X, 0));
+                    features.Add(f);
+                    f = null;
+                }
+            }
+            if (f != null) features.Add(f);
+        }
+        return features;
+    }
+
+    /// <summary>
+    /// A plain hill (ramp, flat top, ramp) with its left foot at <paramref name="x"/>: <paramref name="height"/> high
+    /// with a <paramref name="top"/> wide summit, each ramp 1.5 times its rise rounded up to whole tiles (34 degrees).
+    /// </summary>
+    public static List<(int x, int h)> Hill(int x, int height, int top)
+    {
+        int run = (height * 3 / 2 + Tile - 1) / Tile * Tile;
+        return new List<(int x, int h)> { (x, 0), (x + run, height), (x + run + top, height), (x + run * 2 + top, 0) };
+    }
+
+    /// <summary>The floor segment a feature stands on (a wall shelf may start right at the wall), or -1.</summary>
+    public static int SegmentOf(List<(int x1, int x2)> floor, List<(int x, int h)> f)
+    {
+        for (int i = 0; i < floor.Count; i++)
+            if (f[0].x >= floor[i].x1 && f[^1].x <= floor[i].x2) return i;
+        return -1;
     }
 
     /// <summary>A ramp's run for a rise: 1.2 to 2.4 times it, rounded up to whole tiles.</summary>

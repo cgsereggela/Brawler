@@ -8,7 +8,7 @@ namespace Brawler.UI;
 
 public partial class MenuUI : Control
 {
-    public event Action PlayBots, HostLan, JoinLan, Customize, Options;
+    public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor;
 
     public LineEdit NameEdit, AddressEdit, PortEdit;
     private Label _status;
@@ -55,6 +55,9 @@ public partial class MenuUI : Control
         body.AddChild(UiKit.Spacer(2));
         body.AddChild(UiKit.Primary("PLAY VS BOTS", () => PlayBots?.Invoke()));
         body.AddChild(UiKit.Button("Host Game", () => HostLan?.Invoke()));
+        var editor = UiKit.Button("Map Editor", () => MapEditor?.Invoke());
+        editor.TooltipText = "Build your own arenas and share them as map codes";
+        body.AddChild(editor);
 
         body.AddChild(UiKit.Label("JOIN A FRIEND", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var joinRow = UiKit.HBox();

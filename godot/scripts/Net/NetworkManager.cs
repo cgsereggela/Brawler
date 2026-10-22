@@ -29,6 +29,8 @@ public partial class NetworkManager : Node
     public Brawler.Logic.GameMode? TestMode;
     /// <summary>--rounds=N: round wins to take the match, for matches this run hosts (0 = the lobby setting).</summary>
     public int TestRounds;
+    /// <summary>--arena=CODE: the custom arena every battle of the matches this run hosts is played on (null = the lobby setting).</summary>
+    public byte[] TestArena;
 
     public NetMode Mode { get; private set; } = NetMode.None;
     public LobbyState Lobby { get; private set; } = new();

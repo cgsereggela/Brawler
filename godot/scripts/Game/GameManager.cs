@@ -208,6 +208,7 @@ public partial class GameManager : Node2D
         }
         if (Net.TestFriendlyFire) Net.Lobby.Settings.FriendlyFire = true;
         if (Net.TestRounds > 0) Net.Lobby.Settings.RoundsToWin = Net.TestRounds; // --rounds=N: a shorter test match
+        if (Net.TestArena != null) Net.Lobby.Settings.Maps = new() { Net.TestArena }; // --arena=CODE
         if (Net.TestMode is { } mode)
         {
             Net.Lobby.Settings.Mode = mode; // --mode=ID
@@ -227,14 +228,59 @@ public partial class GameManager : Node2D
         if (LavaOverride >= 0) Net.Lobby.Settings.LavaAfter = LavaOverride;
         if (RareOverride >= 0) Net.Lobby.Settings.RareChance = RareOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
+        _arenaTurn = 0;
         HostStartBattle();
     }
 
     private void HostStartBattle()
     {
-        int seed = (int)HostRng.NextUInt();
-        Rpc(MethodName.StartBattle, seed, ScoresBytes());
+        uint seed = HostRng.NextUInt();
+        // Custom arenas take turns: the seed says whose turn it is (see LayoutFor), so the battle RPC stays the same.
+        uint n = (uint)Settings.Maps.Count;
+        if (n > 0)
+        {
+            seed = seed / n * n;
+            if (seed > uint.MaxValue - n) seed -= n;
+            seed += (uint)(_arenaTurn++ % n);
+        }
+        Rpc(MethodName.StartBattle, (int)seed, ScoresBytes());
     }
+
+    private int _arenaTurn; // host: battles started this match, for the custom arenas' turns
+
+    /// <summary>
+    /// A battle's arena on every peer: with custom arenas in the lobby, the one whose turn the seed carries (a code that
+    /// doesn't read falls back to a generated arena); otherwise the seed's generated arena.
+    /// </summary>
+    public MapLayout LayoutFor(int seed, int players, out string name)
+    {
+        var maps = Settings.Maps;
+        name = null;
+        if (maps.Count > 0 && MapCode.Unpack(maps[(int)((uint)seed % (uint)maps.Count)]) is { } design)
+        {
+            name = design.Name != "" ? design.Name : null;
+            return design.Build(players);
+        }
+        return MapGenerator.Generate(seed, players);
+    }
+
+    /// <summary>What the HUD calls this battle's arena: a custom arena's name, else its theme.</summary>
+    public string ArenaName { get; private set; } = "";
+
+    /// <summary>
+    /// The level editor's framing: the camera fixed on the whole arena drawn at <c>Zoom</c> with its top-left corner at
+    /// <c>Corner</c> on screen (base viewport pixels), or null for the match camera.
+    /// </summary>
+    public (Vector2 Corner, float Zoom)? EditorView
+    {
+        get => _editorView;
+        set
+        {
+            _editorView = value;
+            Visible = value != null || Phase != Phase.Idle;
+        }
+    }
+    private (Vector2 Corner, float Zoom)? _editorView;
 
     private void HostResolveBattle()
     {
@@ -1382,8 +1428,9 @@ public partial class GameManager : Node2D
             }
 
         var active = Active().OrderBy(p => p.Slot).ToList();
-        var layout = MapGenerator.Generate(seed, active.Count);
+        var layout = LayoutFor(seed, active.Count, out var arenaName);
         MapNode.Build(layout);
+        ArenaName = arenaName ?? MapNode.Theme.Name;
         Arena.Build(layout);
 
         // Seeded shuffle so spawn positions rotate fairly but identically on all peers.
@@ -1426,7 +1473,7 @@ public partial class GameManager : Node2D
         KillCam.Begin();
         PickOptions.Clear();
         PickDeals.Clear();
-        Log.Info($"battle {BattleNumber} start (seed {seed}, map attempts {layout.Attempts}{(layout.UsedFallback ? ", fallback" : "")})");
+        Log.Info($"battle {BattleNumber} start (seed {seed}, {(Settings.Maps.Count > 0 ? $"custom arena \"{ArenaName}\", {layout.Solids.Count} solids, " : "")}map attempts {layout.Attempts}{(layout.UsedFallback ? ", fallback" : "")})");
         BattleStarted?.Invoke();
     }
 
@@ -2171,6 +2218,14 @@ public partial class GameManager : Node2D
         float s = _trauma * _trauma * 6f * Accessibility.Shake;
         _cam.Offset = new Vector2((float)GD.RandRange(-s, s), (float)GD.RandRange(-s, s));
         _zoomPunch = Mathf.Max(0, _zoomPunch - (float)delta * 3f);
+        if (_editorView is var (corner, zoom))
+        {
+            var size = GetViewport().GetVisibleRect().Size;
+            _cam.Offset = Vector2.Zero;
+            _cam.Position = (size / 2 - corner) / zoom;
+            _cam.Zoom = Vector2.One * zoom;
+            return;
+        }
         FrameKillCam((float)delta);
         _cam.Zoom = Vector2.One * (_camZoom + 0.06f * _zoomPunch * _zoomPunch * Accessibility.Shake);
     }

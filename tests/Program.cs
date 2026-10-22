@@ -1700,5 +1700,94 @@ static List<byte[]> DecodeGif(byte[] g)
     Check(couch.Add(6) == 3 && couch.Add(7) == -1 && couch.Count == CouchRoster.MaxGuests, "Couch: at most three guests per machine");
 }
 
+// ---------- Map designs and map codes ----------
+{
+    static string Shape(MapLayout m) => string.Join(";",
+        string.Join(",", m.Solids), string.Join(",", m.Surfaces), string.Join(",", m.Slopes), string.Join(",", m.Ground.Select(g => string.Join("/", g))),
+        string.Join(",", m.Spawns), string.Join(",", m.Pads), string.Join(",", m.Props), string.Join(",", m.Hazards),
+        string.Join(",", m.Movers.Select(v => (v.X1, v.X2, v.Y))), string.Join(",", m.Saws.Select(s => (MathF.Round(s.X1), s.Y1, MathF.Round(s.X2), s.Y2))));
+    static string Rounded(MapLayout m)
+    {
+        // Saws are stored to the pixel and phases to a sixteenth: compare the rest exactly.
+        var copy = new MapLayout { Seed = m.Seed, Style = m.Style };
+        copy.Solids.AddRange(m.Solids); copy.Surfaces.AddRange(m.Surfaces); copy.Slopes.AddRange(m.Slopes); copy.Ground.AddRange(m.Ground);
+        copy.Spawns.AddRange(m.Spawns); copy.Pads.AddRange(m.Pads); copy.Props.AddRange(m.Props); copy.Hazards.AddRange(m.Hazards);
+        copy.Movers.AddRange(m.Movers); copy.Saws.AddRange(m.Saws);
+        return Shape(copy);
+    }
+
+    int same = 0, total = 0, longest = 0, sum = 0;
+    string firstBad = "";
+    for (int s = 0; s < 120; s++)
+    {
+        int seed = s * 104729 + 17;
+        var gen = MapGenerator.Generate(seed, 4);
+        var code = MapCode.Encode(MapDesign.From(gen));
+        var back = MapCode.Decode(code);
+        total++;
+        longest = Math.Max(longest, code.Length);
+        sum += code.Length;
+        if (back != null && Rounded(back.Build(4)) == Rounded(gen)) same++;
+        else if (firstBad == "") firstBad = $"seed {seed} {gen.Style}";
+    }
+    Check(same == total, "Map code: a generated arena survives From, Encode, Decode and Build unchanged", $"{same}/{total} {firstBad}");
+    Check(sum / total <= 260, "Map code: a generated arena's code stays short", $"average {sum / total}, longest {longest} chars");
+
+    var hilly = MapGenerator.Generate(Enumerable.Range(0, 400).First(s => MapGenerator.Generate(s, 4).Ground.Count > 0), 4);
+    var feats = TerrainGen.Features(hilly);
+    var rebuilt = new MapLayout();
+    var hillFloor = MapDesign.From(hilly).Floor();
+    TerrainGen.Apply(rebuilt, hillFloor, feats.Select(f => new List<(int x, int h)>(f)).ToList());
+    Check(feats.Count > 0 && string.Join("|", rebuilt.Ground.Select(g => string.Join("/", g))) == string.Join("|", hilly.Ground.Select(g => string.Join("/", g)))
+        && rebuilt.Slopes.SequenceEqual(hilly.Slopes), "Terrain: features read back from the ground outlines rebuild the same ground", $"{feats.Count} features");
+
+    var empty = MapDesign.Empty(ThemeId.FrostBite, 1);
+    empty.Name = "Ice rink";
+    var e2 = MapCode.Decode(MapCode.Encode(empty));
+    Check(e2 != null && e2.Name == "Ice rink" && e2.Theme == ThemeId.FrostBite, "Map code: name and theme come back", MapCode.Encode(empty));
+    Check(MapCode.Encode(empty).Length < 40, "Map code: an empty arena is a few dozen characters", $"{MapCode.Encode(empty).Length}");
+    var flat = empty.Build(6);
+    Check(flat.Spawns.Count == 6 && flat.Spawns.Distinct().Count() == 6 && MapGenerator.SpawnsMutuallyReachable(flat), "Design: missing spawns are picked on reachable ground", string.Join(" ", flat.Spawns));
+    Check(empty.Build(6).Spawns.SequenceEqual(flat.Spawns), "Design: picked spawns are the same every time (every peer agrees)");
+
+    var d = MapDesign.Empty(ThemeId.NeonNight, 5);
+    d.Pits.Add((400, 480));
+    d.Blocks.Add(new RectI(200, MapGenerator.TierY(1), 120, 8));
+    d.Hills.Add(TerrainGen.Hill(560, 32, 48));
+    d.Hills.Add(TerrainGen.Hill(440, 32, 16)); // runs over the pit
+    d.Spawns.Add(new SpawnPoint(100, MapGenerator.FloorY));
+    d.Spawns.Add(new SpawnPoint(300, 200));     // in mid-air
+    d.Pads.Add(new JumpPad(800, 800 + MapGenerator.PadWidth, MapGenerator.FloorY));
+    d.Props.Add(new PropSpawn(PropKind.Glass, 400, MapGenerator.FloorY, 8, 8));
+    d.Props.Add(new PropSpawn(PropKind.Glass, 408, MapGenerator.FloorY, 8, 8));
+    d.Props.Add(new PropSpawn(PropKind.Crate, 250, MapGenerator.TierY(1) - 14, 14, 14));
+    d.Hazards.Add(new Hazard(HazardKind.Poison, 700, 732, MapGenerator.FloorY));
+    d.Saws.Add(new SawTrack(150, MapGenerator.FloorY - 2, 260, MapGenerator.FloorY - 2, ArenaFeatures.SawRadius, MapDesign.SawPeriod(150, 0, 260, 0), 0.25f));
+    d.Movers.Add(new Mover(380, 460, 440, ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(380, 460), 0.5f));
+    var dc = MapCode.Decode(MapCode.Encode(d));
+    Check(dc != null && Rounded(dc.Build(4)) == Rounded(d.Build(4)) && dc.Props.Count == 3 && Math.Abs(dc.Saws[0].Phase - 0.25f) < 1e-4f,
+        "Map code: a hand-made arena survives the trip", MapCode.Encode(d));
+    var built = d.Build(2);
+    Check(built.Slopes.Count == 2 && built.Ground.Count == 1, "Design: a hill that runs over a pit is left out", $"{built.Slopes.Count} slopes");
+    Check(!built.Spawns.Contains(new SpawnPoint(300, 200)) && built.Spawns.Count == 2, "Design: a spawn in mid-air is skipped and replaced", string.Join(" ", built.Spawns));
+    var problems = d.Problems();
+    Check(problems.Any(p => p.Contains("hill")) && problems.Any(p => p.Contains("Spawn 2")) && !problems.Any(p => p.Contains("pad")), "Design: problems name the hill and the floating spawn, not the grounded pad", string.Join(" | ", problems));
+    Check(MapDesign.SurfaceBelow(built, 250, 100) is { } below && below.Y == MapGenerator.TierY(1) && MapDesign.SurfaceBelow(built, 440, 100) == null,
+        "Design: dropping onto the surface below finds the platform, and nothing over the pit");
+
+    var gen2 = MapDesign.Generate(MapStyle.Temple, ThemeId.MagmaCore, 1);
+    Check(gen2.Style == MapStyle.Temple && gen2.Theme == ThemeId.MagmaCore && gen2.Blocks.Count > 0, "Design: generate a starting arena in a chosen style and theme", $"seed {gen2.Seed}");
+    var t = gen2.Copy();
+    t.SetTheme(ThemeId.CandyClouds);
+    Check(t.Theme == ThemeId.CandyClouds && t.Blocks.SequenceEqual(gen2.Blocks), "Design: changing the theme keeps the layout");
+
+    var good = MapCode.Encode(gen2);
+    var broken = good[..10] + (good[10] == 'A' ? 'B' : 'A') + good[11..];
+    Check(MapCode.Decode(broken) == null, "Map code: a changed character is caught");
+    Check(MapCode.Decode(good[..(good.Length / 2)]) == null && MapCode.Decode("hello world!") == null && MapCode.Decode("") == null, "Map code: cut-off codes and junk are rejected");
+    Check(MapCode.Decode(" " + good[..20] + "\n" + good[20..] + " ") != null, "Map code: spaces and line breaks in a paste are ignored");
+    Check(MapCode.Trim(new string('x', 40)).Length == MapDesign.MaxName && MapCode.Trim("  hi  ") == "hi", "Map code: names are trimmed to fit");
+}
+
 Console.WriteLine(failures == 0 ? "\nALL TESTS PASSED" : $"\n{failures} TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

@@ -50,6 +50,9 @@ public partial class Backdrop : Node2D
         if (_skyTex == null && _bake == null) Set(Theme, 1);
     }
 
+    /// <summary>The seed the scenery was last set up with.</summary>
+    public int Seed => _seed;
+
     public void Set(ArenaTheme theme, int seed)
     {
         Theme = theme;

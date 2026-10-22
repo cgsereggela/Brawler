@@ -265,7 +265,8 @@ public static class MapGenerator
         return FloorBetween(pits);
     }
 
-    private static List<(int x1, int x2)> FloorBetween(List<(int x1, int x2)> pits)
+    /// <summary>The floor segments left between pits (sorts the pits in place), from wall to wall.</summary>
+    public static List<(int x1, int x2)> FloorBetween(List<(int x1, int x2)> pits)
     {
         pits.Sort((a, b) => a.x1.CompareTo(b.x1));
         var segments = new List<(int x1, int x2)>();
@@ -597,14 +598,14 @@ public static class MapGenerator
 
     // ---------- shared ----------
 
-    private static void AddBorders(MapLayout map)
+    public static void AddBorders(MapLayout map)
     {
         map.Solids.Add(new RectI(0, 0, Wall, Height));                 // left wall
         map.Solids.Add(new RectI(Width - Wall, 0, Wall, Height));      // right wall
         map.Solids.Add(new RectI(0, 0, Width, Wall));                  // ceiling
     }
 
-    private static void BuildSurfaces(MapLayout map, List<(int x1, int x2)> floor, List<RectI> platforms)
+    public static void BuildSurfaces(MapLayout map, List<(int x1, int x2)> floor, List<RectI> platforms)
     {
         // Floor segments are split around anything standing on them (towers, terrain), so nobody spawns inside one.
         var cutters = new List<RectI>(platforms);
@@ -682,7 +683,7 @@ public static class MapGenerator
     }
 
     /// <summary>The largest set of surfaces that are all reachable from each other (a strongly connected component).</summary>
-    private static bool[] MutualCore(MapLayout map)
+    public static bool[] MutualCore(MapLayout map)
     {
         int n = map.Surfaces.Count;
         var reach = new bool[n][];

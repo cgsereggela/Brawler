@@ -55,9 +55,14 @@ namespace Brawler;
 ///   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
 ///   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
 ///   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
+///   --arena=CODE          every battle of the matches this run hosts is played on this map code (see the map editor)
 ///   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 ///   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
 ///                         player input, and a card pick chosen on each controller; exits 0 on success
+///   --editorcheck         drives the map editor with made-up mouse presses (draw a block, a gap and a hill; place a spawn, a
+///                         crate and a pool; move, resize, undo, delete; save, share and reopen a map code), then playtests
+///                         the arena against a bot and checks the battle is played on it; exits 0 on success (with
+///                         --shots=DIR, screenshots the editor)
 ///   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 ///                         autopilot; checks at the end that they played and picked cards like everyone else
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
@@ -79,6 +84,8 @@ public partial class Main : Node
     private MatchOverUI _over;
     private CustomizeUI _custom;
     private Control _customReturn;
+    private MapEditorUI _editor;
+    private bool _playtest; // the offline match came from the editor's Playtest, so leaving goes back there
 
     private string _autoMode;
     private bool _matchFinished;
@@ -147,6 +154,7 @@ public partial class Main : Node
         _over = new MatchOverUI(_game, _net) { Name = "MatchOver" };
         _custom = new CustomizeUI(_net) { Name = "Customize" };
         _options = new OptionsUI(_sfx) { Name = "Options" };
+        _editor = new MapEditorUI(_game) { Name = "MapEditor", Visible = false };
         foreach (var c in Screens) root.AddChild(c);
 
         // Above every screen: the crosshair that stands in for the mouse pointer while you fight. The normal cursor
@@ -192,6 +200,9 @@ public partial class Main : Node
             _net.Join(host, port);
         };
         _menu.Customize += () => OpenCustomize(_menu);
+        _menu.MapEditor += () => Show(_editor);
+        _editor.Closed += () => Show(_menu);
+        _editor.Playtest += PlaytestArena;
         _lobby.CustomizePressed += () => OpenCustomize(_lobby);
         _custom.Closed += () => Show(_customReturn == _lobby && _net.Mode != NetMode.None && !_net.InMatch ? _lobby : _menu);
         _menu.Options += () => OpenOptions(_menu);
@@ -211,7 +222,8 @@ public partial class Main : Node
         _net.SessionEnded += reason =>
         {
             _game.ResetWorld();
-            Show(_menu);
+            Show(_playtest ? _editor : _menu);
+            _playtest = false;
             _menu.SetStatus(reason);
             if (_autoMode != null && !_dropping) Finish(_matchFinished ? 0 : 1, $"session ended: {reason}");
         };
@@ -230,7 +242,7 @@ public partial class Main : Node
         _game.ReturnedToLobby += () => Show(_lobby);
     }
 
-    private Control[] Screens => new Control[] { _menu, _lobby, _hud, _pick, _over, _custom, _options };
+    private Control[] Screens => new Control[] { _menu, _lobby, _hud, _pick, _over, _custom, _options, _editor };
 
     private void OpenCustomize(Control from)
     {
@@ -328,6 +340,7 @@ public partial class Main : Node
     {
         if (_options.Visible) return _options;
         if (_custom.Visible) return _custom;
+        if (_editor.Visible) return _editor;
         if (_over.Visible) return _over;
         if (_pick.Visible) return _pick;
         if (_lobby.Visible) return _lobby.FocusRoot;
@@ -361,11 +374,26 @@ public partial class Main : Node
 
     private void SaveProfile() => Profile.Save(_net.LocalName, _net.LocalColor, _net.LocalLook);
 
+    /// <summary>The editor's Playtest: an offline lobby with a bot, playing only this arena. Leaving comes back to the editor.</summary>
+    private void PlaytestArena(MapDesign design)
+    {
+        SaveProfile();
+        _net.StartOffline();
+        LoadCardPool();
+        var s = _net.Lobby.Settings.Copy();
+        s.Maps = new() { MapCode.Pack(design) };
+        _net.SetSettings(s);
+        _net.AddBot();
+        _playtest = true;
+        Show(_lobby);
+    }
+
     /// <summary>A new lobby starts from the card pool this player last hosted with.</summary>
     private void LoadCardPool()
     {
         var s = _net.Lobby.Settings;
         s.DisabledCards = CardPoolSettings.Load();
+        s.Maps = MapLibrary.LobbyMaps.Select(c => MapCode.Pack(MapCode.Decode(c))).ToList();
         _net.SetSettings(s);
     }
 
@@ -441,6 +469,11 @@ public partial class Main : Node
             else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
             else if (a.StartsWith("--mode=")) _net.TestMode = GameModes.Parse(a["--mode=".Length..]);
             else if (a.StartsWith("--rounds=") && int.TryParse(a["--rounds=".Length..], out int rounds)) _net.TestRounds = Mathf.Clamp(rounds, 1, 10);
+            else if (a.StartsWith("--arena="))
+            {
+                if (MapCode.Decode(a["--arena=".Length..]) is { } arena) _net.TestArena = MapCode.Pack(arena);
+                else { Finish(1, "--arena: that isn't a map code"); return; }
+            }
             else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
@@ -448,6 +481,12 @@ public partial class Main : Node
             else if (a == "--overlaycheck") _overlayCheck = true;
             else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
+            else if (a == "--editorcheck")
+            {
+                _autoMode = "editorcheck";
+                _game.DisableHitStop = true;
+                EditorCheck();
+            }
             else if (a == "--padcheck")
             {
                 _autoMode = "padcheck";
@@ -1270,6 +1309,168 @@ public partial class Main : Node
         if (!mePicked || !guestPicked) { Finish(1, $"padcheck: picks by controller: keyboard player {mePicked}, guest {guestPicked}"); return; }
         Log.Info($"PADCHECK pick: {me.Info.Name} took {CardRegistry.Get(me.Cards.Last())?.Name}, {g?.Info.Name} took {(g?.Cards.Count > 0 ? CardRegistry.Get(g.Cards.Last())?.Name : "-")}");
         Finish(0, "padcheck: menus, local co-op join, controller input and card picks all work");
+    }
+
+    // ---------- --editorcheck: the map editor, driven by made-up mouse presses ----------
+
+    private async void EditorCheck()
+    {
+        // Saved maps and settings go somewhere of their own, so the test leaves the player's alone.
+        MapLibrary.Dir = "user://editorcheck/maps";
+        MapLibrary.SettingsPath = "user://editorcheck/settings.cfg";
+        DirAccess.MakeDirRecursiveAbsolute(MapLibrary.Dir);
+        foreach (var f in DirAccess.GetFilesAt(MapLibrary.Dir)) DirAccess.RemoveAbsolute($"{MapLibrary.Dir}/{f}");
+        MapLibrary.Draft = "";
+        MapLibrary.LobbyMaps = new();
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        var ed = _editor;
+        Vector2 At(float x, float y) => new Vector2(x, y) * MapEditorUI.Zoom;
+        void Move(float x, float y) => ed.Feed(new InputEventMouseMotion { Position = At(x, y) });
+        void Button(float x, float y, bool down, MouseButton b = MouseButton.Left) => ed.Feed(new InputEventMouseButton { Position = At(x, y), ButtonIndex = b, Pressed = down });
+        void Click(float x, float y, MouseButton b = MouseButton.Left)
+        {
+            Move(x, y);
+            Button(x, y, true, b);
+            Button(x, y, false, b);
+        }
+        void Drag(float x1, float y1, float x2, float y2)
+        {
+            Move(x1, y1);
+            Button(x1, y1, true);
+            for (int i = 1; i <= 4; i++) Move(x1 + (x2 - x1) * i / 4, y1 + (y2 - y1) * i / 4);
+            Button(x2, y2, false);
+        }
+        bool Fail(string why)
+        {
+            Finish(1, $"editorcheck: {why}");
+            return true;
+        }
+
+        await Wait(0.5);
+        FindButton(_menu, "Map Editor").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!ed.Visible || _game.EditorView == null || _game.MapNode.Layout == null) { Fail("the Map Editor button didn't open the editor with an arena showing"); return; }
+        if (_shotDir != null) { await Wait(2.5); SaveShot("editor_generated"); }
+
+        ed.Load(MapDesign.Empty(ThemeId.ElderForest, 1));
+        ed.SetTool(EditTool.Block);
+        Drag(300, 470, 420, 478);
+        if (ed.Design.Blocks.Count != 1 || ed.Design.Blocks[0].W < 100) { Fail($"dragging with Block made {ed.Design.Blocks.Count} blocks"); return; }
+        var block = ed.Design.Blocks[0];
+        ed.SetTool(EditTool.Spawn);
+        Click(350, 300);
+        Click(120, 300);
+        if (ed.Design.Spawns.Count != 2 || ed.Design.Spawns[0].Y != block.Y || ed.Design.Spawns[1].Y != MapGenerator.FloorY)
+        { Fail($"spawns didn't land on the block and the floor: {string.Join(" ", ed.Design.Spawns)}"); return; }
+        ed.SetTool(EditTool.Gap);
+        Drag(600, 545, 680, 545);
+        ed.SetTool(EditTool.Hill);
+        Click(820, 500);
+        ed.SetTool(EditTool.Crate);
+        Click(250, 200);
+        ed.SetTool(EditTool.Poison);
+        Drag(150, 500, 200, 500);
+        var lay = ed.Layout;
+        if (ed.Design.Pits.Count != 1 || ed.Design.Hills.Count != 1 || lay.Slopes.Count != 2 || ed.Design.Props.Count != 1
+            || ed.Design.Props[0].Rect.Bottom != MapGenerator.FloorY || ed.Design.Hazards.Count != 1)
+        { Fail($"gap/hill/crate/pool: {ed.Design.Pits.Count} pits, {ed.Design.Hills.Count} hills ({lay.Slopes.Count} slopes), {ed.Design.Props.Count} props, {ed.Design.Hazards.Count} pools"); return; }
+        if (ed.Design.Problems().Count != 0) { Fail($"problems on a fine arena: {string.Join(" | ", ed.Design.Problems())}"); return; }
+        Log.Info($"EDITORCHECK tools: block {block}, 2 spawns, a gap, a hill, a crate and a pool");
+
+        // Select, move, resize, undo, redo, delete.
+        ed.SetTool(EditTool.Select);
+        Drag(360, 476, 440, 436);
+        var moved = ed.Design.Blocks[0];
+        if (moved.X != block.X + 80 || moved.Y != block.Y - 40) { Fail($"dragging the block moved it to {moved}, from {block}"); return; }
+        if (ed.Design.Spawns[0].Y != moved.Y) { Fail($"the spawn on the block didn't move with it: {ed.Design.Spawns[0]}"); return; }
+        Drag(moved.Right, moved.Y + 4, moved.Right + 40, moved.Y + 4);
+        if (ed.Design.Blocks[0].W != moved.W + 40) { Fail($"dragging the block's right edge left it {ed.Design.Blocks[0].W} wide, from {moved.W}"); return; }
+        ed.Feed(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+        ed.Feed(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+        if (ed.Design.Blocks[0] != block) { Fail($"two undos left the block at {ed.Design.Blocks[0]}, not {block}"); return; }
+        ed.Feed(new InputEventKey { Keycode = Key.Y, CtrlPressed = true, Pressed = true });
+        if (ed.Design.Blocks[0] != moved) { Fail("redo didn't put the move back"); return; }
+        var crate = ed.Design.Props[0].Rect;
+        Click(crate.X + crate.W / 2f, crate.Y + crate.H / 2f, MouseButton.Right);
+        if (ed.Design.Props.Count != 0) { Fail("right-click didn't delete the crate"); return; }
+        Log.Info("EDITORCHECK editing: move, resize, undo, redo and right-click delete work");
+
+        // Name it, save it, share it, open the code again.
+        var name = FindChild<LineEdit>(ed, l => l.PlaceholderText.StartsWith("Name"));
+        name.Text = "Check Arena";
+        name.EmitSignal(LineEdit.SignalName.TextChanged, name.Text);
+        FindButton(ed, "Save").EmitSignal(BaseButton.SignalName.Pressed);
+        var saved = MapLibrary.All();
+        if (saved.Count != 1 || saved[0].Name != "Check Arena") { Fail($"Save left {saved.Count} maps in the library"); return; }
+        var code = MapCode.Encode(ed.Design);
+        ed.Load(MapDesign.Empty(ThemeId.NeonNight, 1));
+        if (!ed.Import(" " + code + "\n") || MapCode.Encode(ed.Design) != code) { Fail("pasting the code back didn't reopen the same arena"); return; }
+        if (ed.Import(code[..^4])) { Fail("a cut-off code was accepted"); return; }
+        Log.Info($"EDITORCHECK sharing: saved, and the {code.Length}-character code reopens it: {code}");
+        if (_shotDir != null)
+        {
+            ed.SetTool(EditTool.Select);
+            Click(moved.X + 20, moved.Y + 4);
+            await Wait(2.5);
+            SaveShot("editor_custom");
+        }
+
+        // Playtest: a match against a bot on exactly this arena.
+        var design = ed.Design.Copy();
+        _game.AutopilotLocal = true;
+        FindButton(ed, "PLAYTEST").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        if (!_lobby.Visible || _net.Lobby.Settings.Maps.Count != 1) { Fail("Playtest didn't open a lobby with the arena chosen"); return; }
+        _net.Lobby.Settings.BattlesPerRound = 1;
+        _net.Lobby.Settings.RoundsToWin = 1;
+        _game.HostStartMatch();
+        for (int i = 0; i < 100 && _game.BattleNumber == 0; i++) await Wait(0.05);
+        var played = _game.MapNode.Layout;
+        var expected = design.Build(2);
+        if (played == null || !played.Solids.SequenceEqual(expected.Solids) || !played.Slopes.SequenceEqual(expected.Slopes) || _game.ArenaName != "Check Arena")
+        { Fail($"the playtest battle wasn't on the arena (name {_game.ArenaName}, {played?.Solids.Count} solids vs {expected.Solids.Count})"); return; }
+        var spawned = _game.Slots.Where(p => p?.Avatar != null).Select(p => p.Avatar.Position).ToList();
+        if (spawned.Count != 2 || !spawned.All(at => design.Spawns.Any(sp => at.DistanceTo(new Vector2(sp.X, sp.Y)) < 30)))
+        { Fail($"fighters didn't start on the arena's spawns: {string.Join(" ", spawned)}"); return; }
+        if (_shotDir != null) { await Wait(1.5); SaveShot("editor_playtest"); }
+        Log.Info("EDITORCHECK playtest: the battle is played on the arena, from its spawns");
+
+        // Leaving the playtest goes back to the editor, with the arena still there.
+        _autoMode = null; // leaving is the point here, not a failure
+        _net.Leave();
+        await Wait(0.3);
+        if (!ed.Visible || MapCode.Encode(ed.Design) != MapCode.Encode(design)) { Fail("leaving the playtest didn't come back to the editor and its arena"); return; }
+        // The lobby's arenas: tick the saved arena, then back to random.
+        FindButton(ed, "Back").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        FindButton(_menu, "PLAY VS BOTS").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.3);
+        var arenas = FindButton(_lobby, "Random");
+        if (arenas == null || _net.Lobby.Settings.Maps.Count != 0) { Fail("a new lobby didn't start on random arenas"); return; }
+        arenas.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        var tick = FindChild<CheckBox>(_lobby, c => c.Text == "Check Arena" && c.IsVisibleInTree());
+        if (tick == null) { Fail("the saved arena isn't listed in the lobby's arenas"); return; }
+        tick.ButtonPressed = true;
+        await Wait(0.2);
+        if (_net.Lobby.Settings.Maps.Count != 1 || arenas.Text != "Check Arena" || MapLibrary.LobbyMaps.Count != 1)
+        { Fail($"ticking the arena left {_net.Lobby.Settings.Maps.Count} arenas chosen, the button saying {arenas.Text}"); return; }
+        if (_shotDir != null) SaveShot("editor_lobby_arenas");
+        FindButton(_lobby, "Random only").EmitSignal(BaseButton.SignalName.Pressed);
+        if (_net.Lobby.Settings.Maps.Count != 0) { Fail("Random only didn't clear the arenas"); return; }
+        Log.Info("EDITORCHECK lobby: the saved arena can be ticked for a match, and Random only clears it");
+        Finish(0, "editorcheck: drawing, editing, saving, sharing, playtesting and picking an arena all work");
+    }
+
+    private static T FindChild<T>(Node root, System.Func<T, bool> match) where T : Node
+    {
+        foreach (var c in root.GetChildren())
+        {
+            if (c is T t && match(t)) return t;
+            if (FindChild(c, match) is { } found) return found;
+        }
+        return null;
     }
 
     // ---------- --couch=N: local co-op guests in the automated matches ----------

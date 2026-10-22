@@ -19,8 +19,9 @@ public partial class LobbyUI : Control
     private GridContainer _players;
     private Button _addBot, _addLocal, _start, _color, _cards;
     private CardPoolUI _pool;
+    private ArenaPoolUI _arenaPool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava, _rare, _deals, _killCam, _gameMode, _mode, _friendly;
+    private Button _lava, _rare, _deals, _killCam, _gameMode, _mode, _friendly, _arenas;
     private Label _problem, _friendlyLabel;
 
     public LobbyUI(NetworkManager net) => _net = net;
@@ -76,6 +77,7 @@ public partial class LobbyUI : Control
         var grid = new GridContainer { Columns = 2 };
         grid.AddThemeConstantOverride("h_separation", 10);
         grid.AddThemeConstantOverride("v_separation", 5);
+        _arenas = AddToggle(grid, "Arenas", "Random: a freshly generated arena every battle. Or pick custom arenas from the Map Editor (or a friend's map code) to take turns.", () => _arenaPool.Open(), out _);
         _gameMode = AddToggle(grid, "Game mode", "Elimination: last one standing wins the battle. King of the Hill: hold the glowing zone alone for 10 s in total. Capture the Flag (teams): bring the enemy flag to your base while yours is there. Headhunter: the leader wears a crown, and whoever takes them out wins the battle. In King of the Hill and Capture the Flag the fallen respawn until sudden death, which comes twice as late.", CycleGame, out _);
         _mode = AddToggle(grid, "Teams", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
         // Only in team modes.
@@ -120,7 +122,10 @@ public partial class LobbyUI : Control
         _pool = new CardPoolUI(_net) { Name = "CardPool", Visible = false };
         AddChild(_pool);
         _pool.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        VisibilityChanged += () => { if (!Visible) _pool.Visible = false; };
+        _arenaPool = new ArenaPoolUI(_net) { Name = "ArenaPool", Visible = false };
+        AddChild(_arenaPool);
+        _arenaPool.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        VisibilityChanged += () => { if (!Visible) _pool.Visible = _arenaPool.Visible = false; };
 
         _net.LobbyChanged += Refresh;
         _net.PortsChanged += Refresh;
@@ -258,6 +263,7 @@ public partial class LobbyUI : Control
             FriendlyFire = _net.Lobby.Settings.FriendlyFire,
             Mode = _net.Lobby.Settings.Mode,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
+            Maps = _net.Lobby.Settings.Maps,
         });
     }
 
@@ -504,6 +510,7 @@ public partial class LobbyUI : Control
         _friendly.Disabled = !host;
         _friendly.Visible = _friendlyLabel.Visible = lobby.TeamMode;
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
+        _arenas.Text = ArenaPoolUI.Summary(st);
 
         _addBot.Visible = host;
         _addBot.Disabled = !lobby.HasRoom();

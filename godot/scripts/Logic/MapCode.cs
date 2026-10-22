@@ -1,0 +1,313 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace Brawler.Logic;
+
+/// <summary>
+/// Map codes: a <see cref="MapDesign"/> packed into a short line of text to paste to friends. The design is
+/// bit-packed (every coordinate takes 10 bits or fewer, in the coarsest of 1, 2, 4 or 8 px steps that is still exact for
+/// its piece), ends in a checksum that catches a mangled paste, and is written in URL-safe base64. A typical
+/// generated arena comes to about 200 characters, a simple hand-made one to well under 100. Pure, so the tests cover it.
+/// </summary>
+public static class MapCode
+{
+    public const int Version = 1;
+    private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    public static string Encode(MapDesign d) => Text(Pack(d));
+
+    /// <summary>Reads a code (spaces and line breaks are ignored); null if it isn't a valid map code.</summary>
+    public static MapDesign Decode(string code) => Bytes(code) is { } b ? Unpack(b) : null;
+
+    /// <summary>The design as bytes (what a lobby sends to everyone); see <see cref="Unpack"/>.</summary>
+    public static byte[] Pack(MapDesign d)
+    {
+        var w = new BitWriter();
+        w.Bits(Version, 4);
+        w.Bits((uint)d.Seed, 32);
+        w.Bits((int)d.Style, 3);
+        var name = Encoding.UTF8.GetBytes(Trim(d.Name));
+        w.Bits(name.Length, 5);
+        foreach (byte b in name) w.Bits(b, 8);
+
+        w.Bits(Math.Min(d.Pits.Count, MapDesign.MaxPits), 4);
+        for (int i = 0; i < Math.Min(d.Pits.Count, MapDesign.MaxPits); i++)
+        {
+            var (x1, x2) = d.Pits[i];
+            w.Coords(x1, x2 - x1);
+        }
+        Count(w, d.Blocks.Count, MapDesign.MaxBlocks, 7);
+        foreach (var r in Take(d.Blocks, MapDesign.MaxBlocks)) w.Coords(r.X, r.Y, r.W, r.H);
+        Count(w, d.Hills.Count, MapDesign.MaxHills, 4);
+        foreach (var h in Take(d.Hills, MapDesign.MaxHills))
+        {
+            int n = Math.Min(h.Count, 15);
+            w.Bits(n, 4);
+            var v = new int[n * 2];
+            for (int i = 0; i < n; i++) (v[i * 2], v[i * 2 + 1]) = (h[i].x, h[i].h);
+            w.Coords(v);
+        }
+        Count(w, d.Spawns.Count, MapDesign.MaxSpawns, 4);
+        foreach (var s in Take(d.Spawns, MapDesign.MaxSpawns)) w.Coords(s.X, s.Y);
+        Count(w, d.Pads.Count, MapDesign.MaxPads, 4);
+        foreach (var p in Take(d.Pads, MapDesign.MaxPads)) w.Coords(p.X1, p.Y);
+
+        // Glass comes in rows of 8 px panes: each row goes in as one piece.
+        var props = new List<(PropKind kind, int x, int y, int run)>();
+        foreach (var p in d.Props)
+        {
+            if (p.Kind == PropKind.Glass && props.Count > 0 && props[^1] is { kind: PropKind.Glass } last
+                && last.y == p.Y && last.x + last.run * ArenaFeatures.GlassTile == p.X && last.run < 32)
+                props[^1] = last with { run = last.run + 1 };
+            else props.Add((p.Kind, p.X, p.Y, 1));
+        }
+        Count(w, props.Count, MapDesign.MaxProps, 6);
+        foreach (var (kind, x, y, run) in Take(props, MapDesign.MaxProps))
+        {
+            w.Bits((int)kind, 2);
+            w.Coords(x, y);
+            if (kind == PropKind.Glass) w.Bits(run - 1, 5);
+        }
+        Count(w, d.Hazards.Count, MapDesign.MaxHazards, 4);
+        foreach (var h in Take(d.Hazards, MapDesign.MaxHazards))
+        {
+            w.Bits((int)h.Kind, 1);
+            w.Coords(h.X1, h.X2 - h.X1, h.Y);
+        }
+        Count(w, d.Saws.Count, MapDesign.MaxSaws, 4);
+        foreach (var s in Take(d.Saws, MapDesign.MaxSaws))
+        {
+            w.Coords((int)MathF.Round(s.X1), (int)MathF.Round(s.Y1), (int)MathF.Round(s.X2), (int)MathF.Round(s.Y2));
+            w.Bits(Phase(s.Phase), 4);
+        }
+        Count(w, d.Movers.Count, MapDesign.MaxMovers, 4);
+        foreach (var m in Take(d.Movers, MapDesign.MaxMovers))
+        {
+            w.Coords(m.X1, m.X2 - m.X1, m.Y);
+            w.Bits(Phase(m.Phase), 4);
+        }
+        var bytes = w.Done(1);
+        bytes[^1] = Checksum(bytes, bytes.Length - 1);
+        return bytes;
+    }
+
+    /// <summary>A design from <see cref="Pack"/>'s bytes, or null if they are damaged or from a newer version.</summary>
+    public static MapDesign Unpack(byte[] bytes)
+    {
+        if (bytes == null || bytes.Length < 6 || bytes[^1] != Checksum(bytes, bytes.Length - 1)) return null;
+        try
+        {
+            var r = new BitReader(bytes, bytes.Length - 1);
+            if (r.Bits(4) != Version) return null;
+            var d = new MapDesign { Seed = (int)r.UBits(32) };
+            int style = r.Bits(3);
+            if (style >= Enum.GetValues<MapStyle>().Length) return null;
+            d.Style = (MapStyle)style;
+            var name = new byte[r.Bits(5)];
+            for (int i = 0; i < name.Length; i++) name[i] = (byte)r.Bits(8);
+            d.Name = Trim(Encoding.UTF8.GetString(name));
+
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var v = r.Coords(2);
+                d.Pits.Add((v[0], v[0] + v[1]));
+            }
+            for (int i = r.Bits(7); i > 0; i--)
+            {
+                var v = r.Coords(4);
+                d.Blocks.Add(new RectI(v[0], v[1], v[2], v[3]));
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                int n = r.Bits(4);
+                var v = r.Coords(n * 2);
+                var h = new List<(int x, int h)>();
+                for (int k = 0; k < n; k++) h.Add((v[k * 2], v[k * 2 + 1]));
+                d.Hills.Add(h);
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var v = r.Coords(2);
+                d.Spawns.Add(new SpawnPoint(v[0], v[1]));
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var v = r.Coords(2);
+                d.Pads.Add(new JumpPad(v[0], v[0] + MapGenerator.PadWidth, v[1]));
+            }
+            for (int i = r.Bits(6); i > 0; i--)
+            {
+                var kind = (PropKind)r.Bits(2);
+                var v = r.Coords(2);
+                switch (kind)
+                {
+                    case PropKind.Crate: d.Props.Add(new PropSpawn(kind, v[0], v[1], ArenaFeatures.CrateSize, ArenaFeatures.CrateSize)); break;
+                    case PropKind.Barrel: d.Props.Add(new PropSpawn(kind, v[0], v[1], ArenaFeatures.BarrelW, ArenaFeatures.BarrelH)); break;
+                    case PropKind.Glass:
+                        int run = r.Bits(5) + 1;
+                        for (int k = 0; k < run; k++)
+                            d.Props.Add(new PropSpawn(kind, v[0] + k * ArenaFeatures.GlassTile, v[1], ArenaFeatures.GlassTile, ArenaFeatures.GlassTile));
+                        break;
+                    default: return null;
+                }
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var kind = (HazardKind)r.Bits(1);
+                var v = r.Coords(3);
+                d.Hazards.Add(new Hazard(kind, v[0], v[0] + v[1], v[2]));
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var v = r.Coords(4);
+                float phase = r.Bits(4) / 16f;
+                d.Saws.Add(new SawTrack(v[0], v[1], v[2], v[3], ArenaFeatures.SawRadius, MapDesign.SawPeriod(v[0], v[1], v[2], v[3]), phase));
+            }
+            for (int i = r.Bits(4); i > 0; i--)
+            {
+                var v = r.Coords(3);
+                float phase = r.Bits(4) / 16f;
+                d.Movers.Add(new Mover(v[0], v[0] + v[1], v[2], ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(v[0], v[0] + v[1]), phase));
+            }
+            return d;
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A name as codes carry it: trimmed, at most <see cref="MapDesign.MaxName"/> characters and 31 bytes.</summary>
+    public static string Trim(string name)
+    {
+        name = (name ?? "").Trim();
+        if (name.Length > MapDesign.MaxName) name = name[..MapDesign.MaxName];
+        while (Encoding.UTF8.GetByteCount(name) > 31) name = name[..^1];
+        return name;
+    }
+
+    private static int Phase(float phase) => (int)MathF.Round((phase - MathF.Floor(phase)) * 16) & 15;
+
+    private static void Count(BitWriter w, int n, int max, int bits) => w.Bits(Math.Min(n, max), bits);
+
+    private static IEnumerable<T> Take<T>(List<T> list, int max)
+    {
+        for (int i = 0; i < Math.Min(list.Count, max); i++) yield return list[i];
+    }
+
+    private static byte Checksum(byte[] data, int n)
+    {
+        int sum = 0x6D;
+        for (int i = 0; i < n; i++) sum = (sum * 31 + data[i]) & 0xFF;
+        return (byte)sum;
+    }
+
+    private static string Text(byte[] bytes)
+    {
+        var sb = new StringBuilder();
+        int acc = 0, bits = 0;
+        foreach (byte b in bytes)
+        {
+            acc = acc << 8 | b;
+            bits += 8;
+            while (bits >= 6)
+            {
+                bits -= 6;
+                sb.Append(Alphabet[acc >> bits & 63]);
+            }
+        }
+        if (bits > 0) sb.Append(Alphabet[acc << (6 - bits) & 63]);
+        return sb.ToString();
+    }
+
+    private static byte[] Bytes(string text)
+    {
+        var list = new List<byte>();
+        int acc = 0, bits = 0;
+        foreach (char c in text ?? "")
+        {
+            if (char.IsWhiteSpace(c)) continue;
+            // Standard base64 pasted from elsewhere reads the same.
+            int v = c switch { '+' => 62, '/' => 63, '=' => -2, _ => Alphabet.IndexOf(c) };
+            if (v == -2) break;
+            if (v < 0) return null;
+            acc = (acc << 6 | v) & 0xFFFFFF;
+            bits += 6;
+            if (bits >= 8)
+            {
+                bits -= 8;
+                list.Add((byte)(acc >> bits));
+            }
+        }
+        return list.ToArray();
+    }
+
+    private sealed class BitWriter
+    {
+        private readonly List<byte> _bytes = new();
+        private int _bit;
+
+        public void Bits(int v, int n) => Bits((uint)v, n);
+
+        public void Bits(uint v, int n)
+        {
+            for (int i = n - 1; i >= 0; i--)
+            {
+                if (_bit == 0) _bytes.Add(0);
+                if ((v >> i & 1) != 0) _bytes[^1] |= (byte)(0x80 >> _bit);
+                _bit = (_bit + 1) & 7;
+            }
+        }
+
+        /// <summary>
+        /// Non-negative coordinates below 1024 (clamped), in the coarsest step of 1, 2, 4 or 8 px they all fall on:
+        /// two bits for the step, then each value in 10 bits less one per halving.
+        /// </summary>
+        public void Coords(params int[] v)
+        {
+            int shift = 3;
+            foreach (int x in v)
+                while (shift > 0 && (Math.Clamp(x, 0, 1023) & ((1 << shift) - 1)) != 0) shift--;
+            Bits(shift, 2);
+            foreach (int x in v) Bits(Math.Clamp(x, 0, 1023) >> shift, 10 - shift);
+        }
+
+        /// <summary>The bytes, with <paramref name="extra"/> zero bytes on the end.</summary>
+        public byte[] Done(int extra)
+        {
+            for (int i = 0; i < extra; i++) _bytes.Add(0);
+            return _bytes.ToArray();
+        }
+    }
+
+    private sealed class BitReader
+    {
+        private readonly byte[] _data;
+        private readonly int _length;
+        private int _pos;
+
+        public BitReader(byte[] data, int length) => (_data, _length) = (data, length);
+
+        public uint UBits(int n)
+        {
+            uint v = 0;
+            for (int i = 0; i < n; i++, _pos++)
+            {
+                if (_pos >> 3 >= _length) throw new IndexOutOfRangeException();
+                v = v << 1 | (uint)(_data[_pos >> 3] >> (7 - (_pos & 7)) & 1);
+            }
+            return v;
+        }
+
+        public int Bits(int n) => (int)UBits(n);
+
+        public int[] Coords(int n)
+        {
+            int shift = Bits(2);
+            var v = new int[n];
+            for (int i = 0; i < n; i++) v[i] = Bits(10 - shift) << shift;
+            return v;
+        }
+    }
+}

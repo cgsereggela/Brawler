@@ -65,11 +65,15 @@ public sealed class MatchSettings
     public bool FriendlyFire;        // team modes: your shots and blasts hurt teammates too
     public GameMode Mode;            // what wins a battle (see GameModes)
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
+    public List<byte[]> Maps = new();          // custom arenas (MapCode.Pack) taking turns each battle; empty = generated arenas
+
+    public const int MaxMaps = 12;
 
     public MatchSettings Copy() => new()
     {
         BattlesPerRound = BattlesPerRound, RoundsToWin = RoundsToWin, LoserChoices = LoserChoices, WinnerChoices = WinnerChoices,
         LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, Mode = Mode, DisabledCards = new(DisabledCards),
+        Maps = new(Maps),
     };
 }
 
@@ -123,6 +127,8 @@ public sealed class LobbyState
         var w = new Wire();
         w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire).U8((int)Settings.Mode);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
+        w.U8(System.Math.Min(Settings.Maps.Count, MatchSettings.MaxMaps));
+        foreach (var m in Settings.Maps.Take(MatchSettings.MaxMaps)) w.Blob(m);
         w.U8(Players.Count);
         foreach (var p in Players)
             {
@@ -148,6 +154,7 @@ public sealed class LobbyState
         s.Settings.FriendlyFire = r.Bool();
         s.Settings.Mode = GameModes.From(r.U8());
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
+        for (int m = r.U8(); m > 0; m--) s.Settings.Maps.Add(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)
             s.Players.Add(new PlayerInfo { Slot = r.U8(), PeerId = r.I64(), Name = r.Str(), ColorIdx = r.U8(), IsBot = r.Bool(), Team = r.U8(), Guest = r.U8(), Look = Appearance.FromBytes(r.Bytes()) });

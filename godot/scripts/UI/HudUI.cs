@@ -83,7 +83,7 @@ public partial class HudUI : Control
         h.Add(_game.Settings.BattlesPerRound);
         h.Add(_game.Settings.TeamSize);
         h.Add(_game.BattleNumber);
-        if (_game.BattleNumber > 0) h.Add(_game.MapNode.Theme.Name);
+        if (_game.BattleNumber > 0) h.Add(_game.ArenaName);
         h.Add(_game.Phase == Phase.CardPick);
         foreach (var p in _game.Slots)
         {
@@ -207,7 +207,7 @@ public partial class HudUI : Control
         if (_game.BattleNumber > 0)
         {
             ci.DrawString(bold, counter.Position + new Vector2(0, 16), label, HorizontalAlignment.Center, lw, 12, Palette.TextDim);
-            string theme = _game.MapNode.Theme.Name.ToUpperInvariant();
+            string theme = _game.ArenaName.ToUpperInvariant();
             ci.DrawString(Fonts.Regular, new Vector2(vs.X - 14 - 200, 46), theme, HorizontalAlignment.Right, 200, 10, Palette.TextDim with { A = 0.7f });
         }
         foreach (var (r, name, _, combo) in loadout)

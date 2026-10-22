@@ -1,7 +1,7 @@
 # Brawler
 
 A ROUNDS-style 2–8 player platform shooter: lose a round, pick a card, come back stronger.
-Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch co-op, procedurally generated themed arenas, and effects that get flashier the more cards you hold.
+Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch co-op, procedurally generated themed arenas plus a map editor whose arenas share as a short code, and effects that get flashier the more cards you hold.
 
 <p align="center"><img src="docs/media/chaos.gif" alt="Four players trading split, bouncing and exploding shots late in a match in Candy Clouds" width="720"></p>
 
@@ -19,6 +19,9 @@ Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch
 | Headhunter: take out the crowned leader to win on the spot. | Up to 8 players, humans and bots in any mix, over LAN or the internet. |
 | <img src="docs/media/deep-reef.png" alt="A late-match fight in Deep Reef with an explosion and a block"> | <img src="docs/media/match-over.png" alt="The match-over screen with awards and standings"> |
 | Late in a match, most shots split, bounce or explode. | The first to win enough rounds takes the match, and awards go round. |
+
+<p align="center"><img src="docs/media/map-editor.png" alt="The map editor: a generated Sunset Peaks arena with its spawns, pads, saws and crates, ready to edit" width="720"><br>
+<em>The map editor: start from a generated arena or an empty one, then share it as a map code (see <a href="#map-editor-and-map-codes">Map editor and map codes</a>).</em></p>
 
 ## Download and play
 
@@ -183,6 +186,25 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
 - **Movement:** you run at 144 px/s and a jump rises about 82 px. Gravity is gentle and you can still jump for 0.2 s after walking off a ledge, so a missed step can be saved mid-air.
 - The seed also picks one of ten **themes** (Neon Night, Sunset Peaks, Deep Reef, Toxic Grove, Magma Core, Frost Bite, Candy Clouds, Dungeon Depths, Elder Forest, Mainframe). Each theme sets the sky, the silhouettes (city towers, mountains, hills, thorns, vaulted arches, pine forest, circuit boards), drifting motes (bokeh, embers, bubbles, snow, fireflies, falling leaves, data bits), platform colors and decorations (string lights, grass, seaweed, mushrooms, lava drips, icicles, sprinkles, candles and chains, ferns and vines, status LEDs). Themes are cosmetic and identical on every peer.
 
+### Map editor and map codes
+**Map Editor** on the main menu builds your own arenas:
+- **Start from** a generated arena in any layout style and theme (**Generate**, again for another), or from an empty one.
+- **Tools** (hotkeys in the tooltips):
+  - Shapes: blocks, floor gaps, hills with walkable ramps.
+  - Placed pieces: spawns, jump pads, crates, barrels, glass rows, magma and poison pools, sawblades, moving platforms.
+  - Snapping: everything snaps to the 8 px grid. Spawns, pads, crates and pools drop onto the ground below them.
+- **Editing:**
+  - Select drags pieces around; moving a block carries whatever stands on it. Drag a block's edge to resize it, and use the mouse wheel over a selected hill to change its height.
+  - Right-click deletes, Ctrl+Z / Ctrl+Y undo and redo, Ctrl+D duplicates.
+  - The status line names anything that would play badly, such as a spawn standing on nothing or one spawn that can't reach another.
+- **Missing spawns:** an arena needs no spawns. Any missing ones are picked on ground everyone can reach, as far apart as fit.
+- **Saving and sharing:**
+  - **Save** keeps the arena in `user://maps` as a `.map` text file holding its code.
+  - Every arena has a **map code**: one line of text (`godot/scripts/Logic/MapCode.cs`), about 200 characters for a busy generated arena and a few dozen for a simple one. **Copy** and **Paste** share it.
+  - **Playtest** plays the arena against a bot at once.
+- **In a lobby:** the host clicks **Arenas** to tick saved arenas or paste a friend's code. Ticked arenas take turns, one per battle. With none ticked, every battle gets a generated arena as before.
+- **How it plays:** a design (`MapDesign`) builds the same `MapLayout` the generator makes, so collision, drawing, bots and every game mode work on it unchanged.
+
 ## Effects that grow with your cards
 Every card you hold makes your shots, hits and kills flashier. Your **power** is your card count, and it maps to tiers 0–5:
 - *More cards:* longer, brighter bullet trails; more sparks and debris; bigger shockwave rings; light rays and confetti on kills; screen flashes and a camera punch at high tiers; louder kill words ("KO!" up to "VAPORIZED!!"); longer hit-stop.
@@ -219,9 +241,9 @@ Everything is computed from the card list every peer already has, so nothing ext
 godot/
   scenes/Main.tscn          the only scene; everything else is built in code
   scripts/Main.cs           wiring, screens, automated test modes
-  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, ArenaFeatures, Sweep, Appearance, GunRig,
+  scripts/Logic/            engine-independent rules (unit-tested): Rng, Stats, Cards, MapGen, MapDesign + MapCode (custom arenas), ArenaFeatures, Sweep, Appearance, GunRig,
                             Teams, GameModes (hill, flags, head), StatsModel/StatsReport, Synth (sound and music)
-  scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look
+  scripts/Core/Shared.cs    lobby/settings/input types + binary wire format; Profile.cs saves the local look; MapLibrary.cs saved arenas
   scripts/Net/              NetworkManager (ENet host/join, lobby sync, version check), PortOpener (UPnP)
   scripts/Game/             GameManager (match flow + netcode, hit/kill effects; GameManager.Modes: respawns and objectives), ObjectiveNode (draws them), Avatar, AvatarArt (character + gun vector art),
                             BulletSystem, BotBrain, CardEffects, MapNode (platforms, pads, decorations), Arena (crates, glass,
@@ -229,7 +251,8 @@ godot/
                             ArenaTheme, FxStyle (card-driven effect power and flavors)
   scripts/Fx/               FxLayer (particles, rings, rays, flashes, popups, drawn in batches by TriBatch and kept to a
                             frame-time budget by Logic/FxBudget), Visuals (shapes, glow texture, fonts), IconMaker, synthesized SFX
-  scripts/UI/               menu, lobby, character editor, HUD, crosshair (ammo + reload), card pick, match over
+  scripts/UI/               menu, lobby (ArenaPoolUI picks its arenas), character editor, map editor, HUD, crosshair (ammo + reload),
+                            card pick, match over
 tests/                      console test runner for scripts/Logic (dotnet run)
 tools/CardStats/            card balance report from the stats log (dotnet run)
 tools/package.ps1           export + zip release builds (see Making a release)
@@ -237,7 +260,7 @@ docs/                       player guides (INSTALL, PLAYING_ONLINE), release not
 ```
 
 ### Netcode in one paragraph
-The host is authoritative. Clients send one `InputFrame` per physics tick, and the host simulates every avatar, resolves hits and broadcasts a 60 Hz snapshot. Each client predicts its own movement and snaps back only if it drifts more than 24 px. Bullets are sent as **spawn events**: every peer simulates them locally, but only the host decides hits, splits and explosions. Each arena is rebuilt from a **seed**, so a map costs 4 bytes on the wire.
+The host is authoritative. Clients send one `InputFrame` per physics tick, and the host simulates every avatar, resolves hits and broadcasts a 60 Hz snapshot. Each client predicts its own movement and snaps back only if it drifts more than 24 px. Bullets are sent as **spawn events**: every peer simulates them locally, but only the host decides hits, splits and explosions. Each arena is rebuilt from a **seed**, so a map costs 4 bytes on the wire; custom arenas travel once, packed, in the lobby settings, and the seed says whose turn it is.
 
 ## Adding a card
 **Without the source code:** drop a JSON card file into the `cards` folder next to your settings (`%APPDATA%\Godot\app_userdata\Brawler\cards` on Windows). Custom cards use ids 1000 and up, and in multiplayer everyone plays with the host's custom cards. The format, every stat name and examples are in [docs/CUSTOM_CARDS.md](docs/CUSTOM_CARDS.md); the release zips include it in a `custom-cards` folder.
@@ -299,7 +322,7 @@ How to read it:
 ```bash
 cd tests && dotnet run
 ```
-Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines), the emote rate limit, card combos (ids, unlock rules, stat stacking), the effects budget (culls under load, recovers, ignores a machine that is slow everywhere), the lava curve (waits, only climbs, how long it takes to reach the floor and the top), the leg animation's ground, ramp and wall probes, and the team rules (dealing, joining the emptier team, swaps, when a lobby can start, who wins), and the game modes (hill holding and contesting, where the hill goes on 60 maps, flag pickups, drops, returns and captures, picking the head, when respawns stop).
+Covers RNG determinism, stat stacking order, card registry (12+ cards per category, every card keeps core stats sane, clamps on stacked cards), map generation (determinism, spawn reachability, fallback rate across 9,000 seeds, every layout style appearing, jump pads placed on surfaces away from spawns), arena features (determinism, clear of solids, spawns, pads and each other across 2,000 seeds), swept collision, card stats aggregation, join-address parsing, jump rules (ledge jump, air jumps, wall and coyote priority), key bindings (conflicts, save format, bad-data fallback), character looks (wire and profile round-trips, option wrapping), theme rules (no forbidden hazard on any seed), vertical clearance between stacked platforms (6,000 maps), floor terrain (slope limits, reachability, swept collision against ramps), the card pool (disabled cards never offered, wire round trip), custom cards (every parse error, id range, clamping, host sync format) and the crosshair ammo ring layout (one visible pip per bullet up to 24, no overlaps, gauge for bigger magazines), the emote rate limit, card combos (ids, unlock rules, stat stacking), the effects budget (culls under load, recovers, ignores a machine that is slow everywhere), the lava curve (waits, only climbs, how long it takes to reach the floor and the top), the leg animation's ground, ramp and wall probes, and the team rules (dealing, joining the emptier team, swaps, when a lobby can start, who wins), and the game modes (hill holding and contesting, where the hill goes on 60 maps, flag pickups, drops, returns and captures, picking the head, when respawns stop), and custom arenas (120 generated arenas survive the trip through a map code unchanged, codes stay short, damaged or cut-off codes are rejected, hills over gaps and floating spawns are caught, missing spawns are filled the same way every time).
 
 End-to-end autopilot runs (the local player is driven by a bot; the process exits with code 0 when a full match completes):
 ```bash
@@ -319,6 +342,8 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 # add --couch=N to --autotest, --autohost or --autojoin: N local co-op guests (1-3) join from that machine on autopilot; COUCHCHECK confirms they played and picked cards
                                                                        # (--nobots on the host: no bot, so the host has to wait for the rejoin)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --padcheck        # made-up controller presses: menu focus, + Local Player, guest vs keyboard input, card picks on each pad (PADCHECK)
+"$GODOT" --path godot -- --editorcheck                                 # made-up mouse presses in the map editor: draw, move, resize, undo, delete, save, share, playtest, pick it in a lobby (EDITORCHECK)
+# add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 "$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)

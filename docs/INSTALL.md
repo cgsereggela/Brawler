@@ -87,6 +87,23 @@ and players who lost get more cards to choose from.
 The host decides which cards can come up: click **Cards** in the lobby and untick the ones you don't want
 (at least 7 must stay in). Your choice is remembered next time you host. Friends can open it to see the pool.
 
+### Your own arenas
+Click **Map Editor** on the main menu.
+1. **Start** from an arena: pick a layout style and click **Generate** (again for another), or click **Empty**. Use the
+   arrows by **Theme** to choose how it looks.
+2. **Build** with the tools on the left: blocks, floor gaps, hills, spawns, jump pads, crates, barrels, glass, magma
+   and poison pools, sawblades and moving platforms.
+   - **Select** moves and resizes pieces.
+   - Right-click deletes a piece. **Ctrl+Z** undoes.
+   - The line under the arena warns about anything that would play badly, such as a spawn standing on nothing.
+3. **Play** it right away with **Playtest**.
+4. **Keep** it: name it and click **Save**.
+5. **Share** it: **Copy** puts its map code on your clipboard. A friend pastes it with **Paste** in their editor.
+
+To play your arenas with friends, click **Arenas** in the lobby when you host. Tick saved arenas, or paste a friend's
+code; ticked arenas take turns, one per battle. Leave everything unticked for a new random arena every battle.
+Saved arenas are `.map` files in the `maps` folder inside the settings folder listed under **Updating** below.
+
 ### Your own cards
 You can make your own cards with a small text file, no programming needed. The `custom-cards` folder in the zip
 has a guide (`CUSTOM_CARDS.md`) and examples. Put card files in the `cards` folder inside the settings folder
