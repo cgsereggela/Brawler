@@ -21,7 +21,7 @@ public partial class LobbyUI : Control
     private CardPoolUI _pool;
     private ArenaPoolUI _arenaPool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava, _rare, _deals, _killCam, _gameMode, _mode, _friendly, _arenas;
+    private Button _lava, _rare, _deals, _killCam, _draft, _gameMode, _mode, _friendly, _arenas;
     private Label _problem, _friendlyLabel;
 
     public LobbyUI(NetworkManager net) => _net = net;
@@ -89,6 +89,7 @@ public partial class LobbyUI : Control
         _lava = AddToggle(grid, "Lava rises after", "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.", CycleLava, out _);
         _rare = AddToggle(grid, "Rare cards", "How often a pick offers a rare card: a strong, build-defining card with a gold frame. With cursed deals on, a deal comes up this often too. Off: no rares at all.", CycleRare, out _);
         _killCam = AddToggle(grid, "Kill cam", "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.", ToggleKillCam, out _);
+        _draft = AddToggle(grid, "Draft", "Before the first battle, everyone takes turns picking cards from one shared pool (two each, or one with five or more players), so the match starts with builds.", ToggleDraft, out _);
         right.AddChild(grid);
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
@@ -262,6 +263,7 @@ public partial class LobbyUI : Control
             TeamSize = _net.Lobby.Settings.TeamSize,
             FriendlyFire = _net.Lobby.Settings.FriendlyFire,
             Mode = _net.Lobby.Settings.Mode,
+            Draft = _net.Lobby.Settings.Draft,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
             Maps = _net.Lobby.Settings.Maps,
         });
@@ -297,6 +299,13 @@ public partial class LobbyUI : Control
     {
         if (!_net.IsHost) return;
         _net.Lobby.Settings.CursedDeals = !_net.Lobby.Settings.CursedDeals;
+        PushSettings();
+    }
+
+    private void ToggleDraft()
+    {
+        if (!_net.IsHost) return;
+        _net.Lobby.Settings.Draft = !_net.Lobby.Settings.Draft;
         PushSettings();
     }
 
@@ -508,6 +517,8 @@ public partial class LobbyUI : Control
         _deals.Disabled = !host;
         _killCam.Text = st.KillCam ? "On" : "Off";
         _killCam.Disabled = !host;
+        _draft.Text = st.Draft ? "On" : "Off";
+        _draft.Disabled = !host;
         _gameMode.Text = GameModes.Name(st.Mode);
         _gameMode.Disabled = !host;
         _mode.Text = Teams.ModeName(st.TeamSize);

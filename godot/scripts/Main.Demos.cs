@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Brawler.Core;
+using Brawler.Game;
 using Brawler.Logic;
 using Brawler.UI;
 using Godot;
@@ -14,6 +15,7 @@ public partial class Main
     private async void Demo(string name)
     {
         _autoMode = "demo";
+        GetViewport().GuiDisableInput = true; // the real mouse over the window mustn't hover things in the recording
         _game.Stats.Enabled = false;
         MapLibrary.Dir = "user://demo/maps";
         MapLibrary.SettingsPath = "user://demo/settings.cfg";
@@ -26,6 +28,7 @@ public partial class Main
         {
             case "thumbs": await DemoThumbs(); break;
             case "botskill": await DemoBotSkill(); break;
+            case "draft": await DemoDraft(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -121,6 +124,29 @@ public partial class Main
         _game.AutopilotLocal = true;
         _game.HostStartMatch();
         await DemoWait(40.0);
+        DemoMark("end");
+    }
+
+    // Draft: turn Draft on in the lobby, then four players take turns picking from one shared pool, then the first battle.
+    private async Task DemoDraft()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        _pick.ShowAutopilotPick = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        await DemoWait(1.0);
+        DemoMark("lobby");
+        // The setting's button sits right after its label in the settings grid.
+        if (FindChild<Label>(_lobby, l => l.Text == "Draft") is { } label) (label.GetParent().GetChild(label.GetIndex() + 1) as Button)?.EmitSignal(BaseButton.SignalName.Pressed);
+        if (!_net.Lobby.Settings.Draft) { Finish(1, "demo draft: the Draft button didn't turn it on"); return; }
+        await DemoWait(1.8);
+        DemoMark("draft");
+        _game.HostStartMatch();
+        while (_game.Phase is Phase.CardPick or Phase.Idle) await DemoWait(0.1);
+        DemoMark("battle");
+        await DemoWait(14.0);
         DemoMark("end");
     }
 }

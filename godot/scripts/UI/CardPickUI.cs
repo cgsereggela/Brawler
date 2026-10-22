@@ -17,7 +17,8 @@ public partial class CardPickUI : Control
 {
     private readonly GameManager _game;
     private TitleText _title;
-    private HBoxContainer _cards;
+    private VBoxContainer _column, _rows;
+    private HBoxContainer _cards; // the row cards are being added to
     private Label _status;
     private VBoxContainer _combo;
     private readonly List<CardView> _views = new();
@@ -38,16 +39,15 @@ public partial class CardPickUI : Control
         AddChild(dim);
         dim.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var v = UiKit.VBox(16);
+        var v = _column = UiKit.VBox(16);
         v.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         v.Alignment = BoxContainer.AlignmentMode.Center;
         AddChild(v);
 
         _title = new TitleText("CHOOSE A CARD", 34, 2f, Palette.Accent, Palette.Hot) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         v.AddChild(_title);
-        _cards = UiKit.HBox(12);
-        _cards.Alignment = BoxContainer.AlignmentMode.Center;
-        v.AddChild(_cards);
+        _rows = UiKit.VBox(10);
+        v.AddChild(_rows);
         _status = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         v.AddChild(_status);
         // Always in the layout with room for the panel, so the cards don't jump when a combo shows up.
@@ -65,6 +65,12 @@ public partial class CardPickUI : Control
         _game.CardWasPicked += (slot, cardId) =>
         {
             UpdateStatus();
+            // A draft turn: everyone sees which card left the pool.
+            if (_game.Drafting)
+            {
+                foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
+                return;
+            }
             if (!ShowAutopilotPick || slot != _picker?.Slot) return;
             foreach (var v in _views) (v.Locked, v.Chosen) = (true, v.Card.Id == cardId);
         };
@@ -83,26 +89,42 @@ public partial class CardPickUI : Control
 
     private void Build()
     {
-        UiKit.ClearChildren(_cards);
+        UiKit.ClearChildren(_rows);
+        _cards = null;
         _views.Clear();
         UiKit.ClearChildren(_combo);
         var me = _picker = _game.LocalHumans().FirstOrDefault(p => _game.PickOptions.ContainsKey(p.Slot) && !_game.Picked.Contains(p.Slot) && !_localDone.Contains(p.Slot));
         bool canPick = me != null;
+        bool draft = _game.Drafting;
+        // Draft: the one drafting this turn, whose cards everyone else watches.
+        int drafter = draft ? _game.PickOptions.Keys.FirstOrDefault(-1) : -1;
 
         // With couch guests, say whose turn it is.
-        _title.SetText(!canPick ? "OTHERS ARE CHOOSING" : _game.LocalGuests.Count > 0 ? $"{me.Info.Name.ToUpperInvariant()}, CHOOSE A CARD" : "CHOOSE A CARD");
-        if (canPick)
+        string verb = draft ? "DRAFT" : "CHOOSE";
+        _title.SetText(!canPick ? draft && drafter >= 0 ? $"{_game.NameOf(drafter).ToUpperInvariant()} IS DRAFTING" : "OTHERS ARE CHOOSING"
+            : _game.LocalGuests.Count > 0 || draft && _game.LocalHumans().Count() > 1 ? $"{me.Info.Name.ToUpperInvariant()}, {verb} A CARD" : $"{verb} A CARD");
+        if (canPick || drafter >= 0)
         {
-            var opts = _game.PickOptions[me.Slot];
-            bool hasDeal = _game.PickDeals.TryGetValue(me.Slot, out var deal) && CardRegistry.Get(deal.Rare) != null && CardRegistry.Get(deal.Curse) != null;
+            var opts = _game.PickOptions[canPick ? me.Slot : drafter];
+            (int Rare, int Curse) deal = default;
+            bool hasDeal = canPick && _game.PickDeals.TryGetValue(me.Slot, out deal) && CardRegistry.Get(deal.Rare) != null && CardRegistry.Get(deal.Curse) != null;
             int n = opts.Count + (hasDeal ? 1 : 0);
-            float width = Mathf.Min(132, (760 - 12 * (n - 1) - (hasDeal ? DealGap : 0)) / (float)n);
+            // A draft pool too big for one line wraps onto two.
+            int perRow = n > 6 ? (n + 1) / 2 : n;
+            // Two rows only just fit under the player chips: close up the gaps.
+            _column.AddThemeConstantOverride("separation", perRow < n ? 6 : 16);
+            _combo.CustomMinimumSize = new Vector2(0, perRow < n ? 30 : 52);
+            float width = Mathf.Min(132, (760 - 12 * (perRow - 1) - (hasDeal ? DealGap : 0)) / (float)perRow);
+            var who = canPick ? me : _game.LocalHumans().FirstOrDefault() ?? _game.Slots[drafter];
             for (int i = 0; i < opts.Count; i++)
-                AddView(CardRegistry.Get(opts[i]), i * 0.07f, width, null);
+            {
+                if (i % perRow == 0) NewRow();
+                AddView(CardRegistry.Get(opts[i]), i * 0.07f, width, null, who, locked: !canPick);
+            }
             if (hasDeal)
             {
                 _cards.AddChild(new Control { CustomMinimumSize = new Vector2(DealGap - 12, 0), MouseFilter = MouseFilterEnum.Ignore });
-                AddView(CardRegistry.Get(deal.Rare), opts.Count * 0.07f + 0.1f, width, CardRegistry.Get(deal.Curse));
+                AddView(CardRegistry.Get(deal.Rare), opts.Count * 0.07f + 0.1f, width, CardRegistry.Get(deal.Curse), me, locked: false);
             }
         }
         UpdateStatus();
@@ -110,15 +132,24 @@ public partial class CardPickUI : Control
         if (canPick && Pads.LastUsed && _views.Count > 0 && !_views[0].Locked) _views[0].GrabFocus();
     }
 
+    private void NewRow()
+    {
+        _cards = UiKit.HBox(12);
+        _cards.Alignment = BoxContainer.AlignmentMode.Center;
+        _rows.AddChild(_cards);
+    }
+
     /// <summary>Extra room before the cursed deal, so it reads as a separate choice.</summary>
     private const float DealGap = 28;
 
     /// <summary>One card to choose; with <paramref name="curse"/> it is the cursed deal and picking it takes both.</summary>
-    private void AddView(CardDef card, float delay, float width, CardDef curse)
+    /// <param name="who">Whose cards count for "owned" and combos (the picker, or for a watched draft turn, you).</param>
+    /// <param name="locked">Only to look at: someone else's draft turn.</param>
+    private void AddView(CardDef card, float delay, float width, CardDef curse, MatchPlayer who, bool locked)
     {
         var me = _picker;
-        int owned = me.Cards.Count(id => id == card.Id);
-        var view = new CardView(card, owned, delay, width, Combos.Unlocks(me.Cards, card.Id), curse) { Locked = _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
+        int owned = who.Cards.Count(id => id == card.Id);
+        var view = new CardView(card, owned, delay, width, Combos.Unlocks(who.Cards, card.Id), curse) { Locked = locked || _game.AutopilotLocal && !ShowAutopilotPick }; // the bot picks for us
         int id = card.Id;
         view.Picked += () =>
         {
@@ -155,6 +186,7 @@ public partial class CardPickUI : Control
             parts.Add(_game.Picked.Contains(slot) ? $"{n}  ✓{combo}" : $"{n}  …");
         }
         _status.Text = string.Join("      ", parts);
+        if (_game.Drafting) _status.Text = $"Draft: {_views.Count} cards left in the shared pool      " + _status.Text;
     }
 }
 
@@ -207,7 +239,7 @@ public partial class CardView : Control
         var text = new VBoxContainer { Position = new Vector2(7, 82), Size = new Vector2(W - 14, H - 88), MouseFilter = MouseFilterEnum.Ignore };
         text.AddThemeConstantOverride("separation", 3);
         AddChild(text);
-        var name = UiKit.Label(card.Name.ToUpperInvariant(), W < 120 ? 15 : 17, Colors.White, HorizontalAlignment.Center, Fonts.Heavy);
+        var name = UiKit.Label(card.Name.ToUpperInvariant(), W < 120 || card.Name.Split(' ').Max(w => w.Length) > 10 ? 15 : 17, Colors.White, HorizontalAlignment.Center, Fonts.Heavy);
         name.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         name.CustomMinimumSize = new Vector2(W - 14, 0);
         name.MouseFilter = MouseFilterEnum.Ignore;

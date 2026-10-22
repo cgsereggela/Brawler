@@ -26,6 +26,7 @@ public partial class GameManager
             Net.Lobby.DealTeams();
         }
         if (Net.TestFriendlyFire) Net.Lobby.Settings.FriendlyFire = true;
+        if (Net.TestDraft) Net.Lobby.Settings.Draft = true;
         if (Net.TestRounds > 0) Net.Lobby.Settings.RoundsToWin = Net.TestRounds; // --rounds=N: a shorter test match
         if (Net.TestArena != null) Net.Lobby.Settings.Maps = new() { Net.TestArena }; // --arena=CODE
         if (Net.TestMode is { } mode)
@@ -48,7 +49,8 @@ public partial class GameManager
         if (RareOverride >= 0) Net.Lobby.Settings.RareChance = RareOverride;
         Rpc(MethodName.BeginMatch, Net.Lobby.Serialize());
         _arenaTurn = 0;
-        HostStartBattle();
+        if (Settings.Draft) HostBeginDraft();
+        else HostStartBattle();
     }
 
     private void HostStartBattle()
@@ -180,7 +182,8 @@ public partial class GameManager
         }
         else if (!PickOptions.TryGetValue(slot, out var opts) || !opts.Contains(cardId)) return;
         _hostPicked.Add(slot);
-        Stats.Picked(slot, cardId, timedOut, curse);
+        if (_draftPool != null) _draftPool.Remove(cardId); // drafted picks stay out of the card stats: nobody was offered a normal hand
+        else Stats.Picked(slot, cardId, timedOut, curse);
         Rpc(MethodName.CardPicked, slot, cardId, curse);
         HostCheckPicksDone();
     }
@@ -190,8 +193,56 @@ public partial class GameManager
     private void HostCheckPicksDone()
     {
         bool done = PickOptions.Keys.All(s => _hostPicked.Contains(s) || Slots[s] == null || Slots[s].Left);
+        if (done && _draftPool != null && _hostNext == null)
+        {
+            HostAfter(_lastPickCombo ? 1.8f : 0.8f, HostDraftTurn);
+            return;
+        }
         // A little longer when the last pick found a combo, so its popup can be read.
         if (done && _hostNext == null) HostAfter(_lastPickCombo ? 1.8f : 0.9f, HostStartBattle);
+    }
+
+    // ---------- draft mode ----------
+
+    private List<int> _draftPool;     // host, while drafting: the cards still in the shared pool
+    private Queue<int> _draftOrder;   // host, while drafting: whose turn comes next
+
+    /// <summary>True while the players draft their opening cards (a card pick before the first battle).</summary>
+    public bool Drafting => Phase == Phase.CardPick && BattleNumber == 0;
+
+    /// <summary>Host: rolls the shared pool and starts the first turn. The turn order is shuffled, then snakes (see Draft).</summary>
+    private void HostBeginDraft()
+    {
+        var slots = Active().Where(p => !p.Left).Select(p => p.Slot).ToList();
+        for (int i = slots.Count - 1; i > 0; i--)
+        {
+            int j = HostRng.Range(0, i);
+            (slots[i], slots[j]) = (slots[j], slots[i]);
+        }
+        _draftPool = CardRegistry.RollOptions(HostRng, Draft.PoolSize(slots.Count), Settings.DisabledCards, Settings.RareChance / 100f);
+        _draftOrder = new Queue<int>(Draft.Order(slots, Draft.PicksEach(slots.Count)));
+        Log.Info($"draft: {_draftPool.Count} cards, {_draftOrder.Count} picks");
+        HostDraftTurn();
+    }
+
+    /// <summary>Host: offers the whole remaining pool to the next drafter, or starts the first battle once everyone has drafted.</summary>
+    private void HostDraftTurn()
+    {
+        while (_draftOrder.Count > 0 && Slots[_draftOrder.Peek()] is not { Left: false }) _draftOrder.Dequeue();
+        if (_draftOrder.Count == 0 || _draftPool.Count == 0)
+        {
+            _draftPool = null;
+            HostStartBattle();
+            return;
+        }
+        int slot = _draftOrder.Dequeue();
+        var w = new Wire();
+        WritePicks(w, new[] { new PickEntry(slot, new List<int>(_draftPool), null) });
+        _hostPicked.Clear();
+        _botPickT.Clear();
+        _pickTimeoutT = Draft.TurnTime;
+        if (IsBotPlayer(Slots[slot])) _botPickT[slot] = HostRng.Range(0.6f, 1.4f);
+        Rpc(MethodName.BeginCardPick, w.Done());
     }
 
     public void HostReturnToLobby()

@@ -33,6 +33,7 @@ namespace Brawler;
 //   --demo=NAME           a scripted walk through one feature (thumbs), paced for recording with --write-movie for a
 //                         Short; logs "DEMO <frame> <label>" at the moments to cut to
 //   --botskills=A,B,..    bots get these skills (easy, normal, hard) as they are added, in turn
+//   --draft               draft the opening cards from a shared pool before the first battle
 //   --focuslog=PATH       write one line per drawn frame (phase, kill cam, live bullets, where the action is across the
 //                         screen), to crop a recording to portrait
 //   --aimshots=DIR        screenshot avatars with the widest faces aiming every way (barrel vs aim line, Muzzle dot,
@@ -109,6 +110,7 @@ public partial class Main
             else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
             else if (a.StartsWith("--mode=")) _net.TestMode = GameModes.Parse(a["--mode=".Length..]);
             else if (a.StartsWith("--rounds=") && int.TryParse(a["--rounds=".Length..], out int rounds)) _net.TestRounds = Mathf.Clamp(rounds, 1, 10);
+            else if (a == "--draft") _net.TestDraft = true;
             else if (a.StartsWith("--arena="))
             {
                 if (MapCode.Decode(a["--arena=".Length..]) is { } arena) _net.TestArena = MapCode.Pack(arena);

@@ -65,6 +65,7 @@ public sealed class MatchSettings
     public int TeamSize;             // 0 = free-for-all, else 2v2 / 3v3 / 4v4 (see Teams)
     public bool FriendlyFire;        // team modes: your shots and blasts hurt teammates too
     public GameMode Mode;            // what wins a battle (see GameModes)
+    public bool Draft;               // before the first battle, players take turns drafting cards from one shared pool (see Logic.Draft)
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
     public List<byte[]> Maps = new();          // custom arenas (MapCode.Pack) taking turns each battle; empty = generated arenas
 
@@ -73,7 +74,7 @@ public sealed class MatchSettings
     public MatchSettings Copy() => new()
     {
         BattlesPerRound = BattlesPerRound, RoundsToWin = RoundsToWin, LoserChoices = LoserChoices, WinnerChoices = WinnerChoices,
-        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, Mode = Mode, DisabledCards = new(DisabledCards),
+        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, Mode = Mode, Draft = Draft, DisabledCards = new(DisabledCards),
         Maps = new(Maps),
     };
 }
@@ -130,7 +131,7 @@ public sealed class LobbyState
     public byte[] Serialize(bool withMaps = true)
     {
         var w = new Wire();
-        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire).U8((int)Settings.Mode);
+        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire).U8((int)Settings.Mode).Bool(Settings.Draft);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(withMaps ? System.Math.Min(Settings.Maps.Count, MatchSettings.MaxMaps) : MapsLeftOut);
         if (withMaps) foreach (var m in Settings.Maps.Take(MatchSettings.MaxMaps)) w.Blob(m);
@@ -161,6 +162,7 @@ public sealed class LobbyState
         s.Settings.TeamSize = r.U8();
         s.Settings.FriendlyFire = r.Bool();
         s.Settings.Mode = GameModes.From(r.U8());
+        s.Settings.Draft = r.Bool();
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int maps = r.U8();
         if (maps == MapsLeftOut) s.Settings.Maps = new(knownMaps ?? new());

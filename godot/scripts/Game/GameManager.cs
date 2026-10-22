@@ -376,6 +376,7 @@ public partial class GameManager : Node2D
         Phase = Phase.Idle;
         _hostNext = null;
         _rejoinWaitT = 0;
+        _draftPool = null;
         ClearObjectives();
         Visible = false;
         Engine.TimeScale = 1;

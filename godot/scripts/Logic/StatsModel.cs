@@ -13,7 +13,7 @@ namespace Brawler.Logic;
 /// </summary>
 public sealed class MatchRecord
 {
-    public const int CurrentVersion = 5; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal); 3: SettingsRec.TeamSize; 4: SettingsRec.GameMode; 5: PlayerRec.Skill
+    public const int CurrentVersion = 5; // 2: rare cards and cursed deals (SettingsRec.RareChance/CursedDeals, PickRec.Deal/TookDeal); 3: SettingsRec.TeamSize; 4: SettingsRec.GameMode; 5: PlayerRec.Skill, SettingsRec.Draft
 
     public int V { get; set; } = CurrentVersion;
     public string Id { get; set; }
@@ -43,6 +43,8 @@ public sealed class SettingsRec
     public int TeamSize { get; set; }
     /// <summary>What won battles (see GameModes.Id). Only elimination matches go into the card win rates.</summary>
     public string GameMode { get; set; } = "elimination";
+    /// <summary>The players drafted their opening cards from a shared pool (those picks aren't in Picks).</summary>
+    public bool Draft { get; set; }
 }
 
 public sealed class PlayerRec

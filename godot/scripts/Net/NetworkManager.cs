@@ -25,6 +25,7 @@ public partial class NetworkManager : Node
     /// <summary>Test runs (--teams=N, --friendlyfire): the team mode for matches this run hosts (applied at match start).</summary>
     public int TestTeamSize;
     public bool TestFriendlyFire;
+    public bool TestDraft; // --draft: draft the opening cards (see Logic.Draft)
     /// <summary>--mode=ID: the game mode for matches this run hosts.</summary>
     public Brawler.Logic.GameMode? TestMode;
     /// <summary>--rounds=N: round wins to take the match, for matches this run hosts (0 = the lobby setting).</summary>
