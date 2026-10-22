@@ -8,5 +8,4 @@ issues to fix:
 
 features to add:
 - level editor with map sharing: build arenas from the existing themes and layouts, export and import them as a short code
-- game modes: king of the hill, capture the flag, a "headhunter" mode where the leader is marked
 - controller support and local couch co-op (several players on one machine)

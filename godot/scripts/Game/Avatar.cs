@@ -69,6 +69,10 @@ public partial class Avatar : CharacterBody2D
     public bool Frozen = true;
     public int LastHitBy = -1;   // host: who hit us last, and when (credits knock-off kills)
     public float LastHitAt = -99;
+    /// <summary>When this body came in (<see cref="GameManager.Clock"/>), and whether it was a respawn, which guards it for a moment.</summary>
+    public float BornAt;
+    public bool Respawned;
+    public bool Guarded => Respawned && Alive && Game.Clock - BornAt < GameModes.SpawnGuard;
 
     public Vector2 HalfSize => new Vector2(BaseW, BaseH) * S[Stat.Size] * 0.5f;
     public Rect2 Bounds => new(GlobalPosition - HalfSize, HalfSize * 2);

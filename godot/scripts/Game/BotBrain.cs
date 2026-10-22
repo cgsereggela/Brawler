@@ -31,34 +31,44 @@ public sealed class BotBrain : IInputSource
     {
         var f = new InputFrame { JumpPresses = _jumps, BlockPresses = _blocks, Aim = self.GlobalPosition + Vector2.Right };
         var target = NearestEnemy(self);
+        // Game modes: somewhere to be (the hill, a flag). We still shoot whoever is nearest on the way.
+        var goal = _game.BotGoal(self);
         _jumpHold -= dt;
         _decisionT -= dt;
         _aimWobbleT -= dt;
 
-        if (target == null)
+        if (target == null && goal == null)
         {
             f.JumpHeld = _jumpHold > 0;
             return f;
         }
 
         var me = self.GlobalPosition;
-        var to = target.GlobalPosition - me;
-        float dist = to.Length();
-
-        // --- aim with lead and drop compensation ---
-        float speed = self.S[Stat.BulletSpeed];
-        float t = dist / speed;
-        var predicted = target.GlobalPosition + target.Velocity * t * 0.8f;
-        predicted.Y -= 0.5f * self.S[Stat.BulletGravity] * t * t;
-        if (_aimWobbleT <= 0)
+        if (target != null)
         {
-            _aimWobbleT = 0.3f;
-            _aimWobble = new Vector2(_rng.RandfRange(-1, 1), _rng.RandfRange(-1, 1)) * (6 + dist * 0.06f);
+            // --- aim with lead and drop compensation ---
+            var tTo = target.GlobalPosition - me;
+            float tDist = tTo.Length();
+            float speed = self.S[Stat.BulletSpeed];
+            float t = tDist / speed;
+            var predicted = target.GlobalPosition + target.Velocity * t * 0.8f;
+            predicted.Y -= 0.5f * self.S[Stat.BulletGravity] * t * t;
+            if (_aimWobbleT <= 0)
+            {
+                _aimWobbleT = 0.3f;
+                _aimWobble = new Vector2(_rng.RandfRange(-1, 1), _rng.RandfRange(-1, 1)) * (6 + tDist * 0.06f);
+            }
+            f.Aim = predicted + _aimWobble;
+            bool sight = HasLineOfSight(me, target.GlobalPosition);
+            f.Shoot = sight && tDist < 520 && (self.Ammo > 1 || tDist < 180 || _rng.Randf() < 0.05f);
         }
-        f.Aim = predicted + _aimWobble;
 
-        bool los = HasLineOfSight(me, target.GlobalPosition);
-        f.Shoot = los && dist < 520 && (self.Ammo > 1 || dist < 180 || _rng.Randf() < 0.05f);
+        // Movement heads for the goal if there is one, else the target.
+        var focus = goal ?? target.GlobalPosition;
+        float focusHalfY = goal != null ? self.HalfSize.Y : target.HalfSize.Y;
+        var to = focus - me;
+        float dist = to.Length();
+        bool los = HasLineOfSight(me, focus);
 
         // --- movement ---
         if (_decisionT <= 0)
@@ -70,7 +80,8 @@ public sealed class BotBrain : IInputSource
         // Leech Field only works up close, so its holder hugs the target instead of keeping range.
         bool hug = self.S[Stat.Leech] > 0;
         float pref = hug ? 20 : _preferredDist, band = hug ? 15 : 50;
-        if (dist > pref + band) move = Mathf.Sign(to.X);
+        if (goal != null) move = Mathf.Abs(to.X) > 8 ? Mathf.Sign(to.X) : _strafeDir * 0.3f; // there, jostle about a little
+        else if (dist > pref + band) move = Mathf.Sign(to.X);
         else if (dist < pref - band) move = -Mathf.Sign(to.X);
         else move = _strafeDir * 0.6f;
         if (!los) move = Mathf.Sign(to.X == 0 ? 1 : to.X);
@@ -97,21 +108,22 @@ public sealed class BotBrain : IInputSource
         float lava = _game.Arena.LavaY;
         bool flee = _surface >= 0 && map.Surfaces[_surface].Y > lava - LavaMargin;
         bool navigating = false, dropping = false;
-        if ((flee || !los || Mathf.Abs(to.Y) > 75) && _surface >= 0)
+        int goalSurface = SurfaceUnder(map, focus + new Vector2(0, focusHalfY));
+        bool far = goal != null ? goalSurface >= 0 && goalSurface != _surface : !los || Mathf.Abs(to.Y) > 75;
+        if ((flee || far) && _surface >= 0)
         {
             if (flee && _navT <= 0)
             {
                 _navT = 0.3f;
-                _hop = MapGenerator.NextHop(map, _surface, EscapeSurface(map, target, lava));
+                _hop = MapGenerator.NextHop(map, _surface, EscapeSurface(map, focus, lava));
             }
             else if (_navT <= 0)
             {
                 _navT = 0.3f;
-                int goal = SurfaceUnder(map, target.GlobalPosition + new Vector2(0, target.HalfSize.Y));
-                _hop = goal >= 0 ? MapGenerator.NextHop(map, _surface, goal) : -1;
+                _hop = goalSurface >= 0 ? MapGenerator.NextHop(map, _surface, goalSurface) : -1;
                 // Can't get to the target's surface (it's on a ledge with no way up from here): head for the
                 // reachable surface with the best shot at it instead of milling about underneath.
-                if (_hop < 0) _hop = MapGenerator.NextHop(map, _surface, VantageSurface(map, self, target));
+                if (_hop < 0 && goal == null) _hop = MapGenerator.NextHop(map, _surface, VantageSurface(map, self, target));
             }
             navigating = _hop >= 0 && _hop != _surface;
         }
@@ -259,6 +271,7 @@ public sealed class BotBrain : IInputSource
         {
             if (a == self || _game.Allies(a.Player.Slot, self.Player.Slot)) continue;
             float d = a.GlobalPosition.DistanceSquaredTo(self.GlobalPosition);
+            if (a.Player.Slot == _game.HeadSlot) d *= 0.25f; // Headhunter: everyone wants the head
             if (d < bestD) { bestD = d; best = a; }
         }
         return best;
@@ -355,10 +368,9 @@ public sealed class BotBrain : IInputSource
     /// The reachable surface to escape rising lava to: the nearest one to the target (to keep fighting) among those
     /// well above it, else simply the highest one we can get to.
     /// </summary>
-    private int EscapeSurface(MapLayout map, Avatar target, float lava)
+    private int EscapeSurface(MapLayout map, Vector2 tp, float lava)
     {
         var reach = MapGenerator.ReachableFrom(map, _surface);
-        var tp = target.GlobalPosition;
         int best = -1, highest = _surface;
         float bestScore = float.MaxValue;
         for (int i = 0; i < map.Surfaces.Count; i++)

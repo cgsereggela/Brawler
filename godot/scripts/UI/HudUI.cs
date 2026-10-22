@@ -451,14 +451,17 @@ public partial class HudUI : Control
             DrawString(Fonts.Regular, StatAt(i), stats[i].Label, HorizontalAlignment.Left, colW - 40, 11, Palette.TextDim);
     }
 
-    /// <summary>While you're a ghost: a reminder that you can still emote and ping until the next battle.</summary>
+    /// <summary>While you're a ghost: when you respawn (respawn modes), or a reminder that you can still emote and ping until the next battle.</summary>
     private void DrawGhostHint(Vector2 vs)
     {
         if (_game.LocalMatchPlayer?.Avatar is not { GhostUp: true } || _game.Phase != Phase.Fighting) return;
         string emotes = string.Join("/", Enumerable.Range(0, Emotes.All.Length)
             .Select(i => Keybinds.Current.Row(Emotes.Action(i)).FirstOrDefault(b => !b.IsNone))
             .Where(b => !b.IsNone).Select(Keybinds.Label));
-        string text = $"YOU'RE A GHOST  ·  {(emotes.Length > 0 ? emotes + " emote  ·  " : "")}{Keybinds.Hint("ping")} ping";
+        float respawn = _game.RespawnIn(_game.LocalMatchPlayer.Slot);
+        string text = respawn >= 0
+            ? $"RESPAWNING IN {Mathf.Max(1, Mathf.CeilToInt(respawn))}"
+            : $"YOU'RE A GHOST  ·  {(emotes.Length > 0 ? emotes + " emote  ·  " : "")}{Keybinds.Hint("ping")} ping";
         var font = Fonts.Bold;
         float w = font.GetStringSize(text, HorizontalAlignment.Left, -1, 12).X + 28;
         var r = new Rect2((vs.X - w) / 2, 58, w, 24);

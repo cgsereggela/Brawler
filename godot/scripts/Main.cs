@@ -49,6 +49,7 @@ namespace Brawler;
 ///                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
 ///   --rarechance=PCT      percent chance that each offered card is rare, in the matches this run hosts
 ///   --teams=N             team mode for the matches this run hosts: N players a side (2, 3 or 4); --friendlyfire turns friendly fire on
+///   --mode=ID             game mode for the matches this run hosts: elimination, koth, ctf or headhunter (ctf without --teams plays even teams)
 ///   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
 /// </summary>
 public partial class Main : Node
@@ -340,6 +341,7 @@ public partial class Main : Node
             else if (a.StartsWith("--rarechance=") && int.TryParse(a["--rarechance=".Length..], out int rare)) _game.RareOverride = Mathf.Clamp(rare, 0, 100);
             else if (a.StartsWith("--teams=") && int.TryParse(a["--teams=".Length..], out int teams)) _net.TestTeamSize = Mathf.Clamp(teams, 0, 4);
             else if (a == "--friendlyfire") _net.TestFriendlyFire = true;
+            else if (a.StartsWith("--mode=")) _net.TestMode = GameModes.Parse(a["--mode=".Length..]);
             else if (a == "--lavacheck") { _lavaCheck = true; if (_game.LavaOverride < 0) _game.LavaOverride = 3; }
             else if (a.StartsWith("--battlecap=") && float.TryParse(a["--battlecap=".Length..], System.Globalization.CultureInfo.InvariantCulture, out float cap)) _battleCap = cap;
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');

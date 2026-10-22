@@ -62,12 +62,13 @@ public sealed class MatchSettings
     public bool KillCam = true;      // replay the final kill of each battle in slow motion
     public int TeamSize;             // 0 = free-for-all, else 2v2 / 3v3 / 4v4 (see Teams)
     public bool FriendlyFire;        // team modes: your shots and blasts hurt teammates too
+    public GameMode Mode;            // what wins a battle (see GameModes)
     public HashSet<int> DisabledCards = new(); // card ids the host took out of the pool (see CardPool)
 
     public MatchSettings Copy() => new()
     {
         BattlesPerRound = BattlesPerRound, RoundsToWin = RoundsToWin, LoserChoices = LoserChoices, WinnerChoices = WinnerChoices,
-        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, DisabledCards = new(DisabledCards),
+        LavaAfter = LavaAfter, RareChance = RareChance, CursedDeals = CursedDeals, KillCam = KillCam, TeamSize = TeamSize, FriendlyFire = FriendlyFire, Mode = Mode, DisabledCards = new(DisabledCards),
     };
 }
 
@@ -91,7 +92,8 @@ public sealed class LobbyState
 
     /// <summary>Why the match can't start yet, or null when it can.</summary>
     public string StartProblem() =>
-        Players.Count < 2 ? "Needs at least two players." : Teams.Problem(Players.Select(p => p.Team), Settings.TeamSize);
+        Players.Count < 2 ? "Needs at least two players."
+        : Teams.Problem(Players.Select(p => p.Team), Settings.TeamSize) ?? GameModes.Problem(Settings.Mode, Settings.TeamSize);
 
     /// <summary>The team a newcomer joins: the emptier one.</summary>
     public int NewcomerTeam() => TeamMode ? System.Math.Max(0, Teams.Emptier(Players.Select(p => p.Team), Settings.TeamSize)) : 0;
@@ -117,7 +119,7 @@ public sealed class LobbyState
     public byte[] Serialize()
     {
         var w = new Wire();
-        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire);
+        w.U8(Settings.BattlesPerRound).U8(Settings.RoundsToWin).U8(Settings.LoserChoices).U8(Settings.WinnerChoices).U8(Settings.LavaAfter).U8(Settings.RareChance).Bool(Settings.CursedDeals).Bool(Settings.KillCam).U8(Settings.TeamSize).Bool(Settings.FriendlyFire).U8((int)Settings.Mode);
         w.Blob(CardPool.Encode(Settings.DisabledCards));
         w.U8(Players.Count);
         foreach (var p in Players)
@@ -142,6 +144,7 @@ public sealed class LobbyState
         s.Settings.KillCam = r.Bool();
         s.Settings.TeamSize = r.U8();
         s.Settings.FriendlyFire = r.Bool();
+        s.Settings.Mode = GameModes.From(r.U8());
         s.Settings.DisabledCards = CardPool.Decode(r.Blob());
         int n = r.U8();
         for (int i = 0; i < n; i++)

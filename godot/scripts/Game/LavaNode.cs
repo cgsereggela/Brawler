@@ -58,14 +58,14 @@ public partial class LavaNode : Node2D
     /// <summary>Banners counting down to the lava, then one when it starts, on every peer from the shared clock.</summary>
     private void Warn()
     {
-        int after = Game.Settings.LavaAfter;
+        int after = Game.LavaAfter;
         if (after <= 0 || Game.Phase != Phase.Fighting) return;
         float left = after - Game.Arena.FightTime;
         int sec = Mathf.CeilToInt(left);
         if (sec == _lastWarn) return;
         _lastWarn = sec;
         if (sec == (int)RisingLava.Warning) Game.ShowBanner($"LAVA IN {sec}", Mid, 0.9f);
-        else if (sec == 0) { Game.ShowBanner("THE FLOOR IS LAVA!", Top, 1.2f); Game.Sfx?.Play("go"); Game.Shake(0.25f); }
+        else if (sec == 0) { Game.ShowBanner(GameModes.Respawns(Game.Mode) ? "SUDDEN DEATH: NO MORE RESPAWNS!" : "THE FLOOR IS LAVA!", Top, 1.2f); Game.Sfx?.Play("go"); Game.Shake(0.25f); }
     }
 
     private void BuildSurface(float y)

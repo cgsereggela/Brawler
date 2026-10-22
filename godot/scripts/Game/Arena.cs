@@ -255,7 +255,7 @@ public partial class Arena : Node2D
     }
 
     /// <summary>The sudden-death lava's surface (y) right now; +∞ before it starts or when the lobby turned it off.</summary>
-    public float LavaY => _map == null ? float.PositiveInfinity : RisingLava.Level(FightTime, Game.Settings.LavaAfter);
+    public float LavaY => _map == null ? float.PositiveInfinity : RisingLava.Level(FightTime, Game.LavaAfter);
 
     /// <summary>Seconds since the countdown ended (negative during it): the battle clock lava runs off.</summary>
     public float FightTime => Clock - GameManager.CountdownTime;

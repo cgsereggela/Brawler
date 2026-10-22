@@ -20,7 +20,7 @@ public partial class LobbyUI : Control
     private Button _addBot, _start, _color, _cards;
     private CardPoolUI _pool;
     private SpinBox _battles, _rounds, _loserCards, _winnerCards;
-    private Button _lava, _rare, _deals, _killCam, _mode, _friendly;
+    private Button _lava, _rare, _deals, _killCam, _gameMode, _mode, _friendly;
     private Label _problem, _friendlyLabel;
     private ScrollContainer _scroll;
     private VBoxContainer _middle;
@@ -73,7 +73,8 @@ public partial class LobbyUI : Control
         _lava = AddToggle(grid, "Lava rises after", "Sudden death: after this long in a battle, lava wells up from below and keeps climbing.", CycleLava, out _);
         _rare = AddToggle(grid, "Rare cards", "How often each card in a pick is a rare one: strong, build-defining cards with a gold frame.", CycleRare, out _);
         _killCam = AddToggle(grid, "Kill cam", "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.", ToggleKillCam, out _);
-        _mode = AddToggle(grid, "Mode", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
+        _gameMode = AddToggle(grid, "Game mode", "Elimination: last one standing wins the battle. King of the Hill: hold the glowing zone alone for 10 s in total. Capture the Flag (teams): bring the enemy flag to your base while yours is there. Headhunter: the leader wears a crown, and whoever takes them out wins the battle. In King of the Hill and Capture the Flag the fallen respawn until sudden death, which comes twice as late.", CycleGame, out _);
+        _mode = AddToggle(grid, "Teams", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
         // Only in team modes, so the free-for-all lobby stays a row shorter.
         _friendly = AddToggle(grid, "Friendly fire", "Whether your shots and blasts hurt your teammates. Off, they pass straight through.", ToggleFriendlyFire, out _friendlyLabel);
         _middle.AddChild(grid);
@@ -249,6 +250,7 @@ public partial class LobbyUI : Control
             KillCam = _net.Lobby.Settings.KillCam,
             TeamSize = _net.Lobby.Settings.TeamSize,
             FriendlyFire = _net.Lobby.Settings.FriendlyFire,
+            Mode = _net.Lobby.Settings.Mode,
             DisabledCards = _net.Lobby.Settings.DisabledCards,
         });
     }
@@ -298,6 +300,16 @@ public partial class LobbyUI : Control
     {
         if (!_net.IsHost) return;
         _net.SetTeamSize(Teams.NextSize(_net.Lobby.Settings.TeamSize));
+    }
+
+    /// <summary>Host: step through the game modes. Capture the Flag needs teams, so picking it in free-for-all makes it 2v2.</summary>
+    private void CycleGame()
+    {
+        if (!_net.IsHost) return;
+        var s = _net.Lobby.Settings;
+        s.Mode = GameModes.Next(s.Mode);
+        if (GameModes.Problem(s.Mode, s.TeamSize) != null) _net.SetTeamSize(2);
+        else PushSettings();
     }
 
     private void ToggleFriendlyFire()
@@ -419,6 +431,8 @@ public partial class LobbyUI : Control
         _deals.Disabled = !host;
         _killCam.Text = st.KillCam ? "On" : "Off";
         _killCam.Disabled = !host;
+        _gameMode.Text = GameModes.Name(st.Mode);
+        _gameMode.Disabled = !host;
         _mode.Text = Teams.ModeName(st.TeamSize);
         _mode.Disabled = !host;
         _friendly.Text = st.FriendlyFire ? "On" : "Off";

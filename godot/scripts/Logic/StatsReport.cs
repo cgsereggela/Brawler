@@ -92,8 +92,9 @@ public static class StatsReport
         double fightSum = 0;
         int fightN = 0;
 
-        // Team matches are left out: a win there is the whole team's, not one player's cards.
-        var matches = all.Where(m => (f.Mode == null || m.Mode == f.Mode) && m.Settings.TeamSize == 0).ToList();
+        // Team matches are left out (a win there is the whole team's, not one player's cards), and so are the other game
+        // modes, where battles are won by holding a hill or a flag, or by one lucky shot at the head.
+        var matches = all.Where(m => (f.Mode == null || m.Mode == f.Mode) && m.Settings.TeamSize == 0 && (m.Settings.GameMode ?? "elimination") == "elimination").ToList();
         data.CardHashes = matches.Select(m => m.CardsHash).Distinct().ToList();
         if (f.CardsHash != null) matches = matches.Where(m => m.CardsHash == f.CardsHash).ToList();
 

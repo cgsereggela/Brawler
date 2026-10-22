@@ -111,6 +111,7 @@ public partial class GameManager : Node2D
         Arena = new Arena { Name = "Arena", Game = this };
         Arena.Material = PaintShaders.Grain;
         AddChild(Arena);
+        AddChild(new ObjectiveNode { Name = "Objectives", Game = this });
         AddChild(_avatars);
         AddChild(Bullets);
         AddChild(new LavaNode { Name = "Lava", Game = this });
@@ -192,6 +193,15 @@ public partial class GameManager : Node2D
             Net.Lobby.DealTeams();
         }
         if (Net.TestFriendlyFire) Net.Lobby.Settings.FriendlyFire = true;
+        if (Net.TestMode is { } mode)
+        {
+            Net.Lobby.Settings.Mode = mode; // --mode=ID
+            if (GameModes.Problem(mode, Net.Lobby.Settings.TeamSize) != null)
+            {
+                Net.Lobby.Settings.TeamSize = Math.Clamp((Net.Lobby.Players.Count + 1) / 2, 2, 4); // Capture the Flag without --teams: even teams
+                Net.Lobby.DealTeams();
+            }
+        }
         if (Net.Lobby.StartProblem() is { } problem)
         {
             Log.Info($"can't start: {problem}");
@@ -496,11 +506,12 @@ public partial class GameManager : Node2D
                 Phase = Phase.Fighting;
                 foreach (var a in LiveAvatars()) a.Frozen = false;
                 if (IsHost) Stats.FightBegan();
-                Banner?.Invoke("FIGHT!", Palette.Accent, 0.7f);
+                Banner?.Invoke(FightCall(), Palette.Accent, Mode == GameMode.Elimination ? 0.7f : 1.1f);
                 Sfx.Play("go");
             }
         }
 
+        TickRespawnTimers();
         Arena.Advance(dt); // movers first, so riders are carried this tick
         if (IsHost) HostSimulate(dt);
         else ClientSimulate(dt);
@@ -512,7 +523,11 @@ public partial class GameManager : Node2D
 
         if (IsHost)
         {
-            if (Phase == Phase.Fighting) HostCheckBattleEnd(dt);
+            if (Phase == Phase.Fighting)
+            {
+                HostObjectivesTick(dt);
+                HostCheckBattleEnd(dt);
+            }
             if (Net.Mode == NetMode.Host) Rpc(MethodName.Snapshot, SnapshotBytes());
         }
     }
@@ -565,7 +580,8 @@ public partial class GameManager : Node2D
     private void HostCheckBattleEnd(float dt)
     {
         var alive = LiveAvatars().ToList();
-        bool over = TeamMode ? Teams.Settled(alive.Select(a => a.Player.Info.Team), out _) : alive.Count <= 1;
+        // An objective won it (the hill, a flag, the head). Otherwise, while the fallen still respawn, nothing else ends it.
+        bool over = _objectiveWinner >= 0 || (!RespawnsNow && (TeamMode ? Teams.Settled(alive.Select(a => a.Player.Info.Team), out _) : alive.Count <= 1));
         if (!over)
         {
             _endCheckT = -1;
@@ -577,7 +593,7 @@ public partial class GameManager : Node2D
         if (_endCheckT > 0) return;
         _endCheckT = -1;
         // In team modes a survivor stands for their team (see SideOf).
-        _pendingWinner = alive.Count == 1 || (TeamMode && alive.Count > 0) ? alive[0].Player.Slot : -1;
+        _pendingWinner = _objectiveWinner >= 0 ? _objectiveWinner : alive.Count == 1 || (TeamMode && alive.Count > 0) ? alive[0].Player.Slot : -1;
         HostBotChat(_pendingWinner, 0.45f, 0, 1);
         Phase = Phase.Intermission;
         HostAfter(0.8f, HostKillCamOrResolve);
@@ -596,7 +612,8 @@ public partial class GameManager : Node2D
     /// <summary>Host: replay the battle's final kill everywhere, then resolve the battle (straight away if there's none).</summary>
     private void HostKillCamOrResolve()
     {
-        if (Settings.KillCam && !DisableKillCam && _lastVictim >= 0)
+        // Not in the respawn modes: the last kill there rarely decided anything.
+        if (Settings.KillCam && !DisableKillCam && _lastVictim >= 0 && !GameModes.Respawns(Mode))
         {
             _killCamSkips.Clear();
             Rpc(MethodName.PlayKillCam, _lastVictim, _lastKiller);
@@ -770,6 +787,7 @@ public partial class GameManager : Node2D
     /// <param name="reflected">Thorns damage: never reflected again (so two Thorns players can't loop).</param>
     public void HostDamage(Avatar victim, float damage, Vector2 knockback, int attackerSlot, Vector2 at, bool reflected = false)
     {
+        if (victim.Guarded) return; // just respawned
         if (Spared(attackerSlot, victim.Player.Slot)) return; // teammates, friendly fire off: blasts, bashes and arcs pass harmlessly
         float hpBefore = victim.Hp;
         damage *= 1f - victim.S[Stat.Armor];
@@ -896,6 +914,7 @@ public partial class GameManager : Node2D
     public void HostHazardDamage(Avatar victim, float damage, Vector2 knockback, Vector2 at, HazardHit kind)
     {
         if (!victim.Alive) return;
+        if (victim.Guarded) return;
         float hpBefore = victim.Hp;
         damage *= 1f - victim.S[Stat.Armor];
         knockback *= victim.S[Stat.KnockbackTaken];
@@ -960,6 +979,7 @@ public partial class GameManager : Node2D
             Book.Add(killer >= 0 ? killer : a.Player.Slot, killer >= 0 ? AwardStat.Kills : AwardStat.SelfKills);
             if (cause == KillCause.Fall) Book.Add(a.Player.Slot, AwardStat.Falls);
         }
+        HostObjectiveKill(a, killer, cause);
         Rpc(MethodName.Died, a.Player.Slot, a.GlobalPosition, killer, (int)cause);
         _lastVictim = cause == KillCause.Left ? -1 : a.Player.Slot;
         _lastKiller = killer;
@@ -1311,7 +1331,7 @@ public partial class GameManager : Node2D
         Net.InMatch = true;
         Visible = true;
         if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
-        Log.Info($"match begins: {lobby.Players.Count} players, {Teams.ModeName(Settings.TeamSize)}{(TeamMode && Settings.FriendlyFire ? " (friendly fire)" : "")}, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
+        Log.Info($"match begins: {lobby.Players.Count} players, {GameModes.Name(Mode)}, {Teams.ModeName(Settings.TeamSize)}{(TeamMode && Settings.FriendlyFire ? " (friendly fire)" : "")}, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
         MatchBegan?.Invoke();
     }
 
@@ -1345,11 +1365,11 @@ public partial class GameManager : Node2D
             int j = rng.Range(0, i);
             (order[i], order[j]) = (order[j], order[i]);
         }
+        // Teams start on opposite sides (swapping each battle): Red takes spawns from one end, Blue from the other.
+        var byX = Enumerable.Range(0, layout.Spawns.Count).OrderBy(k => layout.Spawns[k].X).ToList();
+        if (BattleNumber % 2 == 0) byX.Reverse();
         if (TeamMode && order.Count >= active.Count)
         {
-            // Teams start on opposite sides (swapping each battle): Red takes spawns from one end, Blue from the other.
-            var byX = Enumerable.Range(0, layout.Spawns.Count).OrderBy(k => layout.Spawns[k].X).ToList();
-            if (BattleNumber % 2 == 0) byX.Reverse();
             int lo = 0, hi = byX.Count - 1;
             for (int i = 0; i < active.Count; i++) order[i] = active[i].Info.Team == 0 ? byX[lo++] : byX[hi--];
         }
@@ -1357,13 +1377,9 @@ public partial class GameManager : Node2D
         {
             var p = active[i];
             var sp = layout.Spawns[order[i % order.Count]];
-            var av = new Avatar();
-            av.Material = PaintShaders.Grain;
-            av.Setup(p, this, Vector2.Zero);
-            av.Position = new Vector2(sp.X, sp.Y - av.HalfSize.Y - 1);
-            _avatars.AddChild(av);
-            p.Avatar = av;
+            SpawnAvatar(p, new Vector2(sp.X, sp.Y));
         }
+        SetupObjectives(layout, seed, active, byX);
         if (IsHost)
         {
             foreach (var p in active)
@@ -1528,6 +1544,7 @@ public partial class GameManager : Node2D
     {
         if (Slots[slot] == null) return;
         Slots[slot].Left = true;
+        _respawnAt[slot] = -1; // if they rejoin, they sit out the rest of this battle
         if (Slots[slot].Avatar is { } a)
         {
             a.Alive = false;
@@ -1627,6 +1644,7 @@ public partial class GameManager : Node2D
         a.CollisionLayer = 0;
         a.QueueRedraw();
         KillCam.NoteDeath(slot, _clock);
+        NoteRespawn(slot, (KillCause)cause);
         KillFx(slot, killer, at, (KillCause)cause);
         Log.Info($"{NameOf(slot)} died{(killer >= 0 ? $" (by {NameOf(killer)})" : "")}");
     }
@@ -1735,7 +1753,7 @@ public partial class GameManager : Node2D
             float aim = r.I16() / 1000f;
 
             var a = Slots[slot]?.Avatar;
-            if (a == null) continue;
+            if (a == null || _clock - a.BornAt < 0.25f) continue; // just respawned: older snapshots still show the dead body
             bool mine = Slots[slot] == LocalMatchPlayer;
             if (a.Alive && (flags & 1) == 0) a.Alive = false;
             a.Hp = hp;
@@ -1749,6 +1767,7 @@ public partial class GameManager : Node2D
             a.QueueRedraw();
         }
         if (r.More) Arena.Read(r);
+        if (r.More) ReadObjectives(r);
     }
 
     // =====================================================================
@@ -2010,6 +2029,7 @@ public partial class GameManager : Node2D
              .U8(Mathf.Clamp((int)(a.BlockActive * 100), 0, 255)).I16((int)(a.AimDir.Angle() * 1000));
         }
         Arena.Write(w);
+        WriteObjectives(w);
         return w.Done();
     }
 
@@ -2040,6 +2060,7 @@ public partial class GameManager : Node2D
         Phase = Phase.Idle;
         _hostNext = null;
         _rejoinWaitT = 0;
+        ClearObjectives();
         Visible = false;
         Engine.TimeScale = 1;
     }
