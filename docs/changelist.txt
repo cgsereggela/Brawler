@@ -1,5 +1,4 @@
 issues to fix:
-- the 'Done' button slides off the bottom of the screen in the Options > Controls menu, recommend: move the reset to defaults button beside the 'Done' button, keep the buttons the same size
 
 features to add:
 - clip export: save a kill cam as a GIF (Logic/Gif.cs already exists)

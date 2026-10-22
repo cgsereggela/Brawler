@@ -60,7 +60,8 @@ namespace Brawler;
 //   --rounds=N            round wins to take the match, for the matches this run hosts (a shorter test match)
 //   --padcheck            feeds made-up controller presses: menu focus, + Local Player in the lobby, guest vs keyboard
 //                         player input, and a card pick chosen on each controller; exits 0 on success
-//   --lobbycheck          fills the lobby (a couch guest and bots) and walks every game mode and team size, failing if
+//   --lobbycheck          fills the lobby (a couch guest and bots) and walks every game mode and team size, then every
+//                         Options tab (menu and in-match overlay), failing if
 //                         anything ends up off screen (with --shots=DIR, saves each layout), then quits
 //   --editorcheck         drives the map editor with made-up mouse presses (draw a block, a gap and a hill; place a spawn, a
 //                         crate and a pool; move, resize, undo, delete; save, share and reopen a map code), then playtests

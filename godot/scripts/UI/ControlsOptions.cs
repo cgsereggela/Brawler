@@ -15,7 +15,12 @@ public static class ControlsOptions
     /// <summary>True while a slot waits for a press; other Esc handlers (like the in-game overlay) should stand aside.</summary>
     public static bool Capturing => ControlsPanel.Active != null;
 
-    public static void Build(Container parent) => parent.AddChild(new ControlsPanel());
+    public static ControlsPanel Build(Container parent)
+    {
+        var panel = new ControlsPanel();
+        parent.AddChild(panel);
+        return panel;
+    }
 }
 
 public partial class ControlsPanel : VBoxContainer
@@ -80,15 +85,15 @@ public partial class ControlsPanel : VBoxContainer
         _note.CustomMinimumSize = new Vector2(0, 16);
         AddChild(_note);
 
-        var reset = UiKit.Button("Reset to defaults", () =>
-        {
-            EndCapture();
-            Keybinds.ResetToDefaults();
-            _note.Text = "Default controls restored";
-            Refresh();
-        }, 0, "Small");
-        reset.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-        AddChild(reset);
+        Refresh();
+    }
+
+    /// <summary>Back to the default bindings (OptionsUI's footer button, shown on this tab).</summary>
+    public void ResetToDefaults()
+    {
+        EndCapture();
+        Keybinds.ResetToDefaults();
+        _note.Text = "Default controls restored";
         Refresh();
     }
 

@@ -21,7 +21,9 @@ public partial class OptionsUI : Control
     private ulong _lastPreview;
     private bool _overlay;
     private ColorRect _dim;
-    private Control _leaveButton, _leaveConfirm, _done;
+    private Control _leaveButton, _leaveConfirm, _done, _reset;
+    private TabContainer _tabs;
+    private Control _controlsTab;
     private HBoxContainer _arenaRow;
     private Label _arenaLabel;
     private Button _arenaSave;
@@ -76,14 +78,15 @@ public partial class OptionsUI : Control
         var (_, body) = UiKit.CenteredPanel(this, 460);
         body.AddChild(new TitleText("OPTIONS", 30, 1.5f, Palette.Cool, Palette.Hot));
 
-        var tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 220) };
+        var tabs = _tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 220) };
         body.AddChild(tabs);
         var audio = Tab(tabs, "Audio");
         var video = Tab(tabs, "Video");
         DisplayOptions.Build(video);
         BloomOptions.Build(video);
         AccessibilityOptions.Build(video);
-        ControlsOptions.Build(Tab(tabs, "Controls"));
+        var controls = ControlsOptions.Build(Tab(tabs, "Controls"));
+        _controlsTab = (Control)controls.GetParent();
         PrivacyOptions.Build(Tab(tabs, "Online"));
 
         var grid = new GridContainer { Columns = 3 };
@@ -111,11 +114,16 @@ public partial class OptionsUI : Control
             _arenaLabel.Text = "Code copied: friends paste it in their map editor or lobby.";
         }, 0, "Small")));
 
-        // Footer: Done fills it; in a match Leave sits to its left and swaps the row for a confirm prompt.
+        // Footer: Done fills it, sharing it with Reset to defaults on the Controls tab (the tab is too tall for a row of its own);
+        // in a match Leave sits to its left and swaps the row for a confirm prompt.
         var footer = UiKit.HBox(10);
         body.AddChild(footer);
         _leaveButton = Danger(UiKit.Button("LEAVE MATCH", () => ShowLeaveConfirm(true), 150));
         footer.AddChild(_leaveButton);
+        _reset = UiKit.Button("RESET TO DEFAULTS", controls.ResetToDefaults);
+        _reset.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        footer.AddChild(_reset);
+        tabs.TabChanged += _ => ShowLeaveConfirm(false);
         _done = UiKit.Primary("DONE", Close);
         _done.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         footer.AddChild(_done);
@@ -142,6 +150,9 @@ public partial class OptionsUI : Control
     {
         _leaveButton.Visible = _overlay && !ask;
         _done.Visible = !ask;
+        _reset.Visible = !ask && _tabs.GetCurrentTabControl() == _controlsTab;
+        // Same size as Reset beside it, even when Leave match takes a share of the row.
+        _done.CustomMinimumSize = new Vector2(_reset.Visible ? _reset.GetCombinedMinimumSize().X : 0, 0);
         _leaveConfirm.Visible = ask;
     }
 

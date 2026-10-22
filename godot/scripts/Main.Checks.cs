@@ -1066,6 +1066,16 @@ public partial class Main
         await Wait(0.5);
         _net.AddGuest(100);
         while (_net.Lobby.Players.Count < LobbyState.MaxPlayers) _net.AddBot();
+        // Anything visible under root that ends up off screen, by its text; saves the layout as lobby_NAME with --shots.
+        bool Fits(Control root, string name)
+        {
+            var screen = GetViewport().GetVisibleRect().Grow(0.5f);
+            var off = FindAll<Control>(root, c => c.IsVisibleInTree() && c is BaseButton or Label && !screen.Encloses(c.GetGlobalRect()))
+                .Select(c => c is Button b ? b.Text : ((Label)c).Text).ToList();
+            if (_shotDir != null) SaveShot($"lobby_{name}");
+            if (off.Count > 0) Finish(1, $"lobbycheck: {name}: off screen: {string.Join(", ", off.Take(6))}");
+            return off.Count == 0;
+        }
         int layouts = 0;
         foreach (var mode in GameModes.All)
             foreach (int size in new[] { 0, 2, 3, 4 })
@@ -1073,14 +1083,23 @@ public partial class Main
                 _net.Lobby.Settings.Mode = mode;
                 _net.SetTeamSize(size);
                 await Wait(0.15);
-                var screen = GetViewport().GetVisibleRect().Grow(0.5f);
-                var off = FindAll<Control>(_lobby, c => c.IsVisibleInTree() && c is BaseButton or Label && !screen.Encloses(c.GetGlobalRect()))
-                    .Select(c => c is Button b ? b.Text : ((Label)c).Text).ToList();
-                string name = $"{GameModes.Id(mode)}_{(size == 0 ? "ffa" : $"{size}v{size}")}";
-                if (_shotDir != null) SaveShot($"lobby_{name}");
-                if (off.Count > 0) { Finish(1, $"lobbycheck: {name}: off screen: {string.Join(", ", off.Take(6))}"); return; }
+                if (!Fits(_lobby, $"{GameModes.Id(mode)}_{(size == 0 ? "ffa" : $"{size}v{size}")}")) return;
                 layouts++;
             }
-        Finish(0, $"lobbycheck: all {layouts} lobby layouts fit on screen");
+        // The lobby's options, then the in-match overlay version (with Leave match), on every tab.
+        OpenOptions(_lobby);
+        var tabs = FindAll<TabContainer>(_options, _ => true).First();
+        foreach (bool overlay in new[] { false, true })
+        {
+            _options.SetOverlay(overlay);
+            for (int t = 0; t < tabs.GetTabCount(); t++)
+            {
+                tabs.CurrentTab = t;
+                await Wait(0.15);
+                if (!Fits(_options, $"options_{(overlay ? "overlay_" : "")}{tabs.GetTabTitle(t).ToLowerInvariant()}")) return;
+                layouts++;
+            }
+        }
+        Finish(0, $"lobbycheck: all {layouts} lobby and options layouts fit on screen");
     }
 }
