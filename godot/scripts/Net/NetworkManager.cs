@@ -129,6 +129,8 @@ public partial class NetworkManager : Node
 
     private void Reset()
     {
+        _haveMaps.Clear();
+        _mapsKey = "";
         Ports.Close();
         if (Multiplayer.MultiplayerPeer is ENetMultiplayerPeer enet) enet.Close();
         Multiplayer.MultiplayerPeer = new OfflineMultiplayerPeer();
@@ -231,11 +233,28 @@ public partial class NetworkManager : Node
         }
     }
 
+    /// <summary>
+    /// Host: sends the lobby to every peer. The custom arenas go only to peers that don't have this list yet (it
+    /// changed, or they just connected); everyone else gets the lobby without them, so the many small updates (names,
+    /// colors, ready) stay small even with 12 big arenas picked.
+    /// </summary>
     public void BroadcastLobby()
     {
         if (!IsHost) return;
-        Rpc(MethodName.SyncLobby, Lobby.Serialize());
+        var key = string.Join(",", Lobby.Settings.Maps.Select(System.Convert.ToBase64String));
+        if (key != _mapsKey) { _mapsKey = key; _haveMaps.Clear(); }
+        byte[] full = null, light = null;
+        foreach (int peer in Multiplayer.GetPeers())
+        {
+            bool has = !_haveMaps.Add(peer);
+            RpcId(peer, MethodName.SyncLobby, has ? light ??= Lobby.Serialize(withMaps: false) : full ??= Lobby.Serialize());
+        }
+        SyncLobby(null);
     }
+
+    private string _mapsKey = "";
+    private readonly System.Collections.Generic.HashSet<int> _haveMaps = new(); // peers holding the arenas in _mapsKey
+
 
     // ---------- local co-op ----------
 
@@ -422,7 +441,7 @@ public partial class NetworkManager : Node
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void SyncLobby(byte[] data)
     {
-        if (!IsHost) Lobby = LobbyState.Deserialize(data);
+        if (!IsHost) Lobby = LobbyState.Deserialize(data, Lobby.Settings.Maps);
         if (Mode == NetMode.Client && !InMatch) DropRefusedGuests();
         LobbyChanged?.Invoke();
     }

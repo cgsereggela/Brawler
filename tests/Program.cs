@@ -1786,6 +1786,21 @@ static List<byte[]> DecodeGif(byte[] g)
     Check(MapCode.Decode(broken) == null, "Map code: a changed character is caught");
     Check(MapCode.Decode(good[..(good.Length / 2)]) == null && MapCode.Decode("hello world!") == null && MapCode.Decode("") == null, "Map code: cut-off codes and junk are rejected");
     Check(MapCode.Decode(" " + good[..20] + "\n" + good[20..] + " ") != null, "Map code: spaces and line breaks in a paste are ignored");
+    // The largest map a code can carry (every list full, coordinates spread out): what a lobby with 12 of them sends.
+    var full = new MapDesign { Name = new string('W', MapDesign.MaxName), Seed = int.MaxValue, Style = MapStyle.Tiers };
+    var fr = new Random(9);
+    for (int i = 0; i < MapDesign.MaxPits; i++) full.Pits.Add((40 + i * 75, 70 + i * 75));
+    for (int i = 0; i < MapDesign.MaxBlocks; i++) full.Blocks.Add(new RectI(8 + fr.Next(900), 8 + fr.Next(500), 8 + fr.Next(300), 8 + fr.Next(200)));
+    for (int i = 0; i < MapDesign.MaxHills; i++) full.Hills.Add(Enumerable.Range(0, 15).Select(k => (8 + i * 120 + k * 8, fr.Next(60))).ToList());
+    for (int i = 0; i < MapDesign.MaxSpawns; i++) full.Spawns.Add(new SpawnPoint(8 + fr.Next(980), 8 + fr.Next(520)));
+    for (int i = 0; i < MapDesign.MaxPads; i++) full.Pads.Add(new JumpPad(8 + fr.Next(900), 990, 8 + fr.Next(520)));
+    for (int i = 0; i < MapDesign.MaxProps; i++) full.Props.Add(new PropSpawn((PropKind)fr.Next(Enum.GetValues<PropKind>().Length), 8 + fr.Next(900), 8 + fr.Next(500), 8 + fr.Next(60), 8 + fr.Next(60)));
+    for (int i = 0; i < MapDesign.MaxHazards; i++) full.Hazards.Add(new Hazard((HazardKind)fr.Next(Enum.GetValues<HazardKind>().Length), 8 + fr.Next(400), 500 + fr.Next(490), 8 + fr.Next(520)));
+    for (int i = 0; i < MapDesign.MaxSaws; i++) full.Saws.Add(new SawTrack(8 + fr.Next(980), 8 + fr.Next(520), 8 + fr.Next(980), 8 + fr.Next(520), 6 + fr.Next(20), 1 + fr.Next(9), fr.NextSingle()));
+    for (int i = 0; i < MapDesign.MaxMovers; i++) full.Movers.Add(new Mover(8 + fr.Next(400), 500 + fr.Next(400), 8 + fr.Next(520), 40, 8, 1 + fr.Next(9), fr.NextSingle()));
+    int fullBytes = MapCode.Pack(full).Length;
+    Console.WriteLine($"      (largest map: {fullBytes} bytes packed, {MapCode.Encode(full).Length}-character code)");
+    Check(fullBytes <= 1400, $"Map code: the largest map packs into {fullBytes} bytes (at most 1400, so 12 fit a lobby sync)");
     Check(MapCode.Trim(new string('x', 40)).Length == MapDesign.MaxName && MapCode.Trim("  hi  ") == "hi", "Map code: names are trimmed to fit");
 }
 

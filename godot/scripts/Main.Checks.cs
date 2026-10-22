@@ -27,6 +27,15 @@ public partial class Main
         _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 3, LoserChoices = 5, WinnerChoices = 3, DisabledCards = new(AutoDisabled) });
         var roundTrip = LobbyState.Deserialize(_net.Lobby.Serialize()).Settings.DisabledCards;
         if (!roundTrip.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: lobby round trip gave [{string.Join(",", roundTrip)}]"); return false; }
+        // A full lobby with 12 arenas: the arenas go once, and the small syncs without them stay one datagram.
+        var big = LobbyState.Deserialize(_net.Lobby.Serialize());
+        big.Settings.Maps = Enumerable.Range(1, MatchSettings.MaxMaps).Select(i => MapCode.Pack(MapDesign.Generate(MapStyle.Tiers, ThemeId.SunsetPeaks, i * 7919))).ToList();
+        while (big.Players.Count < LobbyState.MaxPlayers) big.Players.Add(new PlayerInfo { Slot = big.Players.Count, Name = new string('W', 16), Look = big.Players[0].Look, IsBot = true });
+        byte[] fullSync = big.Serialize(), lightSync = big.Serialize(withMaps: false);
+        var kept = LobbyState.Deserialize(lightSync, big.Settings.Maps).Settings.Maps;
+        if (lightSync.Length > 1000 || !kept.Zip(big.Settings.Maps).All(m => m.First.SequenceEqual(m.Second)) || LobbyState.Deserialize(fullSync).Settings.Maps.Count != MatchSettings.MaxMaps)
+        { Finish(1, $"lobby sync: {lightSync.Length} bytes without arenas (max 1000), {fullSync.Length} with, or the arenas didn't survive"); return false; }
+        Log.Info($"AUTOTEST lobby sync: {fullSync.Length} bytes with 12 arenas, {lightSync.Length} without, for {big.Players.Count} players");
         StartPoolCheck();
         StartChatCheck();
         Log.Info("AUTOTEST offline starting");
