@@ -102,10 +102,23 @@ public partial class MenuUI : Control
         version.OffsetBottom = -8;
         AddChild(version);
 
-        AddChild(TipCard());
+        // The tip card steps aside when the menu grows into its corner and it would cover the name box (a big UI scale).
+        var tip = TipCard();
+        AddChild(tip);
+        void FitTip()
+        {
+            tip.Visible = true;
+            Callable.From(() => tip.Visible = !Local(tip).Intersects(Local(body))).CallDeferred();
+        }
+        Resized += FitTip;
+        Accessibility.Changed += FitTip;
+        TreeExiting += () => Accessibility.Changed -= FitTip;
 
         VisibilityChanged += RefreshPreview;
     }
+
+    /// <summary>Where <paramref name="c"/> sits in this menu's own coordinates.</summary>
+    private Rect2 Local(Control c) => GetGlobalTransform().AffineInverse() * c.GetGlobalTransform() * new Rect2(Vector2.Zero, c.Size);
 
     /// <summary>Top-right, out of the way of the menu: a PayPal QR code with a friendly, no-pressure ask for a tip.</summary>
     private static Control TipCard()

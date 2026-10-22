@@ -1096,7 +1096,7 @@ public partial class Main
         foreach (float s in Accessibility.UiScales)
         {
             Scale(s);
-            await Wait(0.15);
+            await Wait(0.4);
             if (!Fits(_menu, "menu")) return;
             layouts++;
         }
