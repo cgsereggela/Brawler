@@ -1,14 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Brawler.Core;
 using Brawler.Fx;
+using Brawler.Game;
 using Brawler.Logic;
 using Brawler.Net;
 using Godot;
 
 namespace Brawler.UI;
 
-/// <summary>Character editor: body color plus every <see cref="LookPart"/>, with a live preview. Saves the profile on Done.</summary>
+/// <summary>
+/// Character editor: body color plus every <see cref="LookPart"/>, with a live preview. Saves the profile on Done.
+/// Hats and trails not yet earned (see <see cref="Unlocks"/>) can be tried on in the preview, which says what earns
+/// them, but only earned options are worn in matches and saved.
+/// </summary>
 public partial class CustomizeUI : Control
 {
     public event Action Closed;
@@ -20,6 +26,7 @@ public partial class CustomizeUI : Control
     private readonly Dictionary<LookPart, HBoxContainer> _swatches = new();
     private readonly Rng _rng = new((ulong)DateTime.Now.Ticks);
     private Appearance _look;
+    private Label _hint;
 
     public CustomizeUI(NetworkManager net) => _net = net;
     public CustomizeUI() { }
@@ -57,6 +64,10 @@ public partial class CustomizeUI : Control
             }
             else grid.AddChild(Stepper(p));
         }
+
+        _hint = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
+        _hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        body.AddChild(_hint);
 
         var buttons = UiKit.HBox(8);
         buttons.AddChild(UiKit.Button("Randomize", Randomize));
@@ -125,7 +136,7 @@ public partial class CustomizeUI : Control
 
     private void Apply()
     {
-        _net.SetLocalLook(_look);
+        _net.SetLocalLook(Unlocks.Earned(CareerBook.Current, _look)); // a locked option stays in the preview only
         Refresh();
     }
 
@@ -134,7 +145,17 @@ public partial class CustomizeUI : Control
         _preview.Look = _look;
         _preview.ColorIdx = _net.LocalColor;
         _preview.QueueRedraw();
-        foreach (var (part, label) in _values) label.Text = _look.OptionName(part);
+        var locked = new List<string>();
+        foreach (var (part, label) in _values)
+        {
+            bool has = Unlocks.Has(CareerBook.Current, part, _look[part]);
+            label.Text = has ? _look.OptionName(part) : $"{_look.OptionName(part)} (locked)";
+            label.Modulate = has ? Colors.White : Palette.TextDim;
+            if (!has) locked.Add($"{_look.OptionName(part)} {Appearance.PartLabel(part).ToLowerInvariant()}: {Unlocks.For(part, _look[part]).Goal.ToLowerInvariant()} to unlock it.");
+        }
+        int earned = Unlocks.All.Count(u => u.Met(CareerBook.Current));
+        _hint.Text = locked.Count > 0 ? string.Join("\n", locked) : $"Earned {earned} of {Unlocks.All.Length} hats and trails. Play matches to unlock more.";
+        _hint.Modulate = locked.Count > 0 ? Palette.Accent : Colors.White;
 
         UiKit.ClearChildren(_bodySwatches);
         for (int i = 0; i < Palette.Players.Length; i++)

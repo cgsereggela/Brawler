@@ -750,6 +750,7 @@ public partial class Avatar : CharacterBody2D
         _flash = Mathf.Max(0, _flash - dt * 14);
         _emoteT = Mathf.Max(0, _emoteT - dt);
         _animT += dt;
+        TrailTick(dt);
         if (Mathf.Abs(AimDir.X) > 0.15f) _facing = AimDir.X < 0 ? -1 : 1;
         AnimateLegs(dt);
         AnimateArm(dt);
@@ -911,6 +912,7 @@ public partial class Avatar : CharacterBody2D
             Flash = _flash,
             ArmSway = _armSway,
         };
+        DrawTrail(size);
         // A soft aura in the player color keeps characters readable on any backdrop.
         GlowTex.Draw(this, Vector2.Zero, 22 * size, Player.Color with { A = 0.22f });
         DrawCardAuras(size);

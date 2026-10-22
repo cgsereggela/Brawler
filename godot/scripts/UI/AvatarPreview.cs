@@ -46,7 +46,7 @@ public partial class AvatarPreview : Control
                 _nextBlink = 2f + (_t * 7.3f) % 2.5f;
             }
         }
-        if (Alive || Pedestal) QueueRedraw();
+        if (Alive || Pedestal || Look.Trail > 0) QueueRedraw();
     }
 
     public override void _Draw()
@@ -60,6 +60,14 @@ public partial class AvatarPreview : Control
             GlowTex.Draw(this, center + new Vector2(1.5f, 0), 18 * Zoom, body with { A = 0.35f + 0.08f * Mathf.Sin(_t * 2) });
             DrawColoredPolygon(Shapes.Ellipse(feet, 13 * Zoom, 3 * Zoom, 32), new Color(0, 0, 0, 0.35f));
             Shapes.DrawClosed(this, Shapes.Ellipse(feet, 13 * Zoom, 3 * Zoom, 40), Shapes.Hdr(body.Lightened(0.3f), 1.2f) with { A = 0.8f }, Mathf.Max(1, Zoom * 0.35f));
+        }
+        if (Look.Trail > 0)
+        {
+            // Standing still, a trail would have faded: sweep one out behind, as if the character just ran in.
+            var pts = new Vector2[TrailArt.Length];
+            for (int i = 0; i < pts.Length; i++)
+                pts[i] = center + new Vector2(-1.5f - i * 1.15f, 3.5f + Mathf.Sin(_t * 3 - i * 0.55f) * 1.6f) * Zoom; // within the preview's own width
+            TrailArt.Draw(this, Look.Trail, pts, Zoom * 0.5f, body, _t);
         }
         var aim = new Vector2(1, 0.25f).Normalized();
         if (Alive)

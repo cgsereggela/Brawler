@@ -117,6 +117,16 @@ public partial class MatchOverUI : Control
             standings.AddChild(row);
         }
 
+        // Milestones this match reached (see CareerBook): the cosmetics they unlocked.
+        if (CareerBook.JustUnlocked.Count > 0)
+        {
+            var names = CareerBook.JustUnlocked.Select(u => $"{u.Name} {Appearance.PartLabel(u.Part).ToLowerInvariant()}");
+            var unlocked = UiKit.Label($"UNLOCKED: {string.Join(", ", names).ToUpperInvariant()}! Wear {(CareerBook.JustUnlocked.Count > 1 ? "them" : "it")} in Customize.", UiKit.Body, Palette.Accent,
+                HorizontalAlignment.Center, Fonts.Bold);
+            unlocked.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _body.AddChild(unlocked);
+        }
+
         _votes = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         _votes.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _body.AddChild(_votes);

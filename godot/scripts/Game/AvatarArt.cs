@@ -57,9 +57,9 @@ public static class AvatarArt
 
     // Top of each hair style and hat in sprite space, for placing the HP bar.
     private static readonly float[] HairTop = { -9.5f, -11.3f, -16.2f, -16.4f, -11.5f, -11.8f, -11.3f, -18.8f };
-    private static readonly float[] HatTop = { -9.5f, -14.6f, -21.6f, -18.5f, -17.7f, -22f, -9.5f, -19f, -17.4f, -16.4f, -22.6f };
+    private static readonly float[] HatTop = { -9.5f, -14.6f, -21.6f, -18.5f, -17.7f, -22f, -9.5f, -19f, -17.4f, -16.4f, -22.6f, -24.5f, -12.5f, -16.5f, -16.8f };
     // How far each hat sits below where it is drawn, so it is worn over the top of the mask rather than perched on it.
-    private static readonly float[] HatDrop = { 0, 2.2f, 2.2f, 2f, 2.2f, 2.2f, 1.2f, 2f, 1f, 2.2f, 2.2f };
+    private static readonly float[] HatDrop = { 0, 2.2f, 2.2f, 2f, 2.2f, 2.2f, 1.2f, 2f, 1f, 2.2f, 2.2f, 2.2f, 1f, 1.5f, 2.2f };
 
     /// <summary>Topmost point used by this look (hair and hat), for placing the HP bar.</summary>
     public static float TopY(Appearance look)
@@ -821,7 +821,84 @@ public static class AvatarArt
                 c.Line(new Vector2(1.8f, -16f), new Vector2(1.6f, -13f), line with { A = 0.5f }, 0.35f);
                 break;
             }
+            case 11: // Wizard: a tall dyed cone flopping over at the tip, a wide brim and two gold stars.
+            {
+                float sway = Mathf.Sin(t * 2.2f) * 0.5f;
+                var cone = new[]
+                {
+                    new Vector2(-5.4f, -10.6f), new Vector2(-2.6f, -17.5f), new Vector2(0.6f, -23.2f), new Vector2(3.8f + sway, -26.2f),
+                    new Vector2(2.4f, -21.6f), new Vector2(3.4f, -16.6f), new Vector2(5.4f, -10.6f),
+                };
+                c.Fill(cone, dye, dyeLine, 0.6f);
+                c.Gradient(cone, dyeLight, c.H(c.Hat.Darkened(0.2f)));
+                c.Fill(Shapes.Ellipse(new Vector2(0, -10.4f), 9.6f, 1.6f, 24), c.H(c.Hat.Darkened(0.2f)), dyeLine, 0.6f);
+                c.Poly(StarShape(new Vector2(-1.2f, -15.2f), 1.4f), c.H(PaleYellow));
+                c.Poly(StarShape(new Vector2(1.8f, -19.6f), 0.95f), c.H(PaleYellow));
+                break;
+            }
+            case 12: // Laurel: two sprigs of gold leaves around the head, meeting over the brow with a dyed berry.
+            {
+                var center = new Vector2(0, -4.6f);
+                const float r = 7.6f;
+                foreach (var (from, to) in new[] { (192f, 262f), (278f, 348f) })
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float a = Mathf.DegToRad(Mathf.Lerp(from, to, i / 4f));
+                        var p = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
+                        var d = new Vector2(-Mathf.Sin(a), Mathf.Cos(a)) * 1.7f; // along the arc
+                        var n = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 0.85f;  // outward
+                        var leaf = new[] { p - d, p + n, p + d, p - n * 0.4f };
+                        c.Fill(leaf, c.H(i % 2 == 0 ? Gold : PaleYellow), DarkGold.Darkened(0.3f), 0.35f);
+                    }
+                c.Circle(center + new Vector2(0, -r), 1.05f, dyeLine);
+                c.Circle(center + new Vector2(0, -r), 0.8f, dye);
+                break;
+            }
+            case 13: // Horns: two little red horns curling up out of the head.
+            {
+                var hornL = new[]
+                {
+                    new Vector2(-6.4f, -10.2f), new Vector2(-7.6f, -12.8f), new Vector2(-7.3f, -15.2f), new Vector2(-6.1f, -16.8f),
+                    new Vector2(-5.6f, -14.6f), new Vector2(-4.4f, -12.6f), new Vector2(-2.8f, -11.1f),
+                };
+                var hornR = new Vector2[hornL.Length];
+                for (int i = 0; i < hornL.Length; i++) hornR[i] = new Vector2(-hornL[i].X, hornL[i].Y);
+                foreach (var horn in new[] { hornL, hornR })
+                {
+                    c.Fill(horn, c.H(Red), DarkRed.Darkened(0.3f), 0.55f);
+                    c.Gradient(horn, c.H(Red.Lightened(0.3f)), c.H(DarkRed));
+                }
+                break;
+            }
+            case 14: // Pirate: a black tricorn with a dyed trim and a little skull.
+            {
+                var hat = new[]
+                {
+                    new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.6f), new Vector2(-3.6f, -16.6f), new Vector2(0, -15.2f),
+                    new Vector2(3.6f, -16.6f), new Vector2(7.4f, -14.6f), new Vector2(9.2f, -10.4f), new Vector2(0, -11.8f),
+                };
+                c.Fill(hat, c.H(HatBlack), HatGrey.Lightened(0.25f), 0.6f);
+                for (int i = 0; i < 6; i++) c.Line(hat[i] + new Vector2(0, 0.7f), hat[i + 1] + new Vector2(0, 0.7f), dye, 0.55f);
+                c.Line(new Vector2(-1.9f, -11.9f), new Vector2(1.9f, -13.1f), c.H(Bone), 0.45f);
+                c.Line(new Vector2(-1.9f, -13.1f), new Vector2(1.9f, -11.9f), c.H(Bone), 0.45f);
+                c.Circle(new Vector2(0, -13.6f), 1.25f, c.H(Bone));
+                c.Circle(new Vector2(-0.45f, -13.7f), 0.32f, Ink);
+                c.Circle(new Vector2(0.45f, -13.7f), 0.32f, Ink);
+                break;
+            }
         }
+    }
+
+    /// <summary>A five-pointed star around <paramref name="at"/>.</summary>
+    private static Vector2[] StarShape(Vector2 at, float r)
+    {
+        var pts = new Vector2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float a = -Mathf.Pi / 2 + i * Mathf.Pi / 5;
+            pts[i] = at + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * (i % 2 == 0 ? r : r * 0.45f);
+        }
+        return pts;
     }
 
     // ---------- arm ----------

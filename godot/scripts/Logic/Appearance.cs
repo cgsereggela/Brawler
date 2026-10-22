@@ -9,7 +9,7 @@ public static class Body
     public const float W = 14, H = 18;
 }
 
-public enum LookPart { Eyes, Nose, Mouth, Hair, HairColor, Hat, HatColor }
+public enum LookPart { Eyes, Nose, Mouth, Hair, HairColor, Hat, HatColor, Trail }
 
 /// <summary>
 /// A player's cosmetic choices, one index per <see cref="LookPart"/>. Purely visual: it never affects rules.
@@ -23,7 +23,9 @@ public sealed class Appearance
     public static readonly string[] NoseNames = { "None" };
     public static readonly string[] MouthNames = { "Smile", "Flat", "Open", "Grin", "Frown", "Fangs", "Tongue", "Mustache", "Cat" };
     public static readonly string[] HairNames = { "Bald", "Short", "Spiky", "Mohawk", "Long", "Bowl", "Ponytail", "Afro" };
-    public static readonly string[] HatNames = { "None", "Cap", "Top Hat", "Beanie", "Crown", "Party", "Headband", "Viking", "Halo", "Propeller", "Chef" };
+    public static readonly string[] HatNames = { "None", "Cap", "Top Hat", "Beanie", "Crown", "Party", "Headband", "Viking", "Halo", "Propeller", "Chef", "Wizard", "Laurel", "Horns", "Pirate" };
+    /// <summary>What follows a moving player. All but None are earned (see <see cref="Unlocks"/>).</summary>
+    public static readonly string[] TrailNames = { "None", "Sparks", "Bubbles", "Rainbow", "Flames", "Stars" };
 
     /// <summary>Hair and hat dyes. Game code turns the hex into colors.</summary>
     public static readonly (string Name, string Hex)[] Dyes =
@@ -34,7 +36,7 @@ public sealed class Appearance
     };
 
     private static readonly string[] DyeNames = Dyes.Select(d => d.Name).ToArray();
-    private static readonly string[][] Options = { EyeNames, NoseNames, MouthNames, HairNames, DyeNames, HatNames, DyeNames };
+    private static readonly string[][] Options = { EyeNames, NoseNames, MouthNames, HairNames, DyeNames, HatNames, DyeNames, TrailNames };
 
     public static readonly int PartCount = Options.Length;
 
@@ -63,8 +65,10 @@ public sealed class Appearance
     public int HairColor => this[LookPart.HairColor];
     public int Hat => this[LookPart.Hat];
     public int HatColor => this[LookPart.HatColor];
+    public int Trail => this[LookPart.Trail];
 
     public string OptionName(LookPart p) => Options[(int)p][this[p]];
+    public static string OptionNameOf(LookPart p, int option) => Options[(int)p][Wrap(option, Count(p))];
 
     public static Appearance Default()
     {
@@ -78,7 +82,11 @@ public sealed class Appearance
     public static Appearance Random(Rng rng)
     {
         var a = new Appearance();
-        foreach (LookPart p in Enum.GetValues<LookPart>()) a[p] = rng.Range(0, Count(p) - 1);
+        foreach (LookPart p in Enum.GetValues<LookPart>())
+        {
+            a[p] = rng.Range(0, Count(p) - 1);
+            if (!Unlocks.Free(p, a[p])) a[p] = 0; // earned cosmetics stay with whoever earned them
+        }
         if (rng.Range(0, 2) == 0) a[LookPart.Hat] = 0; // a third of the crowd goes hatless
         return a;
     }

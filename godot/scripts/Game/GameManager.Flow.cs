@@ -621,6 +621,7 @@ public partial class GameManager
         Visible = true;
         if (IsHost) Stats.MatchStart(Settings, Active(), IsBotPlayer);
         Log.Info($"match begins: {lobby.Players.Count} players, {GameModes.Name(Mode)}, {Teams.ModeName(Settings.TeamSize)}{(TeamMode && Settings.FriendlyFire ? " (friendly fire)" : "")}, battles/round {Settings.BattlesPerRound}, rounds to win {Settings.RoundsToWin}");
+        CareerBook.MatchBegan();
         MatchBegan?.Invoke();
     }
 
@@ -712,6 +713,7 @@ public partial class GameManager
             Net.InMatch = false;
             Banner?.Invoke(Mode == GameMode.Survival ? MatchTitle(winner) : winner >= 0 ? $"{name} WINS THE MATCH!" : "MATCH OVER", col, 3f);
             Sfx.Play("win");
+            CareerBook.MatchEnded(this, winner); // ahead of the match-over screen, which shows what it unlocked
             MatchEnded?.Invoke(winner);
             return;
         }

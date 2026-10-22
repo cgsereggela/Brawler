@@ -6,7 +6,8 @@ namespace Brawler.Core;
 /// <summary>The local player's name, color, look and last join address, kept in user://profile.cfg between runs. Only UI actions save it.</summary>
 public static class Profile
 {
-    private const string Path = "user://profile.cfg";
+    /// <summary>Where the profile lives. Demos point it elsewhere so they never touch the player's own.</summary>
+    public static string Path = "user://profile.cfg";
 
     public static (string Name, int Color, Appearance Look) Load()
     {
@@ -24,6 +25,15 @@ public static class Profile
         cfg.SetValue("player", "color", color);
         cfg.SetValue("player", "look", look.Encode());
     });
+
+    /// <summary>The main player's milestones so far (see <see cref="Career"/>).</summary>
+    public static Career LoadCareer()
+    {
+        var cfg = new ConfigFile();
+        return Career.Decode(cfg.Load(Path) == Error.Ok ? (string)cfg.GetValue("player", "career", "") : "");
+    }
+
+    public static void SaveCareer(Career c) => Edit(cfg => cfg.SetValue("player", "career", c.Encode()));
 
     /// <summary>The address last typed in the join box, so friends don't retype it every session.</summary>
     public static string LastAddress()

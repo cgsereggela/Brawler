@@ -644,6 +644,7 @@ public partial class GameManager
         KillCam.NoteDeath(slot, _clock);
         NoteRespawn(slot, (KillCause)cause);
         KillFx(slot, killer, at, (KillCause)cause);
+        CareerBook.Died(this, slot, killer);
         Log.Info($"{NameOf(slot)} died{(killer >= 0 ? $" (by {NameOf(killer)})" : "")}");
     }
 

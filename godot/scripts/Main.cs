@@ -71,6 +71,8 @@ public partial class Main : Node
         _net = new NetworkManager { Name = "Net" };
         AddChild(_net);
         (_net.LocalName, _net.LocalColor, _net.LocalLook) = Profile.Load();
+        CareerBook.Load();
+        _net.LocalLook = Unlocks.Earned(CareerBook.Current, _net.LocalLook); // only what this player has earned goes out
         _sfx = new Sfx { Name = "Sfx" };
         AddChild(_sfx);
         _music = new Music { Name = "Music" };
@@ -114,6 +116,7 @@ public partial class Main : Node
         Wire();
         Show(_menu);
         HandleCommandLine();
+        CareerBook.Enabled = _autoMode == null; // test runs earn nothing (a demo turns it back on with its own career)
     }
 
     private void Wire()

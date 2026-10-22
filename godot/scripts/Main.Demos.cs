@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading.Tasks;
 using Brawler.Core;
 using Brawler.Game;
@@ -19,6 +20,9 @@ public partial class Main
         _game.Stats.Enabled = false;
         MapLibrary.Dir = "user://demo/maps";
         MapLibrary.SettingsPath = "user://demo/settings.cfg";
+        Profile.Path = "user://demo/profile.cfg"; // never the player's own profile or career
+        DirAccess.RemoveAbsolute(Profile.Path);
+        CareerBook.Set(new Career());
         DirAccess.MakeDirRecursiveAbsolute(MapLibrary.Dir);
         foreach (var f in DirAccess.GetFilesAt(MapLibrary.Dir)) DirAccess.RemoveAbsolute($"{MapLibrary.Dir}/{f}");
         MapLibrary.Draft = "";
@@ -31,6 +35,7 @@ public partial class Main
             case "draft": await DemoDraft(); break;
             case "gungame": await DemoGunGame(); break;
             case "survival": await DemoSurvival(); break;
+            case "cosmetics": await DemoCosmetics(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -210,18 +215,87 @@ public partial class Main
         }
         if (_net.Lobby.Settings.Mode != GameMode.Survival) { Finish(1, "demo survival: the Game mode button never reached Survival"); return; }
         await DemoWait(1.6);
-        DemoMark("match");
-        _game.HostStartMatch();
-        int wave = 0;
-        double t = 0;
-        while (_game.Phase != Phase.MatchOver && t < 240)
+        // A run that falls in the first couple of waves shows too little: go again (the edit cuts from the last run).
+        for (int run = 1; run <= 4; run++)
         {
-            if (_game.BattleNumber != wave && _game.Phase == Phase.Countdown) DemoMark($"wave {wave = _game.BattleNumber} bots {_game.WaveBots}");
-            await DemoWait(0.1);
-            t += 0.1;
+            DemoMark($"run {run}");
+            _game.HostStartMatch();
+            int wave = 0;
+            double t = 0;
+            while (_game.Phase != Phase.MatchOver && t < 240)
+            {
+                if (_game.BattleNumber != wave && _game.Phase == Phase.Countdown) DemoMark($"wave {wave = _game.BattleNumber} bots {_game.WaveBots}");
+                await DemoWait(0.1);
+                t += 0.1;
+            }
+            if (_game.LocalMatchPlayer.RoundWins >= 3) break;
+            DemoMark($"retry after {_game.LocalMatchPlayer.RoundWins} waves");
+            await DemoWait(2.0);
         }
         DemoMark("over");
         await DemoWait(5.0);
+        DemoMark("end");
+    }
+
+    // Cosmetics: try on a locked trail and hat in the editor, finish a match that reaches two milestones, then wear them.
+    private async Task DemoCosmetics()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        CareerBook.Set(new Career { Matches = 2, Wins = 1, Kills = 49 }); // one match short of Sparks, one kill short of Pirate
+        CareerBook.Enabled = true;
+        Press(_menu, "Customize Character");
+        await DemoWait(1.2);
+        DemoMark("editor");
+        // The steppers, in order: eyes, mouth, hair, hat, trail.
+        Button Next(int stepper) => FindAll<Button>(_custom, b => b.Text == ">" && b.IsVisibleInTree()) is var bs && stepper < bs.Count ? bs[stepper] : null;
+        Next(4)?.EmitSignal(BaseButton.SignalName.Pressed); // Sparks trail: locked
+        await DemoWait(2.4);
+        // Back through the hats (None, then the end of the list) to the Pirate hat: locked too.
+        for (int i = 0; i < 20 && FindChild<Label>(_custom, l => l.Text.StartsWith("Pirate")) == null; i++)
+        {
+            FindAll<Button>(_custom, b => b.Text == "<" && b.IsVisibleInTree())[3].EmitSignal(BaseButton.SignalName.Pressed);
+            await DemoWait(0.6);
+        }
+        await DemoWait(2.4);
+        Press(_custom, "DONE");
+        await DemoWait(0.6);
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 3) _net.AddBot();
+        _net.Lobby.Settings.RoundsToWin = 1;
+        _net.Lobby.Settings.BattlesPerRound = 1;
+        await DemoWait(0.8);
+        // Keep playing until the milestones fall (the autopilot needs three kills for the hat).
+        for (int match = 1; match <= 6 && Unlocks.For(LookPart.Hat, 14) is { } hat && !hat.Met(CareerBook.Current); match++)
+        {
+            DemoMark($"match {match}");
+            _game.HostStartMatch();
+            while (_game.Phase != Phase.MatchOver) await DemoWait(0.1);
+            DemoMark(CareerBook.JustUnlocked.Count > 0 ? $"unlocked {string.Join(",", CareerBook.JustUnlocked.Select(u => u.Name))}" : "nothing new");
+            await DemoWait(CareerBook.JustUnlocked.Count > 0 ? 4.5 : 1.0);
+            if (!Unlocks.For(LookPart.Hat, 14).Met(CareerBook.Current)) _game.HostReturnToLobby();
+            await DemoWait(0.5);
+        }
+        _game.HostReturnToLobby();
+        await DemoWait(0.8);
+        Press(_lobby, "Customize");
+        await DemoWait(1.0);
+        DemoMark("wear");
+        // The editor opens on the saved look, which had the locked picks taken off: put them back on, earned now.
+        Next(4)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await DemoWait(0.8);
+        for (int i = 0; i < 20 && _net.LocalLook.Hat != 14; i++) // one step back from None is the Pirate hat
+        {
+            FindAll<Button>(_custom, b => b.Text == "<" && b.IsVisibleInTree())[3].EmitSignal(BaseButton.SignalName.Pressed);
+            await DemoWait(0.6);
+        }
+        await DemoWait(2.0);
+        Press(_custom, "DONE");
+        await DemoWait(0.8);
+        DemoMark("fight");
+        _game.HostStartMatch();
+        await DemoWait(16.0);
         DemoMark("end");
     }
 }

@@ -1,9 +1,13 @@
 issues to fix:
+- the match settings can slide off the screen in the lobby depending on the game mode, make sure everything stays on screen regardless of the mode chosen, recommend putting the 'Remove' button below the 'Normal' button since we have room vertically, but not horizontally
+- 'Remove' button in lobby should be capitalized
+- remove the 'move the mouse to look around' text from the customize menu
+- the 'Done' button slides off the bottom of the screen in the Options > Controls menu, recommend: move the reset to defaults button beside the 'Done' button, keep the buttons the same size
 
 features to add:
-- unlockable cosmetics (hats, trails) for milestones, with no effect on gameplay
 - clip export: save a kill cam as a GIF (Logic/Gif.cs already exists)
 - accessibility: colorblind-safe player and team colors, a bigger UI scale, and adjustable aim assist for controllers
+- add a bug report button on the main menu that links to: https://github.com/cgsereggela/Brawler/issues
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame
