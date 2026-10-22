@@ -367,6 +367,14 @@ public partial class Main
         _net.Leave();
         await Wait(0.3);
         if (!ed.Visible || MapCode.Encode(ed.Design) != MapCode.Encode(design)) { Fail("leaving the playtest didn't come back to the editor and its arena"); return; }
+        // Back warns once about changes that aren't in My maps, then leaves.
+        var unsaved = MapDesign.Generate(MapStyle.Tiers, ThemeId.NeonNight, 4242);
+        unsaved.Name = "Unsaved Arena";
+        ed.Import(MapCode.Encode(unsaved));
+        FindButton(ed, "Back").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        if (!ed.Visible || !ed.Unsaved) { Fail("Back left the editor without warning about an unsaved arena"); return; }
+        Log.Info("EDITORCHECK leaving: Back warns once about an arena that isn't in My maps");
         // The lobby's arenas: tick the saved arena, then back to random.
         FindButton(ed, "Back").EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(0.2);

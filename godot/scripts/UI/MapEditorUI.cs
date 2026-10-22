@@ -48,7 +48,8 @@ public partial class MapEditorUI : Control
     private readonly List<MapDesign> _undo = new(), _redo = new();
     private string _flash;
     private ulong _flashUntil;
-    private bool _armedSave;
+    private bool _armedSave, _armedLeave;
+    private bool _touched; // edited since it was opened or saved
     private string _armedDelete;
 
     // Pointer state, in world pixels.
@@ -246,12 +247,27 @@ public partial class MapEditorUI : Control
         _game.Arena.Build(null);
     }
 
-    private void Close() => Closed?.Invoke();
+    /// <summary>Back: warns once if the arena was changed and isn't in My maps (the draft is kept either way).</summary>
+    private void Close()
+    {
+        if (Unsaved && !_armedLeave)
+        {
+            _armedLeave = true;
+            Flash("This arena isn't saved in My maps. Save it, or press Back again to leave (it stays here as your draft).");
+            return;
+        }
+        _armedLeave = false;
+        Closed?.Invoke();
+    }
+
+    /// <summary>Changed since it was opened or saved, and no saved map matches it.</summary>
+    public bool Unsaved => _touched && !MapLibrary.All().Exists(e => e.Code == MapCode.Encode(Design));
 
     /// <summary>Opens a design (from the lobby's arena list or a test), replacing what is being edited.</summary>
     public void Load(MapDesign d)
     {
         Design = d.Copy();
+        _touched = false;
         _style = Design.Style;
         _sel = _hover = (Kind.None, -1);
         if (_name != null) _name.Text = Design.Name;
@@ -271,6 +287,8 @@ public partial class MapEditorUI : Control
 
     private void Remember()
     {
+        _touched = true;
+        _armedLeave = false;
         _undo.Add(Design.Copy());
         if (_undo.Count > 100) _undo.RemoveAt(0);
         _redo.Clear();
@@ -296,6 +314,8 @@ public partial class MapEditorUI : Control
 
     private void AfterHistory()
     {
+        _touched = true;
+        _armedLeave = false;
         _sel = _hover = (Kind.None, -1);
         _name.Text = Design.Name;
         _style = Design.Style;
@@ -408,7 +428,9 @@ public partial class MapEditorUI : Control
             return;
         }
         _armedSave = false;
-        Flash(MapLibrary.Save(Design) ? $"Saved {Design.Name} to My maps." : "Couldn't save the map.");
+        bool ok = MapLibrary.Save(Design);
+        if (ok) _touched = false;
+        Flash(ok ? $"Saved {Design.Name} to My maps." : "Couldn't save the map.");
     }
 
     private void CopyCode()
@@ -428,6 +450,7 @@ public partial class MapEditorUI : Control
         }
         Remember();
         Load(d);
+        _touched = true; // a pasted arena isn't in My maps until saved
         _code.ReleaseFocus();
         Rebuild();
         Flash(d.Name != "" ? $"Opened {d.Name}." : "Opened the map.");

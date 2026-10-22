@@ -1,5 +1,4 @@
 issues to fix:
-- leaving the map editor gives no warning about unsaved changes. The draft is kept, but nothing says the work isn't in My maps
 - check the lobby settings packet size with 12 custom arenas plus disabled cards, and keep it well inside ENet's reliable-packet limits (split or compress if needed)
 - a bad map code gets one vague error. Say which case it is: not a map code, damaged (checksum), or made in a newer version
 - the map editor needs a mouse; make it usable with a controller like the rest of the game (move a cursor with the stick, A to place, B to delete, bumpers to change tools)
