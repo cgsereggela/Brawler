@@ -200,10 +200,10 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
   - The status line names anything that would play badly, such as a spawn standing on nothing or one spawn that can't reach another.
 - **Missing spawns:** an arena needs no spawns. Any missing ones are picked on ground everyone can reach, as far apart as fit.
 - **Saving and sharing:**
-  - **Save** keeps the arena in `user://maps` as a `.map` text file holding its code.
+  - **Save** keeps the arena in `user://maps` as a `.map` text file holding its code. **My maps** lists them with a thumbnail of each.
   - Every arena has a **map code**: one line of text (`godot/scripts/Logic/MapCode.cs`), about 200 characters for a busy generated arena and a few dozen for a simple one. **Copy** and **Paste** share it.
   - **Playtest** plays the arena against a bot at once.
-- **In a lobby:** the host clicks **Arenas** to tick saved arenas or paste a friend's code. Ticked arenas take turns, one per battle. With none ticked, every battle gets a generated arena as before. Every arena listed there has **Copy** for its code, and other players can **Save** the host's arenas. Mid-match, the Esc overlay offers **Save arena** and **Copy code** for the custom arena being played.
+- **In a lobby:** the host clicks **Arenas** to tick saved arenas or paste a friend's code. Ticked arenas take turns, one per battle. With none ticked, every battle gets a generated arena as before. Every arena listed there has a thumbnail and **Copy** for its code, and other players can **Save** the host's arenas. Mid-match, the Esc overlay offers **Save arena** and **Copy code** for the custom arena being played.
 - **How it plays:** a design (`MapDesign`) builds the same `MapLayout` the generator makes, so collision, drawing, bots and every game mode work on it unchanged.
 
 ## Effects that grow with your cards

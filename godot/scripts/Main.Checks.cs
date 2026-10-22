@@ -381,6 +381,16 @@ public partial class Main
         foreach (var t in twins) MapLibrary.Delete(t.Name);
         if (MapLibrary.All() is not [{ Name: "Check Arena" }]) { Fail("deleting the look-alike maps took the wrong file"); return; }
         Log.Info("EDITORCHECK library: look-alike names get files of their own, and clashing names count up");
+        FindButton(ed, "My maps").EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(0.2);
+        if (FindChild<TextureRect>(ed, t => t.Texture != null && t.IsVisibleInTree() && t.CustomMinimumSize == MapThumb.Size) is not { } thumb || thumb.Texture.GetWidth() < 64)
+        { Fail("My maps shows no thumbnail for the saved arena"); return; }
+        if (_shotDir != null) { await Wait(0.3); SaveShot("editor_library"); }
+        FindButton(ed, "DONE").EmitSignal(BaseButton.SignalName.Pressed);
+        Log.Info("EDITORCHECK thumbnails: My maps shows a picture of each arena");
+        if (_shotDir != null)
+            foreach (var style in System.Enum.GetValues<MapStyle>())
+                MapThumb.Texture(MapDesign.Generate(style, (ThemeId)((int)style % ArenaTheme.All.Length), 77)).GetImage().SavePng($"{_shotDir}/thumb_{style}.png");
 
         if (_shotDir != null)
         {
@@ -442,6 +452,7 @@ public partial class Main
         var tick = FindChild<CheckBox>(_lobby, c => c.Text == "Check Arena" && c.IsVisibleInTree());
         if (tick == null) { Fail("the saved arena isn't listed in the lobby's arenas"); return; }
         if (FindChild<Button>(_lobby, b => b.Text == "Copy" && b.IsVisibleInTree() && b.GetParent() == tick.GetParent()) == null) { Fail("the lobby's arenas have no Copy button"); return; }
+        if (FindChild<TextureRect>(_lobby, t => t.Texture != null && t.GetParent() == tick.GetParent()) == null) { Fail("the lobby's arenas have no thumbnail"); return; }
         tick.ButtonPressed = true;
         await Wait(0.2);
         if (_net.Lobby.Settings.Maps.Count != 1 || arenas.Text != "Check Arena" || MapLibrary.LobbyMaps.Count != 1)

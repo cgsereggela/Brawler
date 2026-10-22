@@ -492,6 +492,7 @@ public partial class MapEditorUI : Control
         foreach (var e in all)
         {
             var row = UiKit.HBox(6);
+            row.AddChild(MapThumb.For(e.Design, e.Code));
             var name = UiKit.Label(e.Name, UiKit.Small, Palette.Text);
             name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             row.AddChild(name);

@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- map thumbnails in My maps, the editor's library and the lobby's Arenas panel
 - bot difficulty levels (Easy, Normal, Hard), chosen per bot in the lobby
 - draft mode: before the match, players take turns picking cards from one shared pool
 - Gun Game mode: every kill moves you to the next card in a fixed list; first to finish it wins

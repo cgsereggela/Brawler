@@ -134,10 +134,11 @@ public partial class ArenaPoolUI : Control
         }
     }
 
-    /// <summary>An arena's row: its name (or tick box), theme, and Copy for its code.</summary>
+    /// <summary>An arena's row: its thumbnail, name (or tick box), theme, and Copy for its code.</summary>
     private HBoxContainer Row(Control first, MapDesign d, string code)
     {
         var row = UiKit.HBox(8);
+        row.AddChild(MapThumb.For(d, code));
         row.AddChild(first);
         row.AddChild(UiKit.Label(ThemeRules.Name(d.Theme), UiKit.Tiny, Palette.TextDim));
         var copy = UiKit.Button("Copy", () =>
