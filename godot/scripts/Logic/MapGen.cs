@@ -45,6 +45,8 @@ public sealed class MapLayout
     public List<Hazard> Hazards { get; } = new();
     public List<SawTrack> Saws { get; } = new();
     public List<Mover> Movers { get; } = new();
+    /// <summary>Drifting platforms (see <see cref="Drift"/>): not solids, but their tops are in Surfaces, at their spots.</summary>
+    public List<Drift> Drifts { get; } = new();
     // Floor terrain (see TerrainGen): raised flat stretches are rects in Solids (also listed in Terrain), the ramps
     // between levels are Slopes, and Ground holds each terrain-bearing floor segment's top outline for drawing.
     public List<RectI> Terrain { get; } = new();
@@ -60,6 +62,16 @@ public sealed class MapLayout
     public bool UsePads { get; init; }
     /// <summary>Bots' jump graph only (see NavLayout): surfaces that are a moving platform's lane, and which mover runs it.</summary>
     public Dictionary<int, int> MoverOf { get; } = new();
+    /// <summary>Bots' jump graph only: surfaces that are a drifting platform's top, and which drift it is.</summary>
+    public Dictionary<int, int> DriftOf { get; } = new();
+
+    /// <summary>The drifting platform whose top (at its spot) is <paramref name="s"/>, or -1.</summary>
+    public int DriftIndex(Surface s)
+    {
+        for (int i = 0; i < Drifts.Count; i++)
+            if (Drifts[i].Top == s) return i;
+        return -1;
+    }
 
     /// <summary>True if a rect overlaps any solid or slope.</summary>
     public bool Blocked(RectI r)
@@ -921,8 +933,13 @@ public static class MapGenerator
             // Pools: standing in one hurts, so the graph treats them as gaps. Bots land beside them and jump across.
             foreach (var h in map.Hazards)
                 if (h.Y == s.Y) open = Cut(open, h.X1 - hw, h.X2 + hw);
+            int drift = map.DriftIndex(s);
             foreach (var (a, b) in open)
-                if (b - a >= 4) nav.Surfaces.Add(new Surface(a, b, s.Y));
+                if (b - a >= 4)
+                {
+                    if (drift >= 0) nav.DriftOf[nav.Surfaces.Count] = drift;
+                    nav.Surfaces.Add(new Surface(a, b, s.Y));
+                }
         }
         // Moving platforms: each one's whole lane is a surface, which bots ride by waiting for the platform (BotBrain).
         for (int i = 0; i < map.Movers.Count; i++)
@@ -934,6 +951,7 @@ public static class MapGenerator
         nav.Hazards.AddRange(map.Hazards);
         nav.Saws.AddRange(map.Saws);
         nav.Movers.AddRange(map.Movers);
+        nav.Drifts.AddRange(map.Drifts);
         return nav;
     }
 

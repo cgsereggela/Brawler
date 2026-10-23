@@ -38,6 +38,7 @@ public partial class Main
             case "cosmetics": await DemoCosmetics(); break;
             case "clips": await DemoClips(); break;
             case "access": await DemoAccess(); break;
+            case "drift": await DemoDrift(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -64,6 +65,36 @@ public partial class Main
             list.AddRange(FindAll(c, match));
         }
         return list;
+    }
+
+    // Drifting platforms: bots fight over a floor and a staircase of platforms that sway when landed on, shot or blasted.
+    private async Task DemoDrift()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        var d = MapDesign.Empty(ThemeId.SunsetPeaks, 3);
+        d.Name = "Drift Demo";
+        int w = MapLayout.Width;
+        foreach (var (x, tier) in new[] { (120, 1), (w - 184, 1), (300, 2), (w - 364, 2), (w / 2 - 32, 3), (180, 4), (w - 244, 4) })
+            d.Drifts.Add(new Drift(x, MapGenerator.TierY(tier) / 8 * 8, 64, 8));
+        MapLibrary.LobbyMaps = new() { MapCode.Encode(d) };
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        await DemoWait(1.0);
+        DemoMark("match");
+        _game.HostStartMatch();
+        double t = 0;
+        float last = 0;
+        while (_game.Phase != Phase.MatchOver && t < 90)
+        {
+            if (_game.Arena.DriftTravel - last > 50) DemoMark($"drift {last = _game.Arena.DriftTravel:0}");
+            await DemoWait(0.25);
+            t += 0.25;
+        }
+        DemoMark($"over, drifts moved {_game.Arena.DriftTravel:0} px");
+        await DemoWait(3.0);
+        DemoMark("end");
     }
 
     // Map thumbnails: a few saved arenas in My maps, then the lobby's Arenas panel picking some for a match.

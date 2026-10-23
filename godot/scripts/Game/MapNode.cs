@@ -103,6 +103,7 @@ public partial class MapNode : Node2D
         var rng = new Rng((ulong)(uint)Layout.Seed ^ 0x9E3779B9UL);
         foreach (var s in Layout.Surfaces)
         {
+            if (Layout.DriftIndex(s) >= 0) continue; // drifting platforms move: nothing painted on them stays put
             int n = s.Width / 22;
             for (int i = 0; i < n; i++)
             {

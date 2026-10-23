@@ -266,7 +266,7 @@ void Check(bool cond, string name, string detail = "")
     Check(a1.Props.SequenceEqual(a2.Props) && a1.Hazards.SequenceEqual(a2.Hazards) && a1.Saws.SequenceEqual(a2.Saws) && a1.Movers.SequenceEqual(a2.Movers),
         "Same seed produces identical arena features");
 
-    int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, bad = 0;
+    int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, drifts = 0, bad = 0;
     var why = new List<string>();
     void Bad(int seed, string what) { bad++; if (why.Count < 5) why.Add($"seed {seed}: {what}"); }
     for (int s = 0; s < maps; s++)
@@ -302,10 +302,18 @@ void Check(bool cond, string name, string detail = "")
             if (m.Solids.Any(r => r.Intersects(room))) Bad(seed, "mover lane blocked");
             if (mv.Period <= 0 || mv.X2 <= mv.X1) Bad(seed, "mover goes nowhere");
         }
+        foreach (var dr in m.Drifts)
+        {
+            drifts++;
+            if (m.Solids.Any(r => r.Intersects(dr.Range))) Bad(seed, "drift can be shoved into a solid");
+            if (m.Props.Any(p => p.Rect.Intersects(dr.Range)) || m.Movers.Any(mv => mv.Lane.Intersects(dr.Range))) Bad(seed, "drift range crowded");
+            if (m.Spawns.Any(sp => dr.Range.Grow(0, 40).Contains(sp.X, sp.Y))) Bad(seed, "drift over a spawn");
+            if (!m.Surfaces.Contains(dr.Top)) Bad(seed, "drift top not a surface");
+        }
     }
     Check(bad == 0, "Arena features stay clear of solids, spawns, pads and each other", $"{bad} bad. {string.Join("; ", why)}");
-    Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5,
-        "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers");
+    Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5 && drifts > maps / 5,
+        "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers, {drifts} drifts");
 
     var track = new SawTrack(100, 50, 200, 50, 9, 4, 0);
     Check(Vector2.Distance(track.At(0), new Vector2(100, 50)) < 0.01f && Vector2.Distance(track.At(2), new Vector2(200, 50)) < 0.01f
@@ -313,6 +321,23 @@ void Check(bool cond, string name, string detail = "")
     var mover = new Mover(40, 120, 300, 40, 8, 3, 0.25f);
     Check(Math.Abs(mover.XAt(0) - 80) < 0.01f && Enumerable.Range(0, 100).All(i => mover.XAt(i * 0.07f) is >= 40 and <= 120),
         "Movers stay inside their lane", $"{mover.XAt(0)}");
+    {
+        // A drifting platform shoved hard stays within its reach and eases back home.
+        var drift = new Drift(300, 200, 56, 8);
+        var (off, vel) = (Vector2.Zero, new Vector2(900, -400));
+        bool inside = true;
+        for (int i = 0; i < 60 * 6; i++)
+        {
+            off = DriftMotion.Step(drift, off, ref vel, Vector2.Zero, 1f / 60);
+            inside &= Math.Abs(off.X) <= Drift.ReachX && Math.Abs(off.Y) <= Drift.ReachY;
+        }
+        Check(inside && off.Length() < 0.5f, "Drifting platforms stay within reach and settle back home", $"{off}");
+        var wall = new Drift(MapGenerator.Wall + 4, 200, 56, 8);
+        var (wo, wv) = (Vector2.Zero, new Vector2(-900, 0));
+        float least = 0;
+        for (int i = 0; i < 60; i++) { wo = DriftMotion.Step(wall, wo, ref wv, Vector2.Zero, 1f / 60); least = Math.Min(least, wo.X); }
+        Check(wall.X + least >= MapGenerator.Wall, "Drifting platforms can't be shoved into the arena wall", $"{least}");
+    }
 
     // Reachability primitive.
     var floor = new Surface(8, 632, 344);
@@ -1831,8 +1856,10 @@ static List<byte[]> DecodeGif(byte[] g)
     d.Hazards.Add(new Hazard(HazardKind.Poison, 700, 732, MapGenerator.FloorY));
     d.Saws.Add(new SawTrack(150, MapGenerator.FloorY - 2, 260, MapGenerator.FloorY - 2, ArenaFeatures.SawRadius, MapDesign.SawPeriod(150, 0, 260, 0), 0.25f));
     d.Movers.Add(new Mover(380, 460, 440, ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(380, 460), 0.5f));
+    d.Drifts.Add(new Drift(560, MapGenerator.TierY(1) - 40, 48, 8));
     var dc = MapCode.Decode(MapCode.Encode(d));
-    Check(dc != null && Rounded(dc.Build(4)) == Rounded(d.Build(4)) && dc.Props.Count == 3 && Math.Abs(dc.Saws[0].Phase - 0.25f) < 1e-4f,
+    Check(dc != null && Rounded(dc.Build(4)) == Rounded(d.Build(4)) && dc.Props.Count == 3 && Math.Abs(dc.Saws[0].Phase - 0.25f) < 1e-4f
+        && dc.Drifts.SequenceEqual(d.Drifts) && dc.Build(4).Surfaces.Any(s => s.Y == MapGenerator.TierY(1) - 40 && s.X1 == 560),
         "Map code: a hand-made arena survives the trip", MapCode.Encode(d));
     var built = d.Build(2);
     Check(built.Slopes.Count == 2 && built.Ground.Count == 1, "Design: a hill that runs over a pit is left out", $"{built.Slopes.Count} slopes");
@@ -1878,9 +1905,11 @@ static List<byte[]> DecodeGif(byte[] g)
     for (int i = 0; i < MapDesign.MaxHazards; i++) full.Hazards.Add(new Hazard((HazardKind)fr.Next(Enum.GetValues<HazardKind>().Length), 8 + fr.Next(400), 500 + fr.Next(490), 8 + fr.Next(520)));
     for (int i = 0; i < MapDesign.MaxSaws; i++) full.Saws.Add(new SawTrack(8 + fr.Next(980), 8 + fr.Next(520), 8 + fr.Next(980), 8 + fr.Next(520), 6 + fr.Next(20), 1 + fr.Next(9), fr.NextSingle()));
     for (int i = 0; i < MapDesign.MaxMovers; i++) full.Movers.Add(new Mover(8 + fr.Next(400), 500 + fr.Next(400), 8 + fr.Next(520), 40, 8, 1 + fr.Next(9), fr.NextSingle()));
+    for (int i = 0; i < MapDesign.MaxDrifts; i++) full.Drifts.Add(new Drift(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(20)), 8 * (1 + fr.Next(4))));
+    Check(MapCode.Decode(MapCode.Encode(full)) is { } fullBack && fullBack.Drifts.SequenceEqual(full.Drifts), "Map code: a full list of drifting platforms survives the trip");
     int fullBytes = MapCode.Pack(full).Length;
     Console.WriteLine($"      (largest map: {fullBytes} bytes packed, {MapCode.Encode(full).Length}-character code)");
-    Check(fullBytes <= 1400, $"Map code: the largest map packs into {fullBytes} bytes (at most 1400, so 12 fit a lobby sync)");
+    Check(fullBytes <= 1500, $"Map code: the largest map packs into {fullBytes} bytes (at most 1500, so 12 fit a lobby sync)");
     Check(MapCode.Trim(new string('x', 40)).Length == MapDesign.MaxName && MapCode.Trim("  hi  ") == "hi", "Map code: names are trimmed to fit");
 }
 

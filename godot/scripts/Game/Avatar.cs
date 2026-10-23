@@ -353,13 +353,20 @@ public partial class Avatar : CharacterBody2D
         Velocity = v;
         MoveAndSlide();
 
-        // Walking into a crate or barrel shoves it along (the host moves it; clients see it in snapshots).
+        // Walking into a crate or barrel shoves it along, and so does walking into a drifting platform, which also
+        // sinks under whoever lands or stands on it (the host moves them; clients see it in snapshots).
         if (_authority)
             for (int i = 0; i < GetSlideCollisionCount(); i++)
             {
                 var c = GetSlideCollision(i);
-                if (c.GetCollider() is not Prop { Pushable: true, Broken: false } prop) continue;
                 var n = c.GetNormal();
+                if (c.GetCollider() is DriftBody drift)
+                {
+                    if (n.Y < -0.7f) Game.Arena.DriftLoad(drift, v.Y);
+                    else if (Mathf.Abs(n.X) > 0.7f && f.MoveX * n.X < -0.1f) Game.Arena.DriftPush(drift, -n.X);
+                    continue;
+                }
+                if (c.GetCollider() is not Prop { Pushable: true, Broken: false } prop) continue;
                 if (Mathf.Abs(n.X) > 0.7f && f.MoveX * n.X < -0.1f) prop.Push(-n.X * speed * PushSpeed);
             }
 

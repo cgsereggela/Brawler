@@ -439,9 +439,19 @@ public sealed class BotBrain : IInputSource
         return best >= 0 ? best : highest;
     }
 
-    /// <summary>Surface <paramref name="i"/> as it is right now: a moving platform's lane narrows to where the platform is.</summary>
+    /// <summary>
+    /// Surface <paramref name="i"/> as it is right now: a moving platform's lane narrows to where the platform is, and
+    /// a drifting platform's top is wherever it has been shoved.
+    /// </summary>
     private Surface Live(MapLayout map, int i)
     {
+        if (map.DriftOf.TryGetValue(i, out int di) && di < _game.Arena.Drifts.Count)
+        {
+            var s = map.Surfaces[i];
+            var off = _game.Arena.Drifts[di].Off;
+            int dx = Mathf.RoundToInt(off.X), dy = Mathf.RoundToInt(off.Y);
+            return new Surface(s.X1 + dx, s.X2 + dx, s.Y + dy);
+        }
         if (!map.MoverOf.TryGetValue(i, out int m)) return map.Surfaces[i];
         var mv = map.Movers[m];
         int x = Mathf.RoundToInt(mv.XAt(_game.Arena.Clock));
@@ -454,6 +464,9 @@ public sealed class BotBrain : IInputSource
     /// </summary>
     private bool InReach(MapLayout map, Surface cur, Surface hop)
     {
+        // A drifting platform shoved out of jumping range: wait for it to ease back.
+        if (map.DriftOf.ContainsKey(_surface) || map.DriftOf.ContainsKey(_hop))
+            if (!map.MoverOf.ContainsKey(_surface) && !map.MoverOf.ContainsKey(_hop)) return MapGenerator.CanTraverse(map, cur, hop);
         if (!map.MoverOf.ContainsKey(_surface) && !map.MoverOf.ContainsKey(_hop)) return true;
         int gap = Mathf.Max(0, Mathf.Max(cur.X1, hop.X1) - Mathf.Min(cur.X2, hop.X2));
         return gap <= 12 && MapGenerator.CanTraverse(map, cur, hop);

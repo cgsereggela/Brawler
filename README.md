@@ -197,6 +197,7 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
   - *Explosive barrels* (30 HP): pushable, and they blow up when destroyed. The blast sets off other barrels nearby.
   - *Glass*: bridges across pits and floating panes. A bullet that breaks a tile flies on through, so you can shoot the floor out from under someone.
   - *Moving platforms* glide back and forth over pits or through open air and carry whoever is standing on them.
+  - *Drifting platforms* hover on glowing pads and get shoved around: they dip when you land on them, slide when you walk into them, and get knocked by bullets and blasts. A spring eases each one back home, never more than 32 px sideways or 16 px up or down, so they can knock you off a ledge or carry you into a shot but never wander off.
   - *Magma pools* burn (45 damage/s) while you stand in them. *Poison pools* hurt less (16/s) but keep working for 2 s after you step out.
   - *Sawblades* slide along platform tops. Each hit deals 22 damage and throws you clear. They also chew up crates and barrels.
   - Which hazards appear, and how often, depends on the theme (one table in `godot/scripts/Logic/ThemeRules.cs`): no sawblades or magma on Deep Reef, no magma on Toxic Grove, no poison on Magma Core, no pools at all on Frost Bite.
@@ -209,7 +210,7 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
 - **Start from** a generated arena in any layout style and theme (**Generate**, again for another), or from an empty one.
 - **Tools** (hotkeys in the tooltips):
   - Shapes: blocks, floor gaps, hills with walkable ramps.
-  - Placed pieces: spawns, jump pads, crates, barrels, glass rows, magma and poison pools, sawblades, moving platforms.
+  - Placed pieces: spawns, jump pads, crates, barrels, glass rows, magma and poison pools, sawblades, moving platforms, drifting platforms (the dashed box shows how far each can be shoved).
   - Snapping: everything snaps to the 8 px grid. Spawns, pads, crates and pools drop onto the ground below them.
 - **Editing:**
   - Select drags pieces around; moving a block carries whatever stands on it. Drag a block's edge to resize it, and use the mouse wheel over a selected hill to change its height.

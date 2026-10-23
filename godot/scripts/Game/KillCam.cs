@@ -26,6 +26,7 @@ public sealed class KillCam
         public readonly List<Bullet> Bullets = new(); // reused copies; the first BulletCount are this tick's
         public int BulletCount;
         public readonly List<(Vector2 Pos, bool Broken, float Wobble)> Props = new();
+        public readonly List<Vector2> Drifts = new();
     }
 
     private readonly GameManager _g;
@@ -137,6 +138,7 @@ public sealed class KillCam
         }
         k.Props.Clear();
         foreach (var p in _g.Arena.Props) k.Props.Add((p.GlobalPosition, p.Broken, p.Wobble));
+        _g.Arena.CaptureDrifts(k.Drifts);
 
         // Drop effects older than anything still kept (a few at a time, so it never stalls a frame).
         float cutoff = TickAt(0).T;
@@ -262,6 +264,7 @@ public sealed class KillCam
             props[i].Visible = !broken;
             props[i].Wobble = wobble;
         }
+        _g.Arena.ShowDrifts(a.Drifts, b.Drifts, k);
 
         // Bullets: this tick's copies, moved toward where the same bullet is on the next tick.
         while (_shown.Count < a.BulletCount) _shown.Add(new Bullet());

@@ -112,12 +112,13 @@ public static class GameModes
             if (s.Width < Hill.MinWidth) continue;
             if (reach != null && (!reach[i] || !MapGenerator.ReachableFrom(map, i)[home])) continue;
             float score = Math.Abs(s.CenterX - MapLayout.Width / 2f) + Math.Abs(s.Y - MapLayout.Height * 0.5f) * 0.7f;
+            if (map.DriftIndex(s) >= 0) score += 10000; // a drifting platform wanders off its hill: only if there's nothing else
             if (score < bestScore) (bestScore, best) = (score, i);
         }
         if (best < 0) return new Hill(MapLayout.Width / 2 - Hill.MaxWidth / 2, MapLayout.Width / 2 + Hill.MaxWidth / 2, MapGenerator.FloorY);
         var h = map.Surfaces[best];
         int half = Math.Min(h.Width, Hill.MaxWidth) / 2;
-        return new Hill(h.CenterX - half, h.CenterX + half, h.Y);
+        return new Hill(h.CenterX - half, h.CenterX + half, h.Y, map.DriftIndex(h) >= 0 ? Drift.ReachY + 3 : 3);
     }
 
     private static int SurfaceAt(MapLayout map, int x, int y)
@@ -162,6 +163,8 @@ public sealed class Hill
 {
     public const int MinWidth = 40, MaxWidth = 110, Tall = 56;
     public readonly int X1, X2, Y;
+    /// <summary>How far below Y feet may be and still count: more on a drifting platform, which sags under weight.</summary>
+    public readonly int Sag;
     /// <summary>Seconds held so far, by side.</summary>
     public readonly float[] Held = new float[Sides];
     /// <summary>The side holding it right now, or -1 (empty or contested).</summary>
@@ -171,13 +174,13 @@ public sealed class Hill
     /// <summary>Room for every side: a slot each in free-for-all (up to 8), or a team.</summary>
     public const int Sides = 8;
 
-    public Hill(int x1, int x2, int y) => (X1, X2, Y) = (x1, x2, y);
+    public Hill(int x1, int x2, int y, int sag = 3) => (X1, X2, Y, Sag) = (x1, x2, y, sag);
 
     public float CenterX => (X1 + X2) / 2f;
 
     /// <summary>Whether a body (center and half size) stands in the zone: overlapping it, with its feet not below the surface.</summary>
     public bool Inside(NVec c, NVec half) =>
-        c.X + half.X > X1 && c.X - half.X < X2 && c.Y + half.Y > Y - Tall && c.Y + half.Y <= Y + 3;
+        c.X + half.X > X1 && c.X - half.X < X2 && c.Y + half.Y > Y - Tall && c.Y + half.Y <= Y + Sag;
 
     /// <summary>One tick: credits the side alone in the zone. Returns the side that has now held it long enough, or -1.</summary>
     /// <param name="sidesInside">The side of each live player standing in the zone (repeats are fine).</param>

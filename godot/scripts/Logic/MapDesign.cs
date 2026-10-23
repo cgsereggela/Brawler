@@ -14,7 +14,7 @@ public sealed class MapDesign
 {
     public const int MaxName = 24;
     public const int MaxSpawns = 8;
-    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12;
+    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24;
     private const int Wall = MapGenerator.Wall, FloorY = MapGenerator.FloorY, Width = MapLayout.Width, Height = MapLayout.Height;
 
     public string Name = "";
@@ -31,6 +31,8 @@ public sealed class MapDesign
     public List<Hazard> Hazards = new();
     public List<SawTrack> Saws = new();
     public List<Mover> Movers = new();
+    /// <summary>Drifting platforms (see <see cref="Drift"/>), at their spots.</summary>
+    public List<Drift> Drifts = new();
 
     public ThemeId Theme => ThemeRules.ForSeed(Seed);
 
@@ -72,6 +74,7 @@ public sealed class MapDesign
         d.Hazards.AddRange(map.Hazards);
         d.Saws.AddRange(map.Saws);
         d.Movers.AddRange(map.Movers);
+        d.Drifts.AddRange(map.Drifts);
         return d;
     }
 
@@ -119,6 +122,8 @@ public sealed class MapDesign
             if (h.Count >= 2 && TerrainGen.SegmentOf(floor, h) >= 0) hills.Add(new List<(int x, int h)>(h));
         TerrainGen.Apply(map, floor, hills);
         MapGenerator.BuildSurfaces(map, floor, blocks);
+        // Drifting platforms' tops are surfaces too (last, as the generator adds them), so spawns can stand on them.
+        foreach (var dr in Drifts) ArenaFeatures.AddDrift(map, dr);
 
         foreach (var sp in Spawns)
             if (MapGenerator.SurfaceIndexOf(map, sp) >= 0) map.Spawns.Add(sp);
@@ -221,10 +226,11 @@ public sealed class MapDesign
         return list;
     }
 
+    /// <summary>True if [x1, x2] at height y lies on ground that stays put (not a drifting platform, which would leave it behind).</summary>
     private static bool OnSurface(MapLayout map, int x1, int x2, int y)
     {
         foreach (var s in map.Surfaces)
-            if (s.Y == y && x1 >= s.X1 - 2 && x2 <= s.X2 + 2) return true;
+            if (s.Y == y && x1 >= s.X1 - 2 && x2 <= s.X2 + 2 && map.DriftIndex(s) < 0) return true;
         return false;
     }
 
@@ -240,6 +246,7 @@ public sealed class MapDesign
         d.Hazards.AddRange(Hazards);
         d.Saws.AddRange(Saws);
         d.Movers.AddRange(Movers);
+        d.Drifts.AddRange(Drifts);
         return d;
     }
 

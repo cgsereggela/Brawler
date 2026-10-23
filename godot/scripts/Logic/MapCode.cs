@@ -15,7 +15,8 @@ public enum MapCodeError { None, NotACode, Damaged, Newer }
 /// </summary>
 public static class MapCode
 {
-    public const int Version = 1;
+    /// <summary>2 added drifting platforms and a fourth style bit; codes from version 1 still open.</summary>
+    public const int Version = 2;
     private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     public static string Encode(MapDesign d) => Text(Pack(d));
@@ -45,7 +46,7 @@ public static class MapCode
         var w = new BitWriter();
         w.Bits(Version, 4);
         w.Bits((uint)d.Seed, 32);
-        w.Bits((int)d.Style, 3);
+        w.Bits((int)d.Style, 4);
         var name = Encoding.UTF8.GetBytes(Trim(d.Name));
         w.Bits(name.Length, 5);
         foreach (byte b in name) w.Bits(b, 8);
@@ -106,6 +107,9 @@ public static class MapCode
             w.Coords(m.X1, m.X2 - m.X1, m.Y);
             w.Bits(Phase(m.Phase), 4);
         }
+        // Drifting platforms snap to the tile grid, so each goes in as tiles: 7 bits for x, y and width, 2 for height.
+        Count(w, d.Drifts.Count, MapDesign.MaxDrifts, 5);
+        foreach (var dr in Take(d.Drifts, MapDesign.MaxDrifts)) Tiles(w, dr.X, dr.Y, dr.W, dr.H);
         var bytes = w.Done(1);
         bytes[^1] = Checksum(bytes, bytes.Length - 1);
         return bytes;
@@ -119,16 +123,17 @@ public static class MapCode
         // The version is the first 4 bits, and every version ends in this checksum. A sound newer code says so; a
         // broken one of this version is a damaged paste; anything else isn't a map code at all.
         int version = bytes is { Length: > 0 } ? bytes[0] >> 4 : -1;
+        bool known = version is >= 1 and <= Version;
         bool sound = bytes is { Length: >= 2 } && bytes[^1] == Checksum(bytes, bytes.Length - 1);
-        why = version == Version ? MapCodeError.Damaged : sound && version > Version ? MapCodeError.Newer : MapCodeError.NotACode;
-        if (!sound || version != Version || bytes.Length < 6) return null;
+        why = known ? MapCodeError.Damaged : sound && version > Version ? MapCodeError.Newer : MapCodeError.NotACode;
+        if (!sound || !known || bytes.Length < 6) return null;
 
         try
         {
             var r = new BitReader(bytes, bytes.Length - 1);
             r.Bits(4); // the version, checked above
             var d = new MapDesign { Seed = (int)r.UBits(32) };
-            int style = r.Bits(3);
+            int style = r.Bits(version >= 2 ? 4 : 3);
             if (style >= Enum.GetValues<MapStyle>().Length) return null;
             d.Style = (MapStyle)style;
             var name = new byte[r.Bits(5)];
@@ -197,6 +202,12 @@ public static class MapCode
                 float phase = r.Bits(4) / 16f;
                 d.Movers.Add(new Mover(v[0], v[0] + v[1], v[2], ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(v[0], v[0] + v[1]), phase));
             }
+            if (version >= 2)
+                for (int i = r.Bits(5); i > 0; i--)
+                {
+                    var t = ReadTiles(r);
+                    d.Drifts.Add(new Drift(t.x, t.y, t.w, t.h));
+                }
             why = MapCodeError.None;
             return d;
         }
@@ -214,6 +225,19 @@ public static class MapCode
         while (Encoding.UTF8.GetByteCount(name) > 31) name = name[..^1];
         return name;
     }
+
+    private const int T = MapGenerator.Tile;
+
+    /// <summary>A tile-aligned rect (rounded to the grid): x, y and width in 7 bits of tiles, height 1 to 4 tiles in 2.</summary>
+    private static void Tiles(BitWriter w, int x, int y, int width, int height)
+    {
+        w.Bits(Math.Clamp((x + T / 2) / T, 0, 127), 7);
+        w.Bits(Math.Clamp((y + T / 2) / T, 0, 127), 7);
+        w.Bits(Math.Clamp((width + T / 2) / T, 1, 127), 7);
+        w.Bits(Math.Clamp((height + T / 2) / T, 1, 4) - 1, 2);
+    }
+
+    private static (int x, int y, int w, int h) ReadTiles(BitReader r) => (r.Bits(7) * T, r.Bits(7) * T, Math.Max(1, r.Bits(7)) * T, (r.Bits(2) + 1) * T);
 
     private static int Phase(float phase) => (int)MathF.Round((phase - MathF.Floor(phase)) * 16) & 15;
 

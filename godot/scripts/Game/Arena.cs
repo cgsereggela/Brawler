@@ -32,10 +32,26 @@ public partial class Prop : CharacterBody2D
     }
 }
 
+/// <summary>A drifting platform (see <see cref="Drift"/>): carried riders like a mover, shoved around by the host.</summary>
+public partial class DriftBody : AnimatableBody2D
+{
+    public int Index;
+    public Drift Spec;
+    /// <summary>Offset from its spot, and velocity. The host steps them; clients ease toward the snapshot's offset.</summary>
+    public Vector2 Off, Vel, NetOff;
+    /// <summary>Host: everything shoving it this tick (px/s²), gathered from avatars before it moves.</summary>
+    public Vector2 Accel;
+
+    public Vector2 Home => new(Spec.X + Spec.W * 0.5f, Spec.Y + Spec.H * 0.5f);
+    public Rect2 Bounds => new(Spec.X + Off.X, Spec.Y + Off.Y, Spec.W, Spec.H);
+    public RectI Rect => new(Mathf.RoundToInt(Spec.X + Off.X), Mathf.RoundToInt(Spec.Y + Off.Y), Spec.W, Spec.H);
+}
+
 /// <summary>
 /// The arena's moving and breakable parts (from <see cref="ArenaFeatures"/>): crates and barrels to push and shoot,
-/// glass to shatter, moving platforms, magma and poison pools, and sawblades. The host runs prop physics and all
-/// damage; movers and saws follow the shared battle clock, so clients only need prop positions from snapshots.
+/// glass to shatter, moving and drifting platforms, magma and poison pools, and sawblades. The host runs prop and
+/// drift physics and all damage; movers and saws follow the shared battle clock, so clients only need prop
+/// positions and drift offsets from snapshots.
 /// </summary>
 public partial class Arena : Node2D
 {
@@ -44,13 +60,14 @@ public partial class Arena : Node2D
 
     public GameManager Game;
     public readonly List<Prop> Props = new();
+    public readonly List<DriftBody> Drifts = new();
     /// <summary>Seconds since the battle started; movers and saws are functions of it.</summary>
     public float Clock;
     /// <summary>Every solid a bullet can hit this tick: the map, then live props, then movers.</summary>
     public readonly List<RectI> Solids = new();
 
-    /// <summary>Host diagnostics for the battle log: seconds crates spent being pushed, damage dealt by hazards.</summary>
-    public float PushedTime, HazardDamage;
+    /// <summary>Host diagnostics for the battle log: seconds crates spent being pushed, damage dealt by hazards, how far drifts moved.</summary>
+    public float PushedTime, HazardDamage, DriftTravel;
 
     public string Summary
     {
@@ -63,13 +80,14 @@ public partial class Arena : Node2D
                 if (p.Broken) broken++;
             }
             return $"{broken}/{Props.Count} props broken ({glass} glass), pushed {PushedTime:0.0}s, hazard damage {HazardDamage:0}, " +
-                   $"{_map?.Hazards.Count ?? 0} pools, {_map?.Saws.Count ?? 0} saws, {_movers.Count} movers";
+                   $"{_map?.Hazards.Count ?? 0} pools, {_map?.Saws.Count ?? 0} saws, {_movers.Count} movers, {Drifts.Count} drifts shoved {DriftTravel:0} px";
         }
     }
 
     private MapLayout _map;
     private readonly List<AnimatableBody2D> _movers = new();
     private readonly List<int> _solidProp = new(); // per Solids entry: prop index, or -1
+    private readonly List<int> _solidDrift = new(); // per Solids entry: drift index, or -1
     private readonly Dictionary<int, float> _poison = new(), _poolT = new(), _sawCd = new(), _lavaT = new();
     private DrawLayer _glow;
     private float _t;
@@ -84,14 +102,16 @@ public partial class Arena : Node2D
     {
         foreach (var p in Props) p.QueueFree();
         foreach (var m in _movers) m.QueueFree();
+        foreach (var d in Drifts) d.QueueFree();
         Props.Clear();
         _movers.Clear();
+        Drifts.Clear();
         _poison.Clear();
         _poolT.Clear();
         _sawCd.Clear();
         _lavaT.Clear();
         Clock = 0;
-        PushedTime = HazardDamage = 0;
+        PushedTime = HazardDamage = DriftTravel = 0;
         _map = map;
         if (map != null)
         {
@@ -117,6 +137,14 @@ public partial class Arena : Node2D
                 AddChild(body);
                 _movers.Add(body);
             }
+            for (int i = 0; i < map.Drifts.Count; i++)
+            {
+                var d = new DriftBody { Index = i, Spec = map.Drifts[i], SyncToPhysics = true, CollisionLayer = 1, CollisionMask = 0 };
+                d.Position = d.Home;
+                d.AddChild(new CollisionShape2D { Shape = new RectangleShape2D { Size = new Vector2(d.Spec.W, d.Spec.H) } });
+                AddChild(d);
+                Drifts.Add(d);
+            }
         }
         RebuildSolids();
         QueueRedraw();
@@ -141,27 +169,52 @@ public partial class Arena : Node2D
             var m = _map.Movers[i];
             _movers[i].Position = new Vector2(m.XAt(Clock) + m.W * 0.5f, m.Y + m.H * 0.5f);
         }
+        foreach (var d in Drifts) d.Position = d.Home + d.Off;
     }
 
     public void RebuildSolids()
     {
         Solids.Clear();
         _solidProp.Clear();
+        _solidDrift.Clear();
         if (_map == null) return;
-        Solids.AddRange(_map.Solids);
-        for (int i = 0; i < _map.Solids.Count; i++) _solidProp.Add(-1);
+        void Add(RectI r, int prop, int drift)
+        {
+            Solids.Add(r);
+            _solidProp.Add(prop);
+            _solidDrift.Add(drift);
+        }
+        foreach (var r in _map.Solids) Add(r, -1, -1);
         foreach (var p in Props)
-            if (!p.Broken) { Solids.Add(p.Rect); _solidProp.Add(p.Index); }
+            if (!p.Broken) Add(p.Rect, p.Index, -1);
         for (int i = 0; i < _movers.Count; i++)
         {
             var m = _map.Movers[i];
-            Solids.Add(new RectI(Mathf.RoundToInt(m.XAt(Clock)), m.Y, m.W, m.H));
-            _solidProp.Add(-1);
+            Add(new RectI(Mathf.RoundToInt(m.XAt(Clock)), m.Y, m.W, m.H), -1, -1);
         }
+        foreach (var d in Drifts) Add(d.Rect, -1, d.Index);
     }
 
     /// <summary>The prop behind entry <paramref name="solid"/> of <see cref="Solids"/>, or null.</summary>
     public Prop PropOfSolid(int solid) => solid >= 0 && solid < _solidProp.Count && _solidProp[solid] >= 0 ? Props[_solidProp[solid]] : null;
+
+    /// <summary>
+    /// A bullet touched entry <paramref name="solid"/> of <see cref="Solids"/>. Props and drifting platforms take the
+    /// hit (see <see cref="BulletHitsProp"/>); returns true if the bullet flies on through (glass it broke).
+    /// </summary>
+    public bool BulletHitsSolid(Bullet b, int solid, bool host)
+    {
+        if (PropOfSolid(solid) is { } prop) return BulletHitsProp(b, prop, solid, host);
+        if (host && solid >= 0 && solid < _solidDrift.Count && _solidDrift[solid] >= 0)
+            Drifts[_solidDrift[solid]].Vel += b.Vel.Normalized() * Mathf.Min(80, b.Knockback * 0.3f);
+        return false;
+    }
+
+    /// <summary>Host: a body landed or stands on a drifting platform, falling at <paramref name="fallSpeed"/>: its weight presses it down.</summary>
+    public void DriftLoad(DriftBody d, float fallSpeed) => d.Vel.Y += Mathf.Max(0, fallSpeed) * DriftMotion.Weight;
+
+    /// <summary>Host: someone walks into a drifting platform's side, pushing it in direction <paramref name="dir"/> (±1).</summary>
+    public void DriftPush(DriftBody d, float dir) => d.Accel.X = dir * DriftMotion.Push;
 
     /// <summary>
     /// A bullet touched a prop. Glass it can break is shattered and flown through (returns true); anything else
@@ -252,6 +305,16 @@ public partial class Arena : Node2D
             }
             HostDamageProp(p, damage * falloff * 1.5f, owner);
         }
+        foreach (var dr in Drifts)
+        {
+            var r = dr.Bounds;
+            var closest = new Vector2(Mathf.Clamp(at.X, r.Position.X, r.End.X), Mathf.Clamp(at.Y, r.Position.Y, r.End.Y));
+            float d = closest.DistanceTo(at);
+            if (d > radius) continue;
+            var dir = (r.GetCenter() - at).Normalized();
+            if (dir == Vector2.Zero) dir = Vector2.Up;
+            dr.Vel += dir * knockback * 0.3f * (1f - 0.5f * d / radius);
+        }
     }
 
     /// <summary>The sudden-death lava's surface (y) right now; +∞ before it starts or when the lobby turned it off.</summary>
@@ -278,6 +341,15 @@ public partial class Arena : Node2D
             p.MoveAndSlide();
             if (p.GlobalPosition.Y > MapLayout.KillY) HostBreak(p, fell: true);
             else if (p.Bounds.Position.Y > LavaY) HostBreak(p, fell: true); // swallowed by the lava
+        }
+        foreach (var d in Drifts)
+        {
+            var vel = ToN(d.Vel);
+            var next = ToG(DriftMotion.Step(d.Spec, ToN(d.Off), ref vel, ToN(d.Accel), dt));
+            d.Vel = ToG(vel);
+            DriftTravel += next.DistanceTo(d.Off);
+            d.Off = next;
+            d.Accel = Vector2.Zero;
         }
         if (!fighting) return;
 
@@ -354,11 +426,28 @@ public partial class Arena : Node2D
         }
     }
 
-    /// <summary>Clients: ease props toward their last snapshot position.</summary>
+    /// <summary>Clients: ease props and drifting platforms toward their last snapshot position.</summary>
     public void ClientSmooth()
     {
         foreach (var p in Props)
             if (!p.Broken && p.Pushable) p.GlobalPosition = p.GlobalPosition.Lerp(p.NetTarget, 0.5f);
+        foreach (var d in Drifts) d.Off = d.Off.Lerp(d.NetOff, 0.5f);
+    }
+
+    /// <summary>Kill cam: each drifting platform's offset, to record and show again.</summary>
+    public void CaptureDrifts(List<Vector2> into)
+    {
+        into.Clear();
+        foreach (var d in Drifts) into.Add(d.Off);
+    }
+
+    public void ShowDrifts(List<Vector2> a, List<Vector2> b, float k)
+    {
+        for (int i = 0; i < Drifts.Count && i < a.Count; i++)
+        {
+            Drifts[i].Off = a[i].Lerp(i < b.Count ? b[i] : a[i], k);
+            Drifts[i].Position = Drifts[i].Home + Drifts[i].Off;
+        }
     }
 
     /// <summary>True if a pool or saw is right ahead of (or under) a body walking in direction <paramref name="move"/>.</summary>
@@ -397,6 +486,9 @@ public partial class Arena : Node2D
             w.U8((p.Broken ? 0 : 1) | (p.Pushable ? 2 : 0)).U8(Mathf.Clamp(Mathf.RoundToInt(p.Hp / p.MaxHp * 255), 0, 255));
             if (p.Pushable) w.V2(p.GlobalPosition);
         }
+        // Drifting platforms never stray more than 32 px, so half-pixel steps fit a byte each way.
+        w.U8(Drifts.Count);
+        foreach (var d in Drifts) w.I8(Mathf.RoundToInt(d.Off.X * 2)).I8(Mathf.RoundToInt(d.Off.Y * 2));
     }
 
     public void Read(WireReader r)
@@ -418,6 +510,12 @@ public partial class Arena : Node2D
             p.Hp = hp * p.MaxHp;
             if (pushable) p.NetTarget = pos;
             if (!alive) Break(i, p.GlobalPosition, fell: true); // missed the break event: just remove it
+        }
+        int drifts = r.U8();
+        for (int i = 0; i < drifts; i++)
+        {
+            var off = new Vector2(r.I8(), r.I8()) * 0.5f;
+            if (i < Drifts.Count) Drifts[i].NetOff = off;
         }
     }
 
@@ -443,6 +541,7 @@ public partial class Arena : Node2D
     }
 
     private static Vector2 ToG(System.Numerics.Vector2 v) => new(v.X, v.Y);
+    private static System.Numerics.Vector2 ToN(Vector2 v) => new(v.X, v.Y);
 
     public override void _Draw()
     {
@@ -479,6 +578,19 @@ public partial class Arena : Node2D
                 DrawPolyline(new[] { c + new Vector2(-dir * 1.5f, -2), c + new Vector2(dir * 1.5f, 0), c + new Vector2(-dir * 1.5f, 2) },
                     Shapes.Hdr(edge, 1.1f) with { A = 0.55f }, 1.1f, true);
             }
+        }
+
+        // Drifting platforms: stone slabs in the theme's colors, with hover pads glowing underneath (in DrawGlow).
+        var block = Game.MapNode.Theme.Block;
+        foreach (var d in Drifts)
+        {
+            var r = d.Bounds;
+            DrawColoredPolygon(Shapes.RoundRect(new Rect2(r.Position + new Vector2(2, 4), r.Size), 3), new Color(0, 0, 0, 0.28f));
+            var poly = Shapes.RoundRect(r, 3);
+            Shapes.Gradient(this, poly, block.Lightened(0.28f), block.Darkened(0.2f));
+            Shapes.DrawClosed(this, poly, block.Darkened(0.65f), 1f);
+            foreach (float fx in new[] { 0.2f, 0.8f })
+                DrawColoredPolygon(Shapes.RoundRect(new Rect2(r.Position.X + r.Size.X * fx - 4, r.End.Y - 1, 8, 2.5f), 1), block.Darkened(0.5f));
         }
 
         foreach (var p in Props)
@@ -619,6 +731,15 @@ public partial class Arena : Node2D
             float x = m.XAt(Clock);
             l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(x + 1, m.Y, m.W - 2, 2f), 1f), Shapes.Hdr(edge, 1.3f));
             l.DrawTextureRect(GlowTex.Tex, new Rect2(x - 6, m.Y - 9, m.W + 12, 18), false, edge with { A = 0.25f });
+        }
+        foreach (var d in Drifts)
+        {
+            var r = d.Bounds;
+            // A lit top edge, and the hover pads' glow, brighter while it's being shoved.
+            float k = Mathf.Clamp(d.Vel.Length() / 60f, 0, 1);
+            l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(r.Position.X + 2, r.Position.Y, r.Size.X - 4, 1.6f), 0.8f), Shapes.Hdr(edge, 1.2f));
+            foreach (float fx in new[] { 0.2f, 0.8f })
+                GlowTex.Draw(l, new Vector2(r.Position.X + r.Size.X * fx, r.End.Y + 3), 12 + 6 * k, edge with { A = 0.35f + 0.35f * k });
         }
         foreach (var p in Props)
         {

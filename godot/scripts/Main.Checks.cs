@@ -313,6 +313,20 @@ public partial class Main
         if (ed.Design.Props.Count != 0) { Fail("right-click didn't delete the crate"); return; }
         Log.Info("EDITORCHECK editing: move, resize, undo, redo and right-click delete work");
 
+        // A drifting platform: click for a short one, drag it somewhere else, and it survives a map code.
+        ed.SetTool(EditTool.Drift);
+        Click(700, 300);
+        if (ed.Design.Drifts.Count != 1 || ed.Design.Drifts[0].W != 48) { Fail($"clicking with Drift made {ed.Design.Drifts.Count} drifting platforms"); return; }
+        var drift = ed.Design.Drifts[0];
+        if (_shotDir != null) { await Wait(0.3); SaveShot("editor_drift"); }
+        ed.SetTool(EditTool.Select);
+        Drag(drift.X + 20, drift.Y + 4, drift.X + 60, drift.Y - 36);
+        if (ed.Design.Drifts[0] != drift with { X = drift.X + 40, Y = drift.Y - 40 }) { Fail($"dragging the drifting platform left it at {ed.Design.Drifts[0]}, from {drift}"); return; }
+        if (MapCode.Decode(MapCode.Encode(ed.Design)) is not { } back || !back.Drifts.SequenceEqual(ed.Design.Drifts)) { Fail("the drifting platform didn't survive the map code"); return; }
+        Click(drift.X + 60, drift.Y - 36, MouseButton.Right);
+        if (ed.Design.Drifts.Count != 0) { Fail("right-click didn't delete the drifting platform"); return; }
+        Log.Info("EDITORCHECK drift: place, move, share and delete a drifting platform");
+
         // A controller: the stick moves a cursor, A places, B deletes, X/Y undo/redo, the bumpers change tools, View the buttons.
         const int padDev = 5;
         Pads.TestDevices.Add(padDev);

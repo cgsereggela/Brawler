@@ -44,9 +44,54 @@ public readonly record struct Mover(int X1, int X2, int Y, int W, int H, float P
 }
 
 /// <summary>
+/// A floating platform that players can shove around: landing on it, walking into its side, shooting it or blasting
+/// it pushes it, and a spring eases it back to its spot (top-left X, Y). It never strays further than
+/// <see cref="ReachX"/> sideways or <see cref="ReachY"/> up and down. Its top is a surface of the arena.
+/// </summary>
+public readonly record struct Drift(int X, int Y, int W, int H)
+{
+    public const int ReachX = 32, ReachY = 16;
+    public RectI Rect => new(X, Y, W, H);
+    public Surface Top => new(X, X + W, Y);
+    /// <summary>Everything it can cover, pushed as far as it goes.</summary>
+    public RectI Range => Rect.Grow(ReachX, ReachY);
+}
+
+/// <summary>
+/// How a <see cref="Drift"/> moves: a damped spring back to its spot, shoves from players, bullets and blasts, and
+/// limits on how far it goes. Pure, so every peer (and the tests) agree on it; the host runs it and sends offsets.
+/// </summary>
+public static class DriftMotion
+{
+    /// <summary>Spring stiffness (1/s²) and damping (1/s): a shove settles in about two seconds, with a little bob.</summary>
+    public const float Spring = 14f, Damping = 3.2f;
+    /// <summary>How hard someone walking into a side pushes it along (px/s²): about 27 px out against the spring.</summary>
+    public const float Push = 380f;
+    /// <summary>Share of a body's downward speed handed on when it lands or stands on one (its weight, in effect).</summary>
+    public const float Weight = 0.15f;
+
+    /// <summary>
+    /// One tick: <paramref name="off"/> and <paramref name="vel"/> are the platform's offset from its spot and its
+    /// velocity; <paramref name="accel"/> is everything shoving it this tick. Returns the new offset, kept within its
+    /// reach and inside the walls (stopping it where it hits a limit).
+    /// </summary>
+    public static Vector2 Step(Drift d, Vector2 off, ref Vector2 vel, Vector2 accel, float dt)
+    {
+        vel += (accel - off * Spring - vel * Damping) * dt;
+        var next = off + vel * dt;
+        float minX = Math.Max(-Drift.ReachX, MapGenerator.Wall - d.X), maxX = Math.Min(Drift.ReachX, MapLayout.Width - MapGenerator.Wall - d.X - d.W);
+        float minY = Math.Max(-Drift.ReachY, MapGenerator.Wall - d.Y), maxY = Drift.ReachY;
+        if (next.X < minX || next.X > maxX) { next.X = Math.Clamp(next.X, minX, maxX); vel.X = 0; }
+        if (next.Y < minY || next.Y > maxY) { next.Y = Math.Clamp(next.Y, minY, maxY); vel.Y = 0; }
+        return next;
+    }
+}
+
+/// <summary>
 /// Seeded extras added to a validated arena: crates and explosive barrels to push around and shoot apart, glass
-/// bridges over pits, moving platforms, magma and poison pools, and sawblades. None of them is part of the jump graph
-/// (the arena is fully playable without them), and each stays clear of spawns, jump pads and the others. Which
+/// bridges over pits, moving platforms, drifting platforms, magma and poison pools, and sawblades. None of them is
+/// part of the jump graph the arena is checked with (it's fully playable without them), and each stays clear of
+/// spawns, jump pads and the others. Which
 /// hazards appear, and how often, follows the seed's theme (<see cref="ThemeRules"/>): no magma on Toxic Grove, etc.
 /// Positions of moving parts are pure functions of the battle clock, so every peer agrees without syncing them.
 /// </summary>
@@ -79,6 +124,7 @@ public static class ArenaFeatures
         Pools(map, rng, keep, rules);
         Saws(map, rng, keep, rules);
         Crates(map, rng, keep, rules);
+        Drifts(map, rng, keep);
     }
 
     private static bool Clear(MapLayout map, List<RectI> keep, RectI r)
@@ -219,6 +265,38 @@ public static class ArenaFeatures
             map.Saws.Add(new SawTrack(x1, y, x2, y, r, period, rng.Range(0f, 1f)));
             keep.Add(zone);
         }
+    }
+
+    // ---------- drifting platforms ----------
+
+    /// <summary>
+    /// Sometimes one or two drifting platforms in open air, halfway between two tiers, with room to be shoved their
+    /// full reach and still leave clearance to stand on them and pass under. Added last: their tops become surfaces
+    /// (so bots can use them), but nothing else is put on them.
+    /// </summary>
+    private static void Drifts(MapLayout map, Rng rng, List<RectI> keep)
+    {
+        int want = rng.Chance(0.35f) ? rng.Range(1, 2) : 0;
+        int c = MapGenerator.MinClearance;
+        for (int i = 0; i < 40 && want > 0; i++)
+        {
+            int w = rng.Range(5, 9) * 8;
+            int y = (MapGenerator.TierY(rng.Range(1, 7)) - MapGenerator.TierSpacing / 2) / 8 * 8; // on the grid, as map codes store it
+            int x = rng.Range(4, (MapLayout.Width - w) / 8 - 4) * 8;
+            var d = new Drift(x, y, w, 8);
+            var room = d.Range.Grow(16, c);
+            if (!Clear(map, keep, room)) continue;
+            AddDrift(map, d);
+            keep.Add(room);
+            want--;
+        }
+    }
+
+    /// <summary>Adds a drifting platform and its top as a surface.</summary>
+    public static void AddDrift(MapLayout map, Drift d)
+    {
+        map.Drifts.Add(d);
+        if (d.W >= 16) map.Surfaces.Add(d.Top);
     }
 
     // ---------- crates and barrels ----------

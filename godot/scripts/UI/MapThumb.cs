@@ -89,6 +89,11 @@ public static class MapThumb
             r.FillRect(ground, new Rect2(m.X1, m.Y, m.W, m.H));
             r.FillRect(tops, new Rect2(m.X1, m.Y, m.W, 7));
         }
+        foreach (var dr in map.Drifts)
+        {
+            r.FillRect(ground, ToRect(dr.Rect));
+            r.FillRect(tops, new Rect2(dr.X, dr.Y, dr.W, 7));
+        }
         Fill(r, ground, t.Block.Lightened(0.12f));
         for (int i = 0; i < tops.Length; i++) tops[i] *= ground[i];
         Fill(r, tops, t.Edge with { A = 0.85f });

@@ -9,12 +9,12 @@ using Godot;
 
 namespace Brawler.UI;
 
-public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover }
+public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover, Drift }
 
 /// <summary>
 /// The level editor: the arena drawn by the game itself (themed ground, backdrop, extras) at a smaller scale, with
 /// tools down the side to draw blocks, cut gaps in the floor, raise hills and place spawns, jump pads, crates,
-/// barrels, glass, pools, sawblades and moving platforms. Everything snaps to the 8 px tile grid; spawns, pads, crates
+/// barrels, glass, pools, sawblades, moving platforms and drifting platforms. Everything snaps to the 8 px tile grid; spawns, pads, crates
 /// and pools drop onto whatever is below them. Arenas start from a generated one in any style and theme (or an empty
 /// one), save to the player's map list and share as a map code (<see cref="MapCode"/>). Unsaved work is kept between
 /// visits (<see cref="MapLibrary.Draft"/>).
@@ -53,7 +53,7 @@ public partial class MapEditorUI : Control
     private string _armedDelete;
 
     // Pointer state, in world pixels.
-    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover }
+    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover, Drift }
     private (Kind K, int I) _sel = (Kind.None, -1), _hover = (Kind.None, -1);
     private Vector2 _mouse, _down;
     private bool _pressed, _dragged, _shift;
@@ -78,6 +78,7 @@ public partial class MapEditorUI : Control
         (EditTool.Poison, "Poison", "P", "Drag along the ground for a pool of poison. It keeps hurting for a moment after you step out."),
         (EditTool.Saw, "Saw", "W", "Drag from one end of a sawblade's track to the other. Click for a track along the ground."),
         (EditTool.Mover, "Mover", "O", "Drag sideways for a moving platform's lane (it starts at the left end)."),
+        (EditTool.Drift, "Drift", "F", "Drag to draw a drifting platform. Landing on it, walking into it, shooting or blasting it shoves it, and it eases back. Click for a short one."),
     };
 
     public override void _Ready()
@@ -262,7 +263,7 @@ public partial class MapEditorUI : Control
     }
 
     /// <summary>Changed since it was opened or saved, and no saved map matches it.</summary>
-    public bool Unsaved => _touched && !MapLibrary.All().Exists(e => e.Code == MapCode.Encode(Design));
+    public bool Unsaved => _touched && !MapLibrary.All().Exists(e => MapCode.Encode(e.Design) == MapCode.Encode(Design));
 
     /// <summary>Opens a design (from the lobby's arena list or a test), replacing what is being edited.</summary>
     public void Load(MapDesign d)
@@ -422,7 +423,7 @@ public partial class MapEditorUI : Control
             _name.GrabFocus();
             return;
         }
-        if (MapLibrary.Exists(Design.Name) && !_armedSave && MapLibrary.All().FirstOrDefault(e => e.Name == Design.Name).Code != MapCode.Encode(Design))
+        if (MapLibrary.Exists(Design.Name) && !_armedSave && MapLibrary.All().FirstOrDefault(e => e.Name == Design.Name).Design is { } old && MapCode.Encode(old) != MapCode.Encode(Design))
         {
             _armedSave = true;
             Flash($"You already have a map called {Design.Name}. Press Save again to replace it.");
@@ -669,6 +670,8 @@ public partial class MapEditorUI : Control
             if (Grow(d.Hazards[i].Rect, 2).Contains((int)p.X, (int)p.Y)) return (Kind.Hazard, i);
         for (int i = d.Movers.Count - 1; i >= 0; i--)
             if (Grow(d.Movers[i].Lane, 2).Contains((int)p.X, (int)p.Y)) return (Kind.Mover, i);
+        for (int i = d.Drifts.Count - 1; i >= 0; i--)
+            if (Grow(d.Drifts[i].Rect, 2).Contains((int)p.X, (int)p.Y)) return (Kind.Drift, i);
         // The smallest block under the pointer, so a platform inside a big wall can still be picked.
         int best = -1;
         for (int i = 0; i < d.Blocks.Count; i++)
@@ -768,6 +771,14 @@ public partial class MapEditorUI : Control
             {
                 var s = d.Saws[i];
                 d.Saws[i] = s with { X1 = s.X1 + dx, Y1 = s.Y1 + dy, X2 = s.X2 + dx, Y2 = s.Y2 + dy };
+                break;
+            }
+            case Kind.Drift:
+            {
+                var from = d.Drifts[i].Rect;
+                var to = Inside(new RectI(from.X + dx, from.Y + dy, from.W, from.H));
+                d.Drifts[i] = new Drift(to.X, to.Y, to.W, to.H);
+                Carry(_dragBase, d, from, to.X - from.X, to.Y - from.Y);
                 break;
             }
             case Kind.Mover:
@@ -895,17 +906,18 @@ public partial class MapEditorUI : Control
             case Kind.Hazard: d.Hazards.RemoveAt(item.I); break;
             case Kind.Saw: d.Saws.RemoveAt(item.I); break;
             case Kind.Mover: d.Movers.RemoveAt(item.I); break;
+            case Kind.Drift: d.Drifts.RemoveAt(item.I); break;
             default: return;
         }
         _sel = _hover = (Kind.None, -1);
         Rebuild();
     }
 
-    /// <summary>Ctrl+D: a copy of the selected block, saw or mover a little up and to the right.</summary>
+    /// <summary>Ctrl+D: a copy of the selected block, saw, mover or drifting platform a little up and to the right.</summary>
     private void Duplicate()
     {
         var (k, i) = _sel;
-        if (k is not (Kind.Block or Kind.Saw or Kind.Mover)) return;
+        if (k is not (Kind.Block or Kind.Saw or Kind.Mover or Kind.Drift)) return;
         Remember();
         switch (k)
         {
@@ -922,6 +934,12 @@ public partial class MapEditorUI : Control
                 var m = Design.Movers[i];
                 Design.Movers.Add(m with { Y = Math.Max(Wall + Tile, m.Y - 2 * Tile) });
                 _sel = (k, Design.Movers.Count - 1);
+                break;
+            case Kind.Drift:
+                if (Full(Design.Drifts.Count, MapDesign.MaxDrifts, "drifting platforms")) break;
+                var dr = Inside(new RectI(Design.Drifts[i].X + 2 * Tile, Design.Drifts[i].Y - 2 * Tile, Design.Drifts[i].W, Design.Drifts[i].H));
+                Design.Drifts.Add(new Drift(dr.X, dr.Y, dr.W, dr.H));
+                _sel = (k, Design.Drifts.Count - 1);
                 break;
         }
         Rebuild();
@@ -1031,6 +1049,13 @@ public partial class MapEditorUI : Control
                 }
                 break;
             }
+            case EditTool.Drift:
+            {
+                if (Full(d.Drifts.Count, MapDesign.MaxDrifts, "drifting platforms")) break;
+                var r = Inside(DriftRect());
+                d.Drifts.Add(new Drift(r.X, r.Y, r.W, r.H));
+                break;
+            }
             case EditTool.Mover:
             {
                 if (Full(d.Movers.Count, MapDesign.MaxMovers, "moving platforms")) break;
@@ -1051,6 +1076,19 @@ public partial class MapEditorUI : Control
             _redo.Clear();
         }
         Rebuild();
+    }
+
+    /// <summary>
+    /// The drifting platform the Drift tool would make: the box dragged out (at most four tiles tall), or a six-tile
+    /// platform one tile thick centred on a click.
+    /// </summary>
+    private RectI DriftRect()
+    {
+        bool drag = _pressed ? _dragged : _dragged && (_mouse - _down).Length() >= Tile;
+        if (!drag) return new RectI(Snap(_mouse.X) - 3 * Tile, Snap(_mouse.Y), 6 * Tile, Tile);
+        int ax = Snap(Math.Min(_down.X, _mouse.X)), bx = Snap(Math.Max(_down.X, _mouse.X));
+        int ay = Snap(Math.Min(_down.Y, _mouse.Y)), by = Snap(Math.Max(_down.Y, _mouse.Y));
+        return new RectI(ax, ay, Math.Max(2 * Tile, bx - ax), Math.Clamp(by - ay, Tile, 4 * Tile));
     }
 
     /// <summary>Joins floor gaps that overlap or touch.</summary>
@@ -1078,7 +1116,7 @@ public partial class MapEditorUI : Control
         float px = 1 / Zoom; // one screen pixel, in world pixels
 
         // A faint 40 px grid while drawing shapes.
-        if (_tool is EditTool.Block or EditTool.Gap or EditTool.Glass or EditTool.Mover or EditTool.Saw)
+        if (_tool is EditTool.Block or EditTool.Gap or EditTool.Glass or EditTool.Mover or EditTool.Saw or EditTool.Drift)
         {
             var g = new Color(1, 1, 1, 0.05f);
             for (int x = 40; x < W; x += 40) c.DrawLine(new Vector2(x, 0), new Vector2(x, H), g, px);
@@ -1092,6 +1130,9 @@ public partial class MapEditorUI : Control
             Dashed(c, new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2), new Color(1, 0.85f, 0.6f, 0.6f), px * 1.5f);
         foreach (var m in d.Movers)
             c.DrawRect(ToRect(m.Lane), new Color(0.65f, 0.85f, 1f, 0.45f), false, px);
+        // How far each drifting platform can be shoved, faintly (brighter with its tool).
+        foreach (var dr in d.Drifts)
+            c.DrawRect(ToRect(dr.Range), new Color(0.75f, 1f, 0.8f, _tool == EditTool.Drift ? 0.4f : 0.18f), false, px);
 
         // Spawns: numbered markers (red when they stand on nothing).
         for (int i = 0; i < d.Spawns.Count; i++)
@@ -1159,6 +1200,10 @@ public partial class MapEditorUI : Control
                 var s = d.Saws[i];
                 foreach (var p in new[] { new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2) }) c.DrawArc(p, s.Radius + 2, 0, Mathf.Tau, 20, col, width);
                 c.DrawLine(new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2), col, width);
+                break;
+            case Kind.Drift when i < d.Drifts.Count:
+                Box(ToRect(d.Drifts[i].Rect));
+                c.DrawRect(ToRect(d.Drifts[i].Range), col with { A = 0.5f }, false, width * 0.5f);
                 break;
             case Kind.Mover when i < d.Movers.Count:
                 Box(ToRect(d.Movers[i].Lane));
@@ -1248,6 +1293,13 @@ public partial class MapEditorUI : Control
                 }
                 else c.DrawArc(new Vector2(Snap(_mouse.X), Snap(_mouse.Y)), ArenaFeatures.SawRadius, 0, Mathf.Tau, 20, col, px * 1.5f);
                 break;
+            case EditTool.Drift:
+            {
+                var r = DriftRect();
+                Box(ToRect(r));
+                c.DrawRect(ToRect(new Drift(r.X, r.Y, r.W, r.H).Range), col with { A = 0.5f }, false, px);
+                break;
+            }
             case EditTool.Mover:
             {
                 int mw = ArenaFeatures.MoverW, y = Snap(drag ? _down.Y : _mouse.Y);
