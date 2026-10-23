@@ -103,38 +103,73 @@ public partial class Main
     }
 
     // --themebench: Average frame time for each arena theme (windowed, vsync off), with bots fighting. Prints and quits.
+    // Each theme gets a match of its own whose only arena is the theme's (the first seed that rolls it), and only frames
+    // in the middle of a fight count: swapping the arena's look under one long match timed kill cams, intermissions and
+    // whatever arena the next battle rolled whenever a battle ended mid-measure.
     private void ThemeBench()
     {
         _autoMode = "bench";
         _game.AutopilotLocal = true;
         _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
         DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
         _net.StartOffline();
         AddTestBots();
-        _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9 });
-        _game.HostStartMatch();
         var tree = GetTree();
         int theme = 0;
         void Next()
         {
-            if (theme >= ArenaTheme.All.Length) { tree.Quit(0); return; }
+            if (_net.InMatch) _game.HostReturnToLobby();
+            // Quit from the lobby, a moment after the match is torn down.
+            if (theme >= ArenaTheme.All.Length) { tree.CreateTimer(0.5, true, false, true).Timeout += () => tree.Quit(0); return; }
             int seed = 1;
             while (ArenaTheme.ForSeed(seed) != ArenaTheme.All[theme]) seed++;
-            _game.MapNode.Build(MapGenerator.Generate(seed, 4));
+            var arena = MapCode.Pack(MapDesign.From(MapGenerator.Generate(seed, 4)));
             var name = ArenaTheme.All[theme].Name;
             theme++;
-            tree.CreateTimer(0.5, true, false, true).Timeout += () =>
+            tree.CreateTimer(0.3, true, false, true).Timeout += () =>
             {
-                ulong t0 = Time.GetTicksUsec(), f0 = Engine.GetProcessFrames();
-                tree.CreateTimer(3.0, true, false, true).Timeout += () =>
-                {
-                    double ms = (Time.GetTicksUsec() - t0) / 1000.0 / Mathf.Max(1, Engine.GetProcessFrames() - f0);
-                    Log.Info($"BENCH {name,-13} {ms:0.00} ms/frame ({1000 / ms:0} fps)");
-                    Next();
-                };
+                _net.SetSettings(new MatchSettings { BattlesPerRound = 9, RoundsToWin = 9, KillCam = false, Maps = { arena } });
+                _game.HostStartMatch();
+                BenchFights(name, BenchSeconds, Next);
             };
         }
-        tree.CreateTimer(3.0, true, false, true).Timeout += Next;
+        tree.CreateTimer(1.0, true, false, true).Timeout += Next;
+    }
+
+    private const double BenchSeconds = 3.0;
+
+    /// <summary>
+    /// Times <paramref name="seconds"/> of frames spent fighting (after half a second of each fight to settle in), logs the
+    /// average as a BENCH line for <paramref name="name"/>, then calls <paramref name="done"/>.
+    /// </summary>
+    private void BenchFights(string name, double seconds, System.Action done)
+    {
+        var tree = GetTree();
+        double settled = 0, total = 0;
+        long frames = 0;
+        ulong last = 0;
+        bool wasFighting = false;
+        void Frame()
+        {
+            ulong now = Time.GetTicksUsec();
+            bool fighting = _game.Phase == Phase.Fighting;
+            double ms = (now - last) / 1000.0;
+            if (fighting && !wasFighting) settled = 0; // every fight settles in afresh
+            if (last != 0 && fighting && wasFighting)
+            {
+                if (settled < 500) settled += ms;
+                else { total += ms; frames++; }
+            }
+            last = now;
+            wasFighting = fighting;
+            if (total < seconds * 1000) return;
+            tree.ProcessFrame -= Frame;
+            double avg = total / frames;
+            Log.Info($"BENCH {name,-13} {avg:0.00} ms/frame ({1000 / avg:0} fps)");
+            done();
+        }
+        tree.ProcessFrame += Frame;
     }
 
     // --fxbench: Floods the arena with top-tier hit and kill effects for 8 s (windowed, vsync off), printing frame
