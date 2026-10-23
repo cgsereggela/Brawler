@@ -32,6 +32,7 @@ You don't need anything else installed. Step-by-step guides:
 - **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
 
 Found a bug? **Report Bug** on the main menu opens the [issues page](https://github.com/cgsereggela/Brawler/issues) in your browser.
+
 See more on YouTube: 
 - https://www.youtube.com/playlist?list=PLWkwO5ZkzzEI
 - https://www.youtube.com/playlist?list=PLXFJdUPfoA90
