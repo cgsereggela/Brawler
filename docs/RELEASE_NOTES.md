@@ -1,3 +1,18 @@
+## New in 1.6.0
+
+- **Daily challenge:** **Daily Challenge** on the main menu starts today's match against three Hard bots. The arena,
+  the game mode and three starting cards come from the date, so everyone gets the same day and friends can compare.
+  The menu shows today's mode and cards and your best result, which your profile keeps until the day is over.
+- **Training range:** **Training Range** on the main menu puts you on a small arena with two target dummies and a
+  sparring bot that moves and blocks but never fires. The card browser (Tab) gives you any card, rares and curses
+  included, with search and category filters. The fallen come back, and **Reset** starts the battle over with your
+  cards kept. Nothing on the range counts toward the card balance stats.
+- **Faster character drawing:** each character takes about a third less CPU time to draw, and looks exactly the same.
+- **Main menu:** the buttons sit two to a row, so the menu fits on screen at the biggest UI scale.
+- **Testing:** `tools/check.sh` runs every end-to-end check (including the networked host and client pairs), and
+  every push to GitHub runs it. A check now fails when the game logs an error. Bot checks run on fixed seeds, and
+  every check prints its seed, so `--seed=N` replays a failing run exactly. New `--artbench` measures character drawing.
+
 ## New in 1.5.0
 
 - **Swinging hanging platforms:** shoot one of a platform's two chains and it swings down on the other, the swing
