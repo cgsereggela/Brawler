@@ -22,6 +22,9 @@ public static class CareerBook
 
     private static int _kills;
 
+    /// <summary>The local player's kills this match (enemies only), counted even when the career is off.</summary>
+    public static int MatchKills => _kills;
+
     public static void Load() => Current = Profile.LoadCareer();
 
     /// <summary>A demo's own career, without touching the saved one.</summary>

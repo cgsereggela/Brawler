@@ -109,6 +109,7 @@ public partial class Main
             else if (ComboCheckProblem() is { } combo) Finish(1, combo);
             else if (LavaCheckProblem() is { } lava) Finish(1, lava);
             else if (CouchCheckProblem() is { } couch) Finish(1, couch);
+            else if (DailyCheckProblem() is { } daily) Finish(1, daily);
             else Finish(0, $"match finished, winner slot {winner} | {_game.ScoreLine()}");
         };
     }

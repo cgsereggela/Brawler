@@ -35,6 +35,15 @@ public static class Profile
 
     public static void SaveCareer(Career c) => Edit(cfg => cfg.SetValue("player", "career", c.Encode()));
 
+    /// <summary>The best daily challenge result, as <see cref="DailyBest"/> text (only today's counts).</summary>
+    public static string LoadDailyBest()
+    {
+        var cfg = new ConfigFile();
+        return cfg.Load(Path) == Error.Ok ? (string)cfg.GetValue("player", "daily", "") : "";
+    }
+
+    public static void SaveDailyBest(string best) => Edit(cfg => cfg.SetValue("player", "daily", best));
+
     /// <summary>The address last typed in the join box, so friends don't retype it every session.</summary>
     public static string LastAddress()
     {

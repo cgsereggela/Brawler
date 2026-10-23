@@ -453,6 +453,9 @@ public partial class GameManager
     /// <summary>Test hook (offline only): replaces every player's cards at the start of each battle.</summary>
     public Func<int, List<int>> DebugCards;
 
+    /// <summary>Offline: cards every player starts the match holding (the daily challenge's hand), added at the first battle. Null for none.</summary>
+    public List<int> StartingCards;
+
     /// <summary>Test hook (host): starts a battle on a chosen map seed right away.</summary>
     public void DebugStartBattle(int seed)
     {

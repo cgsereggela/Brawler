@@ -8,13 +8,14 @@ namespace Brawler.UI;
 
 public partial class MenuUI : Control
 {
-    public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor;
+    public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor, Daily;
 
     /// <summary>Where Report Bug sends people: the issues page of the GitHub repository.</summary>
     public const string IssuesUrl = "https://github.com/cgsereggela/Brawler/issues";
 
     public LineEdit NameEdit, AddressEdit, PortEdit;
     private Label _status;
+    private Label _daily;
     private AvatarPreview _preview;
     private readonly NetworkManager _net;
 
@@ -58,6 +59,12 @@ public partial class MenuUI : Control
         body.AddChild(UiKit.Spacer(2));
         body.AddChild(UiKit.Primary("PLAY VS BOTS", () => PlayBots?.Invoke()));
         body.AddChild(UiKit.Button("Host Game", () => HostLan?.Invoke()));
+        var daily = UiKit.Button("Daily Challenge", () => Daily?.Invoke());
+        daily.TooltipText = "Today's arena, mode and starting cards against three Hard bots: the same for everyone, so friends can compare";
+        body.AddChild(daily);
+        _daily = UiKit.Label("", UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center);
+        _daily.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        body.AddChild(_daily);
         var editor = UiKit.Button("Map Editor", () => MapEditor?.Invoke());
         editor.TooltipText = "Build your own arenas and share them as map codes";
         body.AddChild(editor);
@@ -189,6 +196,9 @@ public partial class MenuUI : Control
     public int Port => int.TryParse(PortEdit.Text, out int p) && p > 0 && p < 65536 ? p : NetworkManager.DefaultPort;
 
     public void SetStatus(string text) => _status.Text = text ?? "";
+
+    /// <summary>The line under Daily Challenge: today's mode and cards, and your best so far.</summary>
+    public void SetDaily(string text) { if (_daily != null) _daily.Text = text ?? ""; }
 
     private void RefreshPreview()
     {

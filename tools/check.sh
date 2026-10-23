@@ -45,6 +45,7 @@ esac
 # name | windowed (0 = headless, 1 = 1920x1080 window, 2 = a window at its own size) | timeout (s) | arguments after --
 CHECKS=(
   "errorcheck|0|60|--errorcheck"
+  "dailycheck|0|900|--dailycheck=20261023 --seed=1"
   "autotest|0|900|--autotest"
   "autotest-8|0|900|--autotest --players=8"
   "teams-3v3|0|900|--autotest --players=6 --teams=3"

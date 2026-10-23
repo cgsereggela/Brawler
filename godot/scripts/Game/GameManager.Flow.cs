@@ -638,6 +638,12 @@ public partial class GameManager
         foreach (var p in Slots) if (p != null) p.Avatar = null;
         Bullets.Clear();
         Fx.Clear();
+        if (StartingCards != null && !Networked && BattleNumber == 1)
+            foreach (var p in Active())
+            {
+                p.Cards.AddRange(StartingCards);
+                p.RecomputeStats();
+            }
         if (DebugCards != null && !Networked)
             foreach (var p in Active())
             {

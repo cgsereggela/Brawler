@@ -41,6 +41,9 @@ public partial class GameManager : Node2D
     public MapLayout Map => MapNode.Layout;
     public Rng HostRng { get; private set; } = new(RunSeed.Value);
 
+    /// <summary>Restart the host's rolls from <paramref name="seed"/> (the daily challenge, so its card offers are everyone's).</summary>
+    public void ReseedHost(ulong seed) => HostRng = new Rng(seed);
+
     public readonly MatchPlayer[] Slots = new MatchPlayer[LobbyState.MaxPlayers];
     public MatchSettings Settings = new();
     /// <summary>Test runs (--lava=SECS): when 0 or more, overrides the lobby's sudden-death lava setting for matches this peer hosts.</summary>

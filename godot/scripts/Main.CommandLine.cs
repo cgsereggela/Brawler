@@ -81,6 +81,8 @@ namespace Brawler;
 //   --driftcheck          bots only, on Drift arenas; counts falls nobody caused per bot-minute and fails if there are many
 //   --errorcheck          throws an exception in a frame callback and checks the checks would have seen it (every check
 //                         fails if the game logged an error, naming the first)
+//   --dailycheck[=DAY]    the autopilot plays a day's daily challenge (yyyymmdd, default today) on a scratch profile:
+//                         checks the arena, mode, starting hand and Hard bots, and that the best result is kept
 //   --seed=N              seeds everything random that steers the run (arenas, card offers, bots, autopilot picks); every
 //                         check prints its seed in the AUTOTEST line, so with --fixed-fps a failing run replays exactly
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
@@ -219,6 +221,7 @@ public partial class Main
             else if (a == "--hangercheck") StartHangerCheck();
             else if (a == "--driftcheck") StartDriftCheck();
             else if (a == "--errorcheck") ErrorCheck();
+            else if (a.StartsWith("--dailycheck")) StartDailyCheck(a);
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();

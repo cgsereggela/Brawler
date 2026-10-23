@@ -168,6 +168,9 @@ public partial class Main : Node
         };
         _menu.Customize += () => OpenCustomize(_menu);
         _menu.MapEditor += () => Show(_editor);
+        _menu.Daily += StartDaily;
+        _game.MatchEnded += DailyMatchEnded;
+        _menu.SetDaily(DailyLine());
         _editor.Closed += () => Show(_menu);
         _editor.Playtest += PlaytestArena;
         _lobby.CustomizePressed += () => OpenCustomize(_lobby);
@@ -189,6 +192,7 @@ public partial class Main : Node
         _net.SessionEnded += reason =>
         {
             _game.ResetWorld();
+            DailyEnded();
             Show(_playtest ? _editor : _menu);
             _playtest = false;
             _menu.SetStatus(reason);

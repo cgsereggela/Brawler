@@ -150,6 +150,9 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 - The match-over screen hands out up to four **awards** beside the champion, such as *Own Worst Enemy* (most self-inflicted exits), *Frequent Flyer* (longest time in the air), *Brick Wall* and *Stormtrooper*. Everyone gets one before anyone gets a second, and a tie gives nobody the title. The list is in `godot/scripts/Logic/Awards.cs`.
 - When the match ends, the standings show each player's round wins; hover a player chip at the top to see their cards and stats over the screen. Press **Rematch** to go again with the same players and settings, from zero cards. It starts once every player still there has pressed it (bots always agree); press it again to take your vote back. The host can also take everyone back to the **Lobby** instead.
 
+### Daily challenge
+**Daily Challenge** on the main menu starts a match straight away, against three **Hard** bots. Today's arena, game mode (Elimination, King of the Hill or Headhunter) and three starting cards come from the date alone (UTC), so everyone, anywhere, gets the same day. The card offers follow the same seed, and custom cards stay out of them. Every player starts with the day's three cards. The menu shows today's mode, cards and your best result so far. Your profile keeps the best of the day: a win beats any loss, then more rounds won, then more kills. A new day starts over (`Logic/Daily.cs`).
+
 ## Cards
 There are 103 cards: 81 common cards in five categories, 10 rare cards and 12 curses. Strong cards come with a tradeoff (less damage, HP, ammo, speed, ...). The full list with exact numbers is in `godot/scripts/Logic/Cards.cs`.
 - **Gun** (orange): more, bigger, faster or slower bullets. For example Sniper, Minigun, Twin Shot, Hail Storm, Cannonball, Needles, Ricochet, plus the originals (Bouncy, Big Bullet, Pierce, Splitter, Homing, Explosive, Shotgun, Burst, ...).
@@ -379,6 +382,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --hangercheck     # a bot vs a player standing under a hanging platform: it must shoot the chains and drop it on them (HANGERCHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --driftcheck      # bots only, on Drift arenas: fails if they fall off the drifting platforms on their own too often (DRIFTCHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --errorcheck      # throws an exception in a frame callback and checks it is counted (every check fails if the game logged an error)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --dailycheck      # the autopilot plays today's daily challenge (--dailycheck=20261023 for a given day) on a scratch profile: arena, mode, starting cards, Hard bots, best result kept
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
