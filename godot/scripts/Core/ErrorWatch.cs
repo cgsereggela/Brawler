@@ -33,7 +33,8 @@ public partial class ErrorWatch : Logger
             code = 1;
             why = $"{why}; but the game logged {Count} error(s), the first: {First}";
         }
-        Log.Info($"AUTOTEST {(code == 0 ? "PASS" : "FAIL")}: {why}");
+        // The seed replays the run (with --fixed-fps): --seed=N.
+        Log.Info($"AUTOTEST {(code == 0 ? "PASS" : "FAIL")}: {why} [seed {RunSeed.Value}]");
         tree.Quit(code);
     }
 

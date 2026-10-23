@@ -553,6 +553,7 @@ public partial class GameManager
     }
 
     private float _autoPickT = -1;
+    private readonly Rng _autoPickRng = new(RunSeed.Next()); // replayable with --seed
 
     private void ClientAutopilotPick(float dt)
     {
@@ -567,10 +568,10 @@ public partial class GameManager
         _autoPickT = -1;
         // Like a bot: a combo card when there is one, mostly, so autotests see combos found.
         var combos = opts.Where(id => Combos.Unlocks(me.Cards, id).Count > 0).ToList();
-        var from = combos.Count > 0 && GD.Randf() < 0.75f ? combos : opts;
+        var from = combos.Count > 0 && _autoPickRng.Chance(0.75f) ? combos : opts;
         // Now and then the cursed deal, so autotests take curses too.
-        if (combos.Count == 0 && PickDeals.TryGetValue(me.Slot, out var deal) && GD.Randf() < 0.3f) LocalPick(deal.Rare, deal: true, me);
-        else LocalPick(from[(int)(GD.Randi() % (uint)from.Count)], who: me);
+        if (combos.Count == 0 && PickDeals.TryGetValue(me.Slot, out var deal) && _autoPickRng.Chance(0.3f)) LocalPick(deal.Rare, deal: true, me);
+        else LocalPick(from[_autoPickRng.Range(0, from.Count - 1)], who: me);
     }
 
     /// <summary>

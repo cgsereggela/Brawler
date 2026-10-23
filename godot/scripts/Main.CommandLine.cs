@@ -81,6 +81,8 @@ namespace Brawler;
 //   --driftcheck          bots only, on Drift arenas; counts falls nobody caused per bot-minute and fails if there are many
 //   --errorcheck          throws an exception in a frame callback and checks the checks would have seen it (every check
 //                         fails if the game logged an error, naming the first)
+//   --seed=N              seeds everything random that steers the run (arenas, card offers, bots, autopilot picks); every
+//                         check prints its seed in the AUTOTEST line, so with --fixed-fps a failing run replays exactly
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 //                         autopilot; checks at the end that they played and picked cards like everyone else
 //   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
@@ -99,10 +101,11 @@ public partial class Main
     {
         if (spec.StartsWith("random:") && int.TryParse(spec["random:".Length..], out int n))
         {
+            var rng = new Rng(RunSeed.Next()); // replayable with --seed
             _game.DebugCards = slot =>
             {
                 var hand = new System.Collections.Generic.List<int>();
-                for (int i = 0; i < n; i++) hand.Add(CardRegistry.All[(int)(GD.Randi() % (uint)CardRegistry.All.Count)].Id);
+                for (int i = 0; i < n; i++) hand.Add(CardRegistry.All[rng.Range(0, CardRegistry.All.Count - 1)].Id);
                 Log.Info($"P{slot} cards: {string.Join(", ", hand.Select(id => CardRegistry.Get(id).Name))}");
                 return hand;
             };

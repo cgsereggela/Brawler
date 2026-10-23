@@ -15,7 +15,7 @@ namespace Brawler.Game;
 public sealed class BotBrain : IInputSource
 {
     private readonly GameManager _game;
-    private readonly RandomNumberGenerator _rng = new();
+    private readonly RandomNumberGenerator _rng = new() { Seed = RunSeed.Next() }; // replayable with --seed (see RunSeed)
     private byte _jumps, _blocks;
     private float _jumpHold, _decisionT, _strafeDir = 1, _aimWobbleT;
     private Vector2 _aimWobble;

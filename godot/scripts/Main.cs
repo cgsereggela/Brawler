@@ -38,6 +38,7 @@ public partial class Main : Node
     public override void _Ready()
     {
         ErrorWatch.Install(); // first, so the check modes see every error the run logs
+        RunSeed.Init(); // before the GameManager makes its host rolls
         LocalInput.RegisterActions();
         Pads.RegisterMenuButtons();
         Keybinds.Init();

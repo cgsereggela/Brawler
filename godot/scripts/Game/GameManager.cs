@@ -39,7 +39,7 @@ public partial class GameManager : Node2D
     public MapNode MapNode { get; private set; }
     public Arena Arena { get; private set; }
     public MapLayout Map => MapNode.Layout;
-    public Rng HostRng { get; private set; } = new((ulong)DateTime.Now.Ticks);
+    public Rng HostRng { get; private set; } = new(RunSeed.Value);
 
     public readonly MatchPlayer[] Slots = new MatchPlayer[LobbyState.MaxPlayers];
     public MatchSettings Settings = new();

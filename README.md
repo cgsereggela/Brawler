@@ -406,4 +406,6 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 ```
 Every check also fails if the game logged an error on the way (an engine error, or an exception Godot caught in a callback and carried on from), even when it met its own condition; the AUTOTEST line names the first one.
 
+Every check also ends its AUTOTEST line with `[seed N]`. Add `--seed=N` (with `--fixed-fps 60`) to rerun that exact run: the arenas, card offers, bot decisions and autopilot picks all follow from it.
+
 `--autotest`, `--autohost` and `--autojoin` also switch some cards off in the card pool and fail if a pick ever offers one; the client checks that it received the host's list.
