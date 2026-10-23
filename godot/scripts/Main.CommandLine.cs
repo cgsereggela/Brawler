@@ -75,6 +75,9 @@ namespace Brawler;
 //                         ride the mover
 //   --vantagecheck        one bot against a player standing still on a ledge it can't reach; fails if the bot rarely has
 //                         a clear shot (it used to wait under the ledge, out of sight) or hardly hits
+//   --hangercheck         one bot against a player standing still under a hanging platform; fails if the bot doesn't shoot
+//                         the chains and crush them within 30 s
+//   --driftcheck          bots only, on Drift arenas; counts falls nobody caused per bot-minute and fails if there are many
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 //                         autopilot; checks at the end that they played and picked cards like everyone else
 //   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
@@ -203,6 +206,8 @@ public partial class Main
             else if (a.StartsWith("--simulate")) StartSimulate(a);
             else if (a == "--hazardcheck") StartHazardCheck();
             else if (a == "--vantagecheck") StartVantageCheck();
+            else if (a == "--hangercheck") StartHangerCheck();
+            else if (a == "--driftcheck") StartDriftCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();

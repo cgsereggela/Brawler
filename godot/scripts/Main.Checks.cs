@@ -595,6 +595,8 @@ public partial class Main
         if (_lavaCheck) PollLava();
         if (_autoMode == "hazardcheck") PollHazards();
         if (_autoMode == "vantagecheck") PollVantage();
+        if (_autoMode == "hangercheck") PollHanger();
+        if (_autoMode == "driftcheck") PollDrift();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -1134,6 +1136,116 @@ public partial class Main
         else if (dps < 2) Finish(1, $"vantagecheck: the bot hardly hits ({line})");
         else Finish(0, line);
     }
+
+    // ---------- --hangercheck: a bot, and someone standing under a hanging platform ----------
+
+    private const float HangerCheckSeconds = 30;
+    private float _hcFight;
+    private bool _hcPlaced, _hcCrushed;
+
+    private static readonly Hanger HcHanger = new(440, 280, 120, 8);
+
+    /// <summary>
+    /// One Normal bot on a floor against a player standing still under a hanging platform (kept alive, lava off). The
+    /// quickest kill is to shoot the chains and drop the platform on them. Fails if the bot hasn't done so within
+    /// <see cref="HangerCheckSeconds"/>.
+    /// </summary>
+    private void StartHangerCheck()
+    {
+        _autoMode = "hangercheck";
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var d = MapDesign.Empty(ThemeId.DungeonDepths, 1);
+        d.Blocks.Add(new RectI(400, 152, 200, 16)); // the chains hang from this
+        d.Hangers.Add(HcHanger);
+        d.Spawns.Add(new SpawnPoint(500, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(120, MapGenerator.FloorY));
+        _game.HazardDamaged += (_, kind, _) => _hcCrushed |= kind == GameManager.HazardHit.Crush;
+        _net.LocalName = "Under";
+        _net.StartOffline();
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { KillCam = false, Maps = { MapCode.Pack(d) } });
+        _game.HostStartMatch();
+    }
+
+    private void PollHanger()
+    {
+        if (_game.LocalMatchPlayer is { } me && me.Input is not StillInput) me.Input = new StillInput();
+        if (_game.Phase != Phase.Fighting) { _hcPlaced = false; return; }
+        if (_game.LocalMatchPlayer?.Avatar is not { Alive: true } target) return;
+        if (!_hcPlaced)
+        {
+            target.GlobalPosition = new Vector2(HcHanger.X + HcHanger.W / 2f, MapGenerator.FloorY - target.HalfSize.Y);
+            target.Velocity = Vector2.Zero;
+            _hcPlaced = true;
+        }
+        _hcFight += 1f / 60;
+        target.Hp = target.S[Stat.MaxHp]; // never let the battle end
+        bool dropped = _game.Arena.HangersDropped > 0;
+        if (!dropped && _hcFight < HangerCheckSeconds) return;
+        if (dropped && !_hcCrushed && _game.Arena.Hangers.Exists(h => h.FellAt >= 0 && !h.Landed && !h.Gone)) return; // still on its way down
+        string line = $"platform {(dropped ? $"dropped after {_hcFight:0.0}s" : "never dropped")}, {(_hcCrushed ? "crushing" : "missing")} the player under it";
+        Log.Info($"HANGERCHECK {line}");
+        if (!dropped) Finish(1, $"hangercheck: the bot never shoots the chains ({line})");
+        else if (!_hcCrushed) Finish(1, $"hangercheck: the bot dropped the platform but it missed ({line})");
+        else Finish(0, line);
+    }
+
+    // ---------- --driftcheck: bots on Drift arenas ----------
+
+    private const float DriftCheckSeconds = 300;
+    private float _dcFight, _dcBotSeconds;
+    private int _dcFalls, _dcKnocked;
+    private readonly System.Collections.Generic.HashSet<int> _dcOut = new();
+
+    /// <summary>
+    /// Four bots on generated Drift arenas (every platform drifts, over a bottomless drop), lava off. Counts the falls
+    /// nobody caused (no hit in the last 2 s) per bot-minute, beside the knock-offs, and fails if bots walk or jump off
+    /// on their own too often.
+    /// </summary>
+    private void StartDriftCheck()
+    {
+        _autoMode = "driftcheck";
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var settings = new MatchSettings { BattlesPerRound = 50, RoundsToWin = 50, LoserChoices = 3, WinnerChoices = 0, KillCam = false };
+        var themes = new[] { ThemeId.CandyClouds, ThemeId.SunsetPeaks, ThemeId.NeonNight, ThemeId.FrostBite };
+        for (int i = 0; i < themes.Length; i++) settings.Maps.Add(MapCode.Pack(MapDesign.Generate(MapStyle.Drift, themes[i], 1 + i)));
+        _game.BattleStarted += _dcOut.Clear;
+        _net.LocalName = "Drift";
+        _net.StartOffline();
+        for (int i = 1; i < 4; i++) _net.AddBot();
+        _net.SetSettings(settings);
+        _game.HostStartMatch();
+    }
+
+    private void PollDrift()
+    {
+        if (_game.Phase != Phase.Fighting || _game.Map == null) return;
+        const float dt = 1f / 60;
+        _dcFight += dt;
+        foreach (var a in _game.LiveAvatars())
+        {
+            int slot = a.Player.Slot;
+            _dcBotSeconds += dt;
+            if (a.GlobalPosition.Y < MapGenerator.FloorY + 40 || !_dcOut.Add(slot)) continue;
+            if (a.LastHitBy >= 0 && _game.Clock - a.LastHitAt < 2) _dcKnocked++;
+            else _dcFalls++;
+        }
+        if (_dcFight < DriftCheckSeconds) return;
+        float perMin = _dcFalls / (_dcBotSeconds / 60);
+        string line = $"{_dcFalls} falls on their own ({perMin:0.00} per bot-minute) and {_dcKnocked} knocked off, in {_dcFight:0}s of fighting ({_game.BattleNumber} battles)";
+        Log.Info($"DRIFTCHECK {line}");
+        if (perMin > DriftCheckMaxFalls) Finish(1, $"driftcheck: bots fall off drifting platforms on their own ({line})");
+        else Finish(0, line);
+    }
+
+    // Before the fixes bots fell on their own about 13 times a bot-minute; after, 3.5-4.5. Jumps between drifting
+    // platforms still miss now and then (one is shoved off mid-flight): this catches a slide back, not that.
+    private const float DriftCheckMaxFalls = 6f;
 
     /// <summary>Test input: stand still, aiming nowhere in particular.</summary>
     private sealed class StillInput : IInputSource

@@ -52,7 +52,8 @@ public sealed class BotBrain : IInputSource
         }
 
         var me = self.GlobalPosition;
-        bool canShoot = false;
+        bool canShoot = false, chainJump = false, chainHold = false;
+        float chainX = float.NaN;
         if (target != null)
         {
             // --- aim with lead and drop compensation ---
@@ -82,6 +83,16 @@ public sealed class BotBrain : IInputSource
             _seen = sight ? target : null;
             f.Shoot = sight && _seenT >= _tune.Reaction && tDist < _tune.Range && (self.Ammo > 1 || tDist < 180 || _rng.Randf() < 0.05f);
             f.Reload = !sight && lowAmmo;
+            // A hanging platform over the target: shoot its chains and drop it on them.
+            if (ChainShot(self, target, out var chain, out chainJump))
+            {
+                // A chain is a few px wide: aim much tighter than at a body. Out of reach until we jump: just jump.
+                f.Aim = chain + _aimWobble * 0.15f;
+                f.Shoot = self.Ammo > 0 && !chainJump;
+                chainHold = true;
+                f.Reload = f.Reload && self.Ammo == 0;
+            }
+            else chainX = ChainSpot(self, target);
         }
 
         // Movement heads for the goal if there is one, else the target.
@@ -107,7 +118,7 @@ public sealed class BotBrain : IInputSource
         else move = _strafeDir * 0.6f;
         if (!los) move = Mathf.Sign(to.X == 0 ? 1 : to.X);
 
-        bool wantJump = false, vantageHop = false;
+        bool wantJump = false, fullHop = false;
         bool onFloor = self.IsOnFloor();
 
         // --- navigation: out of sight, or far above/below → follow the jump graph one surface at a time ---
@@ -175,8 +186,13 @@ public sealed class BotBrain : IInputSource
             if (!canShoot || Mathf.Abs(off) > 30) move = Mathf.Abs(off) < 4 ? 0 : Mathf.Sign(off);
             else move = _strafeDir * 0.6f;
             // The shot only opens up from the top of a jump: jump, and hold it all the way up.
-            if (_vantageJump && onFloor && Mathf.Abs(off) <= 30) { wantJump = true; vantageHop = true; }
+            if (_vantageJump && onFloor && Mathf.Abs(off) <= 30) { wantJump = true; fullHop = true; }
         }
+        // A platform hangs over the target, but no chain is in reach from here (they're steep shots up past its
+        // edge): walk round to the side of the nearest one.
+        if (!navigating && !flee && goal == null && !float.IsNaN(chainX) && onFloor)
+            move = Mathf.Abs(chainX - me.X) < 6 ? 0 : Mathf.Sign(chainX - me.X);
+        else if (chainHold && !navigating && !flee && goal == null) move = 0; // a chain in reach: stand and cut it
         if (navigating)
         {
             var hop = Live(map, _hop);
@@ -265,7 +281,15 @@ public sealed class BotBrain : IInputSource
         // Wall ahead: jump it / wall-jump up it, but not on the way down, where kicking off a ledge's side just
         // bounces us back up next to it (bots wall-jumped against the same 8 px ledge end for minutes).
         if (self.IsOnWall() && move * self.GetWallNormal().X < 0 && !descending) wantJump = true;
-        if (onFloor && !dropping && !riding && !GroundAhead(self, move)) wantJump = true; // edge or pit ahead
+        // Edge or pit ahead: jump it if a full jump comes down on something (the far side, or ground below). With
+        // nothing to land on, like the bottomless gaps between a Drift arena's platforms, don't go: turn round if just
+        // milling about, else wait at the edge. Bots used to hop blindly into those gaps over and over.
+        if (onFloor && !dropping && !riding && !GroundAhead(self, move))
+        {
+            if (navigating || JumpLands(self, Mathf.Sign(move))) { wantJump = true; fullHop = true; move = Mathf.Sign(move); }
+            else if (goal == null && los && !(move * to.X > 0 && dist > pref + band)) { move = -move; _strafeDir = Mathf.Sign(move); }
+            else move = 0;
+        }
         // Standing in a pool: get out by the nearer side, unless we're crossing it on the way somewhere.
         if (onFloor && !navigating && PoolUnder(feet, self.HalfSize.X) is { } pool)
             move = feet.X - pool.X1 < pool.X2 - feet.X ? -1 : 1;
@@ -292,7 +316,19 @@ public sealed class BotBrain : IInputSource
             if (onFloor && saw.Y > me.Y - 2) wantJump = true;
             else move = Mathf.Sign(me.X - saw.X);
         }
-        if (!navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 175)) move = -move; // falling into a pit: steer back
+        if (chainJump && onFloor) { wantJump = true; fullHop = true; } // the chain is in reach from the top of a jump
+        // Committed to a jump: keep steering for where we jumped to until we land. Mid-air, fighting moves (backing off,
+        // strafing) used to turn bots round over the gaps between drifting platforms, into the drop.
+        _commitT -= dt;
+        if (onFloor && _commitT <= 0) { _airHop = -1; _airMove = 0; }
+        bool committed = !onFloor && !navigating && (_airHop >= 0 || _airMove != 0);
+        if (committed && _airHop >= 0)
+        {
+            float landX = Inside(me.X, Live(map, _airHop), 10);
+            move = Mathf.Abs(landX - me.X) < 3 ? 0 : Mathf.Sign(landX - me.X);
+        }
+        else if (committed) move = _airMove;
+        if (!committed && !navigating && !onFloor && self.Velocity.Y > 60 && !GroundBelow(self, 175)) move = -move; // falling into a pit: steer back
         if (!onFloor && PoolLanding(self) is float side and not 0) move = side; // coming down in a pool: steer for its nearer side
         if (feet.Y > lava - 2) wantJump = true; // in the lava: jump out of it (it pops us up too)
         if (onFloor && !riding && _rng.Randf() < 0.008f) wantJump = true;
@@ -311,7 +347,24 @@ public sealed class BotBrain : IInputSource
         if (wantJump && _jumpHold <= -0.15f)
         {
             _jumps++;
-            _jumpHold = jet && !onFloor ? _rng.RandfRange(0.5f, 0.8f) : vantageHop ? 0.6f : _rng.RandfRange(0.15f, 0.35f);
+            _jumpHold = jet && !onFloor ? _rng.RandfRange(0.5f, 0.8f) : fullHop ? 0.6f : _rng.RandfRange(0.15f, 0.35f);
+            // Jumping off for somewhere: commit to it until we land (see above). Only to or from a drifting platform:
+            // elsewhere the fighting moves mid-air steer us clear of pools, and committed bots came down in them.
+            bool drift = map.DriftOf.ContainsKey(_surface) || navigating && map.DriftOf.ContainsKey(_hop);
+            if (onFloor && drift && (navigating || fullHop))
+            {
+                _airHop = navigating ? _hop : -1;
+                _airMove = navigating ? 0 : Mathf.Sign(move);
+                _commitT = 0.2f;
+            }
+            // Any other hop (at a target overhead, dodging, on a whim): come down on the surface we jumped from, or
+            // strafing mid-air carries us off a drifting platform's end into the drop.
+            else if (onFloor && drift)
+            {
+                _airHop = _surface;
+                _airMove = 0;
+                _commitT = 0.2f;
+            }
         }
         f.MoveX = Mathf.Clamp(move, -1, 1);
         // Climbing: hold jump all the way up. Letting go early cuts the rise (the short-hop rule), which made bots
@@ -379,6 +432,9 @@ public sealed class BotBrain : IInputSource
     /// <summary>Where on <see cref="_vantage"/> to stand; <see cref="_atVantage"/> while that's our own surface.</summary>
     private float _vantageX = float.NaN;
     private bool _atVantage, _vantageJump;
+    /// <summary>The jump we're committed to until we land: the surface we jumped for, or a way to keep going.</summary>
+    private int _airHop = -1;
+    private float _airMove, _commitT;
     private float _navT, _stuckT, _wanderT, _wanderDir = 1, _airT;
     private Vector2 _stuckFrom;
 
@@ -601,11 +657,93 @@ public sealed class BotBrain : IInputSource
     }
 
     /// <summary>
+    /// Where to shoot to cut a chain of a hanging platform that would come down on <paramref name="target"/> (it stands
+    /// in the platform's drop, below it and above where it lands), along the exact arc onto it. False if no platform
+    /// hangs over them, it would come down on us too, we'd be riding it down, or no chain is in range. A chain can hang
+    /// higher than a bullet climbs from the ground: then <paramref name="jumpFirst"/> says the shot opens up from the top
+    /// of a jump.
+    /// </summary>
+    private bool ChainShot(Avatar self, Avatar target, out Vector2 aim, out bool jumpFirst)
+    {
+        aim = default;
+        jumpFirst = false;
+        var me = self.GlobalPosition;
+        float jv = self.S[Stat.JumpVelocity], apex = 0.8f * jv * jv / (2 * self.S[Stat.Gravity]);
+        bool canJump = self.IsOnFloor();
+        float best = float.MaxValue;
+        foreach (var h in _game.Arena.Hangers)
+        {
+            if (h.FellAt >= 0 || h.Gone) continue;
+            if (!InDrop(h, target.Bounds) || InDrop(h, self.Bounds)) continue;
+            var feet = me.Y + self.HalfSize.Y;
+            if (Mathf.Abs(feet - h.Y) < 4 && me.X > h.Spec.X - self.HalfSize.X && me.X < h.Spec.X + h.Spec.W + self.HalfSize.X) continue;
+            var xs = h.ChainXs;
+            for (int c = 0; c < xs.Length; c++)
+            {
+                if (h.ChainCut(c)) continue;
+                // Any point on the chain will do: try from just over the platform (the easiest to reach) upward.
+                for (float y = h.Y - 6; y > h.Anchors[c] + 4; y -= 16)
+                {
+                    var at = new Vector2(xs[c], y);
+                    float d = at.DistanceTo(me);
+                    if (d >= best || d > _tune.Range) break;
+                    if (ChainDir(self, me, at, out var dir)) { best = d; aim = me + dir * d; jumpFirst = false; break; }
+                    if (canJump && ChainDir(self, me - new Vector2(0, apex), at, out _)) { best = d; aim = at; jumpFirst = true; break; }
+                }
+            }
+        }
+        return best != float.MaxValue;
+    }
+
+    /// <summary>
+    /// Where to stand for a shot at a chain of a platform hanging over <paramref name="target"/>: just off the platform's
+    /// end nearest an uncut chain, so the arc comes in over the top. NaN if no platform hangs over them.
+    /// </summary>
+    private float ChainSpot(Avatar self, Avatar target)
+    {
+        float me = self.GlobalPosition.X, best = float.NaN;
+        foreach (var h in _game.Arena.Hangers)
+        {
+            if (h.FellAt >= 0 || h.Gone || !InDrop(h, target.Bounds)) continue;
+            var s = h.Spec;
+            for (int c = 0; c < h.ChainXs.Length; c++)
+            {
+                if (h.ChainCut(c)) continue;
+                float x = h.ChainXs[c] - s.X < s.X + s.W - h.ChainXs[c] ? s.X - self.HalfSize.X - 24 : s.X + s.W + self.HalfSize.X + 24;
+                if (float.IsNaN(best) || Mathf.Abs(x - me) < Mathf.Abs(best - me)) best = x;
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// The way to fire from <paramref name="from"/> to hit a chain at <paramref name="at"/>: the exact arc, clear of
+    /// solids (a rough allowance for the drop misses something this thin), or a straight line for bullets that don't drop.
+    /// </summary>
+    private bool ChainDir(Avatar self, Vector2 from, Vector2 at, out Vector2 dir)
+    {
+        float g = self.S[Stat.BulletGravity];
+        // Against the live solids: the platform itself, crates and the like stop a shot too.
+        if (LobAim(from, at, self.S[Stat.BulletSpeed], g, out dir, _game.Arena.Solids)) return true;
+        dir = (at - from).Normalized();
+        return g < 1 && g > -1 && HasLineOfSight(from, at);
+    }
+
+    /// <summary>True if <paramref name="r"/> is under hanging platform <paramref name="h"/>, above where it lands.</summary>
+    private static bool InDrop(HangBody h, Rect2 r)
+    {
+        var s = h.Spec;
+        float landBottom = (h.LandY ?? MapLayout.Height) + s.H;
+        return r.End.X > s.X && r.Position.X < s.X + s.W && r.End.Y > h.Y + s.H && r.Position.Y < landBottom;
+    }
+
+    /// <summary>
     /// The way to fire (a unit vector) for a bullet of speed <paramref name="v"/> and gravity <paramref name="g"/> to
     /// arc from <paramref name="from"/> to <paramref name="to"/> without touching a solid on the way: the flatter of the
-    /// two arcs that reach it if that one is clear, else the high lob. False if neither is clear or it's out of range.
+    /// two arcs that reach it if that one is clear, else the high lob. False if neither is clear or it's out of range. Clear of the
+    /// arena's fixed solids, or of <paramref name="solids"/> if given.
     /// </summary>
-    private bool LobAim(Vector2 from, Vector2 to, float v, float g, out Vector2 dir)
+    private bool LobAim(Vector2 from, Vector2 to, float v, float g, out Vector2 dir, IReadOnlyList<RectI> solids = null)
     {
         dir = default;
         float dx = to.X - from.X, ax = Mathf.Abs(dx), up = from.Y - to.Y;
@@ -617,15 +755,15 @@ public sealed class BotBrain : IInputSource
         {
             float angle = Mathf.Atan((v2 + (k == 0 ? -root : root)) / (g * ax));
             var vel = new Vector2(Mathf.Sign(dx) * v * Mathf.Cos(angle), -v * Mathf.Sin(angle));
-            if (!ArcClear(from, vel, g, ax / (v * Mathf.Cos(angle)))) continue;
+            if (!ArcClear(from, vel, g, ax / (v * Mathf.Cos(angle)), solids ?? _game.Map.Solids)) continue;
             dir = vel / v;
             return true;
         }
         return false;
     }
 
-    /// <summary>True if a bullet fired at <paramref name="vel"/> under gravity <paramref name="g"/> meets no solid for most of <paramref name="time"/> seconds.</summary>
-    private bool ArcClear(Vector2 from, Vector2 vel, float g, float time)
+    /// <summary>True if a bullet fired at <paramref name="vel"/> under gravity <paramref name="g"/> meets none of <paramref name="solids"/> (nor a ramp) for most of <paramref name="time"/> seconds.</summary>
+    private bool ArcClear(Vector2 from, Vector2 vel, float g, float time, IReadOnlyList<RectI> solids)
     {
         const int Steps = 12;
         var p = from;
@@ -635,10 +773,40 @@ public sealed class BotBrain : IInputSource
             float t = time * 0.95f * i / Steps;
             var q = from + vel * t + new Vector2(0, 0.5f * g * t * t);
             var d = q - p;
-            if (Sweep.Cast(new NVec(p.X, p.Y), new NVec(d.X, d.Y), 1, _game.Map.Solids, _game.Map.Slopes) != null) return false;
+            if (Sweep.Cast(new NVec(p.X, p.Y), new NVec(d.X, d.Y), 1, solids, _game.Map.Slopes) != null) return false;
             p = q;
         }
         return true;
+    }
+
+    /// <summary>
+    /// True if a full jump from where we stand, running <paramref name="dir"/> (-1 or 1), comes down on something: a
+    /// surface ahead, or ground below the edge. False over a bottomless drop or a gap too wide to clear.
+    /// </summary>
+    private bool JumpLands(Avatar self, float dir)
+    {
+        var p = self.GlobalPosition + new Vector2(0, self.HalfSize.Y);
+        float vx = dir * self.S[Stat.MoveSpeed] * 0.9f, vy = -self.S[Stat.JumpVelocity], g = self.S[Stat.Gravity], hw = self.HalfSize.X * 0.6f;
+        const float dt = 1f / 30;
+        for (int i = 0; i < 90; i++)
+        {
+            var q = p + new Vector2(vx, vy) * dt;
+            vy += g * dt;
+            if (q.Y > MapLayout.KillY) return false;
+            if (q.Y > p.Y && TopBetween(q.X, hw, p.Y, q.Y)) return true;
+            p = q;
+        }
+        return false;
+    }
+
+    /// <summary>True if the top of a live solid or a ramp lies under x (± <paramref name="hw"/>) between heights y1 and y2.</summary>
+    private bool TopBetween(float x, float hw, float y1, float y2)
+    {
+        foreach (var r in _game.Arena.Solids)
+            if (r.X < x + hw && r.Right > x - hw && r.Y >= y1 - 1 && r.Y <= y2 + 1) return true;
+        foreach (var s in _game.Map.Slopes)
+            if (x >= s.X1 && x < s.X2 && s.YAt(x) >= y1 - 1 && s.YAt(x) <= y2 + 1) return true;
+        return false;
     }
 
     private bool HasLineOfSight(Vector2 from, Vector2 to)
