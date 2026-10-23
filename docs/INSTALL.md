@@ -56,6 +56,23 @@ chmod +x Brawler.x86_64
 Keep the `data_Brawler_linuxbsd_x86_64` folder next to the binary. A GPU with Vulkan drivers is best. The game
 switches to OpenGL by itself if Vulkan isn't available.
 
+### Steam Deck
+The Deck runs the Linux build natively, so you don't need Proton.
+1. Press the **Steam** button, then **Power → Switch to Desktop**. (**Steam + X** brings up the on-screen keyboard.)
+2. In a browser, download `Brawler-<version>-linux.zip` (see **Download** above).
+3. In **Dolphin**, right-click the zip in **Downloads** and choose **Extract → Extract archive here, autodetect
+   subfolder**. Move the folder somewhere permanent, for example `~/Games/Brawler`.
+4. Right-click `Brawler.x86_64`, choose **Properties → Permissions**, tick **Is executable**, then click **OK**.
+5. In Steam, click **Games → Add a Non-Steam Game to My Library…**, then **Browse…**, pick `Brawler.x86_64`, and click
+   **Add Selected Programs**. Leave **Compatibility** (Proton) off.
+6. Double-click **Return to Gaming Mode**. Brawler is under **Library → Non-Steam**. The game reads the controller
+   itself, so set the controls to the **Gamepad** template: **Controller settings → Current Layout → Templates →
+   Gamepad**.
+
+To type a host's address in **Join a Friend**, press **Steam + X**. The Deck's firewall is off by default, so hosting
+needs no extra setup. When you update, replace the folder in the same place, or change the shortcut's target in
+Steam under **Properties → Shortcut**. Settings are kept in the Linux folder listed under **Updating**.
+
 ## 3. Play
 
 | Action | Keys (change them in Options → Controls) |
