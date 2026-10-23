@@ -405,11 +405,17 @@ public partial class Main
         _net.LocalName = names[0];
         _net.LocalLook = Appearance.Random(rng);
         _net.StartOffline();
-        for (int i = 1; i < names.Count; i++) _net.AddBot();
-        for (int i = 1; i < names.Count; i++) _net.Lobby.Players[i].Name = names[i];
-        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 5 });
+        AddCouch(); // --couch=N: guests on autopilot alongside us (a Survival run with a full team of humans)
+        for (int i = 1 + _couch; i < names.Count; i++) _net.AddBot();
+        for (int i = 1; i < names.Count && i < _net.Lobby.Players.Count; i++) _net.Lobby.Players[i].Name = names[i];
+        // --mode / --teams up front, so the lobby on screen already shows the match that's about to be played.
+        var mode = _net.TestMode ?? GameMode.Elimination;
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 1, RoundsToWin = 5, Mode = mode });
+        int teams = _net.TestTeamSize > 0 ? _net.TestTeamSize : GameModes.Problem(mode, 0) != null ? Mathf.Clamp((names.Count + 1) / 2, 2, 4) : 0;
+        if (teams > 0) _net.SetTeamSize(teams);
         Show(_lobby);
         var tree = GetTree();
+        _game.MatchEnded += _ => Log.Info($"VIDEO match over after {Engine.GetProcessFrames() / 60.0:0}s at 60 fps");
         _game.MatchEnded += _ => tree.CreateTimer(4.0, true, false, true).Timeout += () =>
         {
             _hud.DebugHover = 0;

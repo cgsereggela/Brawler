@@ -397,6 +397,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --shots=C:/tmp/shots --terrainshots           # one battle per layout style and theme on its hilliest seed
 "$GODOT" --path godot --fixed-fps 60 -- --readmeshots --shots=C:/tmp/shots  # the README media: a full match with generated names, a GIF + screenshot per battle and card pick, the first kill cams (docs/media)
 "$GODOT" --path godot --write-movie C:/tmp/match.avi -- --videomatch --focuslog=C:/tmp/match.focus  # records a full 6-player match (lobby to match-over) for a video; the focus log says where the action is each frame, for a portrait crop
+"$GODOT" --path godot --write-movie C:/tmp/ctf.avi -- --videomatch --mode=ctf                # the same in a game mode (--mode, --teams, --rounds; --couch=N adds autopilot guests, e.g. --mode=survival --couch=3); the lobby on screen already shows them
 "$GODOT" --path godot --write-movie C:/tmp/demo.avi -- --demo=thumbs  # a scripted walk through one feature for a Short; "DEMO <frame> <label>" log lines mark the moments to cut to
 "$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=12 --players=2 --rounds=1 --botskills=hard  # one-round duels: a Hard bot against the Normal autopilot (--botskills gives bots skills in turn as they are added)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
