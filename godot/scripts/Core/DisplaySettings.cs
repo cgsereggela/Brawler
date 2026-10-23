@@ -171,7 +171,7 @@ public static class DisplaySettings
             Log.Info($"WINDOWCHECK error: {e}");
         }
         Log.Info($"WINDOWCHECK done, {fails} failed");
-        tree.Quit(fails == 0 ? 0 : 1);
+        ErrorWatch.Finish(tree, fails == 0 ? 0 : 1, $"windowcheck: {fails} step(s) failed");
     }
 }
 

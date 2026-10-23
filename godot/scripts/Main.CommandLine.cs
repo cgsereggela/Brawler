@@ -79,6 +79,8 @@ namespace Brawler;
 //   --hangercheck         one bot against a player standing still under a hanging platform; fails if the bot doesn't shoot
 //                         the chains and crush them within 30 s
 //   --driftcheck          bots only, on Drift arenas; counts falls nobody caused per bot-minute and fails if there are many
+//   --errorcheck          throws an exception in a frame callback and checks the checks would have seen it (every check
+//                         fails if the game logged an error, naming the first)
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 //                         autopilot; checks at the end that they played and picked cards like everyone else
 //   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
@@ -213,6 +215,7 @@ public partial class Main
             else if (a == "--vantagecheck") StartVantageCheck();
             else if (a == "--hangercheck") StartHangerCheck();
             else if (a == "--driftcheck") StartDriftCheck();
+            else if (a == "--errorcheck") ErrorCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();

@@ -187,7 +187,8 @@ public static class Keybinds
         Current = Defaults();
         Apply();
         Log.Info($"saved as:\n{saved}");
-        Log.Info($"REBINDCHECK {(fails.Count == 0 ? "PASS" : "FAIL " + string.Join("; ", fails))} (jump after reload: {string.Join(", ", jump.Select(k => OS.GetKeycodeString(k)))})");
-        ((SceneTree)Engine.GetMainLoop()).Quit(fails.Count == 0 ? 0 : 1);
+        string after = $"jump after reload: {string.Join(", ", jump.Select(k => OS.GetKeycodeString(k)))}";
+        Log.Info($"REBINDCHECK {(fails.Count == 0 ? "PASS" : "FAIL " + string.Join("; ", fails))} ({after})");
+        ErrorWatch.Finish((SceneTree)Engine.GetMainLoop(), fails.Count == 0 ? 0 : 1, fails.Count == 0 ? $"rebindcheck: {after}" : $"rebindcheck: {string.Join("; ", fails)}");
     }
 }

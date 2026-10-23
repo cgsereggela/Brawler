@@ -37,6 +37,7 @@ public partial class Main : Node
 
     public override void _Ready()
     {
+        ErrorWatch.Install(); // first, so the check modes see every error the run logs
         LocalInput.RegisterActions();
         Pads.RegisterMenuButtons();
         Keybinds.Init();

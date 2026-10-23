@@ -247,4 +247,6 @@ public sealed class WireReader
 public static class Log
 {
     public static void Info(string msg) => GD.Print($"[Brawler] {msg}");
+    /// <summary>Something went wrong that shouldn't: logged as an error, which fails any check running (see ErrorWatch).</summary>
+    public static void Error(string msg) => GD.PushError($"[Brawler] {msg}");
 }

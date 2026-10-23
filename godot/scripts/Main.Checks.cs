@@ -1255,9 +1255,24 @@ public partial class Main
 
     private void Finish(int code, string why)
     {
-        Log.Info($"AUTOTEST {(code == 0 ? "PASS" : "FAIL")}: {why}");
         _autoMode = null;
-        GetTree().Quit(code);
+        ErrorWatch.Finish(GetTree(), code, why);
+    }
+
+    // ---------- --errorcheck: the error count the checks fail on sees an exception Godot caught ----------
+
+    private void ErrorCheck()
+    {
+        _autoMode = "errorcheck";
+        // Thrown from a frame callback, as a bug in a card effect would be: Godot logs it and carries on.
+        Callable.From(() => throw new System.InvalidOperationException("errorcheck: a deliberate exception")).CallDeferred();
+        GetTree().CreateTimer(0.5).Timeout += () =>
+        {
+            if (ErrorWatch.Count == 0) { Finish(1, "errorcheck: an exception in a callback went uncounted"); return; }
+            string seen = ErrorWatch.First;
+            ErrorWatch.Reset();
+            Finish(0, $"errorcheck: counted it ({seen})");
+        };
     }
 
     // ---------- --lobbycheck: every lobby layout fits on screen ----------

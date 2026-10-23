@@ -376,6 +376,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --vantagecheck    # a bot vs a player standing on a ledge it can't reach: it must find a spot with a shot, straight or lobbed (VANTAGECHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --hangercheck     # a bot vs a player standing under a hanging platform: it must shoot the chains and drop it on them (HANGERCHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --driftcheck      # bots only, on Drift arenas: fails if they fall off the drifting platforms on their own too often (DRIFTCHECK)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --errorcheck      # throws an exception in a frame callback and checks it is counted (every check fails if the game logged an error)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
@@ -403,4 +404,6 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=12 --players=2 --rounds=1 --botskills=hard  # one-round duels: a Hard bot against the Normal autopilot (--botskills gives bots skills in turn as they are added)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
 ```
+Every check also fails if the game logged an error on the way (an engine error, or an exception Godot caught in a callback and carried on from), even when it met its own condition; the AUTOTEST line names the first one.
+
 `--autotest`, `--autohost` and `--autojoin` also switch some cards off in the card pool and fail if a pick ever offers one; the client checks that it received the host's list.
