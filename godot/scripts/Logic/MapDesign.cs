@@ -89,11 +89,11 @@ public sealed class MapDesign
             }
     }
 
-    /// <summary>Just the walls and a solid floor (or, without <paramref name="floor"/>, a bottomless drop), in the given theme.</summary>
-    public static MapDesign Empty(ThemeId theme, int from, bool floor = true)
+    /// <summary>Just the walls and a solid floor (or, for a floorless style, a bottomless drop), in the given theme.</summary>
+    public static MapDesign Empty(ThemeId theme, int from, MapStyle style = MapStyle.Tiers)
     {
-        var d = new MapDesign { Seed = SeedFor(theme, from), Style = floor ? MapStyle.Tiers : MapStyle.Sky };
-        if (!floor) d.Pits.Add((Wall, Width - Wall));
+        var d = new MapDesign { Seed = SeedFor(theme, from), Style = style };
+        if (MapGenerator.Floorless(style)) d.Pits.Add((Wall, Width - Wall));
         return d;
     }
 

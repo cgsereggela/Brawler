@@ -27,7 +27,7 @@ public readonly record struct JumpPad(int X1, int X2, int Y)
     public int CenterX => (X1 + X2) / 2;
 }
 
-public enum MapStyle { Tiers, Mirror, Islands, Towers, Cave, Tunnel, Temple, Sky }
+public enum MapStyle { Tiers, Mirror, Islands, Towers, Cave, Tunnel, Temple, Sky, Drift }
 
 public sealed class MapLayout
 {
@@ -137,14 +137,18 @@ public static class MapGenerator
 
     /// <summary>
     /// The first seven styles come from the seed's first roll, as they always have, so a seed keeps its arena. A
-    /// separate roll on the seed turns some seeds into the newer styles (one in ten is a floorless Sky arena).
+    /// separate roll on the seed turns some seeds into the newer styles: one in ten is a floorless Sky arena, and
+    /// about one in fourteen a Drift arena built only from drifting platforms.
     /// </summary>
     private static MapStyle StyleFor(Rng rng, int seed)
     {
         var style = (MapStyle)rng.Range(0, (int)MapStyle.Temple);
         int late = new Rng((ulong)(uint)seed ^ 0x5C1E5EEDUL).Range(0, 99);
-        return late < 10 ? MapStyle.Sky : style;
+        return late < 10 ? MapStyle.Sky : late < 17 ? MapStyle.Drift : style;
     }
+
+    /// <summary>Styles with no floor: falling past the bottom is always a way to die.</summary>
+    public static bool Floorless(MapStyle style) => style is MapStyle.Sky or MapStyle.Drift;
 
     public static MapLayout Generate(int seed, int playerCount)
     {
@@ -173,6 +177,7 @@ public static class MapGenerator
         AddBorders(map);
 
         var placed = new List<RectI>();
+        List<Drift> drifts = null;
         // The height of a layout's high point that must be in play (the temple's top, the top tunnel), or -1.
         int summit = -1;
         var floor = style switch
@@ -182,7 +187,7 @@ public static class MapGenerator
             MapStyle.Temple => Temple(rng, placed, out summit),
             MapStyle.Tunnel => PitFloor(rng, 0),
             MapStyle.Cave => PitFloor(rng, rng.Range(0, 1)),
-            MapStyle.Sky => new List<(int x1, int x2)>(),
+            MapStyle.Sky or MapStyle.Drift => new List<(int x1, int x2)>(),
             _ => PitFloor(rng, rng.Range(0, 2)),
         };
         foreach (var s in floor)
@@ -215,6 +220,9 @@ public static class MapGenerator
                 SkyIslands(rng, placed);
                 TierPlatforms(rng, placed, rng.Range(6, 8), 3, first: 2);
                 break;
+            case MapStyle.Drift:
+                drifts = DriftRows(rng);
+                break;
             default:
                 TierPlatforms(rng, placed, rng.Range(6, 9), 4);
                 Pillars(rng, placed);
@@ -224,6 +232,8 @@ public static class MapGenerator
         TerrainGen.Add(map, rng, floor, placed);
 
         BuildSurfaces(map, floor, placed);
+        if (drifts != null)
+            foreach (var d in drifts) ArenaFeatures.AddDrift(map, d);
         if (!PickSpawns(map, rng, playerCount)) return null;
         if (!SpawnsMutuallyReachable(map)) return null;
         // Spawns can all reach each other and still miss half the arena (all of them on one side of a temple whose
@@ -236,7 +246,7 @@ public static class MapGenerator
                 if (reach[i] && map.Surfaces[i].Y == summit) up = true;
             if (!up) return null;
         }
-        AddPads(map, rng, style);
+        if (style != MapStyle.Drift) AddPads(map, rng, style); // nothing to bolt a pad to
         return map;
     }
 
@@ -331,6 +341,50 @@ public static class MapGenerator
             placed.Add(new RectI(x, y, w, rng.Chance(0.5f) ? Tile : Tile * 2));
             x += w + rng.Range(7, 14) * Tile;
         }
+    }
+
+    /// <summary>Height between the rows of a Drift arena: a jump up (under MaxRise), and enough that a row's
+    /// platforms, shoved as far up or down as they go, never reach into the next row.</summary>
+    public const int DriftRowSpacing = 7 * Tile;
+
+    /// <summary>
+    /// A Drift arena: rows of drifting platforms over a bottomless drop, a running jump apart along each row and one
+    /// jump up to the next. The bottom row spans the arena; higher rows are sparser. Platforms in a row sit far
+    /// enough apart that however hard they're shoved they never pass through each other.
+    /// </summary>
+    private static List<Drift> DriftRows(Rng rng)
+    {
+        var drifts = new List<Drift>();
+        int y = TierY(1) / Tile * Tile;
+        for (int x = Wall + Drift.ReachX + rng.Range(0, 4) * Tile; ;)
+        {
+            int w = rng.Range(8, 14) * Tile;
+            if (x + w > Width - Wall - 2 * Tile - Drift.ReachX) w = Width - Wall - 2 * Tile - Drift.ReachX - x;
+            if (w < 6 * Tile) break;
+            drifts.Add(new Drift(x, y, w, rng.Chance(0.5f) ? Tile : Tile * 2));
+            x += w + rng.Range(9, 13) * Tile;
+        }
+        int rows = rng.Range(5, 7);
+        for (int row = 2; row <= rows; row++)
+        {
+            int ry = y - (row - 1) * DriftRowSpacing;
+            if (ry - Drift.ReachY - MinClearance < Wall) break;
+            int count = rng.Range(2, 4);
+            for (int i = 0; i < count * 6 && count > 0; i++)
+            {
+                int w = rng.Range(5, 10) * Tile;
+                int x = rng.Range(2, (Width - w) / Tile - 2) * Tile;
+                var d = new Drift(x, ry, w, Tile);
+                if (d.Range.X < Wall || d.Range.Right > Width - Wall) continue;
+                bool clash = false;
+                foreach (var o in drifts)
+                    if (o.Y == ry && o.Range.Grow(Tile, 0).Intersects(d.Range)) clash = true;
+                if (clash) continue;
+                drifts.Add(d);
+                count--;
+            }
+        }
+        return drifts;
     }
 
     /// <summary>Floating platforms in loose height tiers, each tier one comfortable jump above the last.</summary>

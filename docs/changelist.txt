@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- arena layouts made only of player-moveable elements
 - add platforms that hang from the ceiling and can be destroyed (fall to the ground) by players shooting the part that holds them to the ceiling
 
 performance improvements

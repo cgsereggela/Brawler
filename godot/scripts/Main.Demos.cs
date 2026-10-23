@@ -38,7 +38,8 @@ public partial class Main
             case "cosmetics": await DemoCosmetics(); break;
             case "clips": await DemoClips(); break;
             case "access": await DemoAccess(); break;
-            case "drift": await DemoDrift(); break;
+            case "drift": await DemoDrift(DriftDemoArena()); break;
+            case "driftstyle": await DemoDrift(MapDesign.Generate(MapStyle.Drift, ThemeId.CandyClouds, 1)); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -67,16 +68,23 @@ public partial class Main
         return list;
     }
 
-    // Drifting platforms: bots fight over a floor and a staircase of platforms that sway when landed on, shot or blasted.
-    private async Task DemoDrift()
+    // A floor and a staircase of drifting platforms.
+    private static MapDesign DriftDemoArena()
     {
-        _game.DisableKillCam = true;
-        _game.AutopilotLocal = true;
         var d = MapDesign.Empty(ThemeId.SunsetPeaks, 3);
-        d.Name = "Drift Demo";
         int w = MapLayout.Width;
         foreach (var (x, tier) in new[] { (120, 1), (w - 184, 1), (300, 2), (w - 364, 2), (w / 2 - 32, 3), (180, 4), (w - 244, 4) })
             d.Drifts.Add(new Drift(x, MapGenerator.TierY(tier) / 8 * 8, 64, 8));
+        return d;
+    }
+
+    // Drifting platforms (drift), or a Drift arena (driftstyle): bots fight over platforms that sway when landed on,
+    // shot or blasted.
+    private async Task DemoDrift(MapDesign d)
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        d.Name = "Drift Demo";
         MapLibrary.LobbyMaps = new() { MapCode.Encode(d) };
         Press(_menu, "PLAY VS BOTS");
         await DemoWait(0.6);

@@ -112,6 +112,8 @@ public static class ArenaFeatures
 
     public static void Add(MapLayout map, ThemeId theme)
     {
+        // A Drift arena is all moving parts already: crates or pools on platforms that get shoved about would only slide off.
+        if (map.Style == MapStyle.Drift) return;
         var rules = ThemeRules.Rules(theme);
         var rng = new Rng(((ulong)(uint)map.Seed << 1) ^ 0x51F15EEDUL);
         // Spots extras stay out of: around spawns, the air above jump pads, and each other.

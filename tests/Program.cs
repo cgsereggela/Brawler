@@ -225,6 +225,7 @@ void Check(bool cond, string name, string detail = "")
         {
             int seed = s * 7919 + 3, players = 2 + s % 7;
             var style = MapGenerator.StyleFor(seed);
+            if (style == MapStyle.Drift) continue; // checked below
             if (style != MapStyle.Sky)
             {
                 // Seeds that aren't Sky keep the style they always had (their first roll).
@@ -244,11 +245,43 @@ void Check(bool cond, string name, string detail = "")
         }
         Check(sky > 200 && skyFallbacks <= sky / 200, "Sky maps build", $"{sky} maps, {skyFallbacks} fallbacks");
         Check(skyBad == 0, "Sky maps have no floor, islands along the bottom, and spawns in reach of each other", skyWhy);
-        Check(kept == others, "Seeds that aren't Sky keep their old style", $"{kept}/{others}");
-        var empty = MapDesign.Empty(ThemeId.SunsetPeaks, 1, floor: false);
+        Check(kept == others, "Seeds that aren't Sky or Drift keep their old style", $"{kept}/{others}");
+        var empty = MapDesign.Empty(ThemeId.SunsetPeaks, 1, MapStyle.Sky);
         var built = empty.Build(4);
         Check(empty.Floor().Count == 0 && empty.Style == MapStyle.Sky && built.Surfaces.Count == 0
               && MapCode.Decode(MapCode.Encode(empty))?.Floor().Count == 0, "Design: an empty Sky arena has no floor, also after a map code");
+    }
+
+    // Drift arenas: nothing but drifting platforms over a bottomless drop, and everyone can reach everyone.
+    {
+        int maps = 0, fallbacks = 0, bad = 0, platforms = 0;
+        string why = "";
+        for (int s = 0; s < 4000; s++)
+        {
+            int seed = s * 7919 + 5, players = 2 + s % 7;
+            if (MapGenerator.StyleFor(seed) != MapStyle.Drift) continue;
+            maps++;
+            var m = MapGenerator.Generate(seed, players);
+            if (m.UsedFallback) { fallbacks++; continue; }
+            platforms += m.Drifts.Count;
+            string fail = null;
+            if (m.Solids.Any(r => r.X > 0 && r.Right < MapLayout.Width && r.Y > 0)) fail = "has a solid besides the walls";
+            else if (m.Surfaces.Count != m.Drifts.Count || m.Surfaces.Any(x => m.DriftIndex(x) < 0)) fail = "a surface that isn't a drifting platform";
+            else if (m.Props.Count + m.Hazards.Count + m.Saws.Count + m.Movers.Count + m.Pads.Count > 0) fail = "extras on a Drift arena";
+            else if (m.Drifts.Any(a => m.Drifts.Any(b => a != b && a.Range.Intersects(b.Range) && Math.Abs(a.Y - b.Y) < MapGenerator.DriftRowSpacing)))
+                fail = "two platforms can be shoved into each other";
+            else if (m.Drifts.Any(d => d.Range.X < MapGenerator.Wall || d.Range.Right > MapLayout.Width - MapGenerator.Wall || d.Range.Y < MapGenerator.Wall))
+                fail = "a platform can be shoved into the walls";
+            else if (!MapGenerator.SpawnsMutuallyReachable(m)) fail = "spawns can't reach each other";
+            if (fail != null) { bad++; if (why == "") why = $"seed {seed}: {fail}"; }
+        }
+        Check(maps > 150 && fallbacks <= maps / 100, "Drift maps build", $"{maps} maps, {fallbacks} fallbacks, {platforms / Math.Max(1, maps - fallbacks)} platforms each");
+        Check(bad == 0, "Drift maps are only drifting platforms that can't be shoved into each other or the walls, with spawns in reach", why);
+        var gen = MapDesign.Generate(MapStyle.Drift, ThemeId.DeepReef, 1);
+        var back = MapCode.Decode(MapCode.Encode(gen));
+        Check(gen.Style == MapStyle.Drift && gen.Blocks.Count == 0 && gen.Drifts.Count > 5 && back != null && back.Style == MapStyle.Drift
+              && back.Drifts.SequenceEqual(gen.Drifts) && back.Problems().Count == 0, "Design: a generated Drift arena survives a map code with no problems",
+              string.Join(" | ", back?.Problems() ?? new List<string>()));
     }
 
     // A pad launch still clears the planned climb under the softer gravity.
@@ -307,7 +340,8 @@ void Check(bool cond, string name, string detail = "")
             drifts++;
             if (m.Solids.Any(r => r.Intersects(dr.Range))) Bad(seed, "drift can be shoved into a solid");
             if (m.Props.Any(p => p.Rect.Intersects(dr.Range)) || m.Movers.Any(mv => mv.Lane.Intersects(dr.Range))) Bad(seed, "drift range crowded");
-            if (m.Spawns.Any(sp => dr.Range.Grow(0, 40).Contains(sp.X, sp.Y))) Bad(seed, "drift over a spawn");
+            // (On a Drift arena the platforms are the arena, so spawns stand on them.)
+            if (m.Style != MapStyle.Drift && m.Spawns.Any(sp => dr.Range.Grow(0, 40).Contains(sp.X, sp.Y))) Bad(seed, "drift over a spawn");
             if (!m.Surfaces.Contains(dr.Top)) Bad(seed, "drift top not a surface");
         }
     }
