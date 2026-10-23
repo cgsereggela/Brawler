@@ -1,5 +1,4 @@
 issues to fix:
-- themebench on D3D12 sometimes gives odd readings: one 1.4.0 run timed Mainframe at 5.7 ms against about 22 ms in every other run, and an earlier run segfaulted at exit after finishing every theme. Check that each theme's timing starts only once it has loaded and drawn, and that the bench quits cleanly
 
 features to add:
 - conveyor belts: strips of ground that carry players, props and dropped flags along, in either direction. Seeded like the other arena features (never needed to reach a spawn), plus a map editor tool and map code support
