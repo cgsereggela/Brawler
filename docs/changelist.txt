@@ -1,4 +1,6 @@
 issues to fix:
+- when Red and Blue teams are added to players in the lobby, the difficulty button sits beside them, I think all 3 buttons should sit in a single column, this way the settings menu won't jarringly shift
+- survival waves don't always increase the number of bots, in cases where more bots can't be spawned, we should give the bots a certain number of respawns instead to increase the difficulty each wave
 - nothing runs the checks except a release. The only workflow, release.yml, fires on a v* tag and runs the unit tests plus --editorcheck; the other ~20 check modes (autotest, autohost/autojoin, padcheck, hazardcheck, vantagecheck, hangercheck, driftcheck, overlaycheck, rebindcheck...) only run when someone remembers to. Add a tools/check.sh that builds once, runs every headless check (and the windowed ones when a display is there), and prints a pass/fail table with each failure's AUTOTEST line; then a CI workflow on every push that runs the unit tests and the headless set
 - a check passes even when the game logs errors. Godot logs an exception thrown in _Process or a signal handler and carries on, and Finish only looks at the check's own condition, so a NullReferenceException in a card effect every battle still ends "AUTOTEST PASS". Count errors during a check (a Godot logger hook or AppDomain exception events, plus Log.Error) and fail any check that saw one, naming the first
 - bot checks can't be replayed. BotBrain's RandomNumberGenerator is never seeded, and autopilot card picks use GD.Randf, so --fixed-fps runs still differ every time (hangercheck took 9-22 s across six runs of the same build). Seed bots and picks from the match seed (or a --seed=N flag), print the seed in every check's result line, and let a failing seed be rerun exactly
@@ -15,6 +17,10 @@ features to add:
 - match stats on the match-over screen: a Stats tab with each player's kills, damage dealt and taken, accuracy and blocks for the match. The game already records all of this for the card balance stats
 - conveyor belts: strips of ground that carry players, props and dropped flags along, in either direction. Seeded like the other arena features (never needed to reach a spawn), plus a map editor tool and map code support
 - portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
+
+shorts to make:
+- how to make custom cards
+- how to make custom arenas
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame
