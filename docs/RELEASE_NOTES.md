@@ -1,3 +1,21 @@
+## New in 1.4.0
+
+- **Sky arenas:** a new layout style with no floor at all. A row of islands along the bottom stands in for it, and a
+  fall from anywhere knocks you out. About one arena in ten.
+- **Drifting platforms:** hovering slabs that sway under you. They dip when you land on them, slide when you walk into
+  them, and get knocked about by shots and blasts, then ease back to their spot. Use them to ride someone into your
+  line of fire or knock them off an edge. About a third of arenas get one or two.
+- **Drift arenas:** a new layout style built only from drifting platforms over a bottomless drop, so every step you
+  take is on something that moves.
+- **Hanging platforms:** platforms on one or two chains from the ceiling or a ledge above. Shoot the chains and the
+  platform drops, crushing anyone underneath (the kill is yours), then lands as a new step on the ground, or falls out
+  through a pit.
+- **Map editor:** new **Drift** and **Hanger** tools. The editor shows how far each drifting platform can be shoved,
+  plus each hanging platform's chains and where it will land. **Empty** in the Sky or Drift style starts with no
+  floor.
+- **Map codes** now carry drifting and hanging platforms. Codes from earlier versions still open, but codes made in
+  1.4.0 won't open in older versions.
+
 ## New in 1.3.0
 
 - **Kill cam GIFs:** after a kill cam, **Save kill cam GIF** on the results screen (or in the Esc menu during a match)
