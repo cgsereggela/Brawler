@@ -1,3 +1,16 @@
+## New in 1.3.0
+
+- **Kill cam GIFs:** after a kill cam, **Save kill cam GIF** on the results screen (or in the Esc menu during a match)
+  saves it as an animated GIF in the game's `clips` folder, ready to post. The button then opens that folder.
+- **Accessibility** (Options → Video):
+  - **Colorblind-safe colors** swaps the player and team colors for a set that stays distinct with red-green or
+    blue-yellow color blindness. It only changes what you see.
+  - **UI scale** (100%, 115% or 130%) makes the menus and HUD bigger.
+  - **Aim assist** for controllers (default 40%, 0% is off) bends your right-stick aim toward the enemy nearest that
+    line.
+- **Report Bug:** a new button on the main menu opens the GitHub issues page in your browser.
+- **Look fixes:** every hat now sits properly on every hair style, and mouths are bolder.
+
 ## New in 1.2.0
 
 - **Gun Game mode:** every kill moves you up a fixed ladder of eight cards, from Minigun to One Shot, and a kill on the
