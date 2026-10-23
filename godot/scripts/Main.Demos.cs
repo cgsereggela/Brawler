@@ -42,6 +42,7 @@ public partial class Main
             case "hanger": await DemoHanger(); break;
             case "driftstyle": await DemoDrift(MapDesign.Generate(MapStyle.Drift, ThemeId.CandyClouds, 1)); break;
             case "sky": await DemoDrift(MapDesign.Generate(MapStyle.Sky, ThemeId.SunsetPeaks, 1)); break;
+            case "customcards": await DemoCustomCards(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -511,4 +512,100 @@ public partial class Main
         Accessibility.PreviewColorblind(userColors);
         Accessibility.PreviewUiScale(userScale);
     }
+
+    // Custom cards: a card file typed out in a text editor, the card it makes (with its CUSTOM tag), then a match where
+    // everyone starts holding it.
+    private const string DemoCardJson =
+        "{\n" +
+        "  \"id\": 1000,\n" +
+        "  \"name\": \"Disco Ball\",\n" +
+        "  \"category\": \"Gun\",\n" +
+        "  \"description\": [\"+4 bounces\", \"+2 bullets\", \"-30% damage\"],\n" +
+        "  \"mods\": [\n" +
+        "    { \"stat\": \"Bounces\", \"op\": \"add\", \"value\": 4 },\n" +
+        "    { \"stat\": \"Projectiles\", \"op\": \"add\", \"value\": 2 },\n" +
+        "    { \"stat\": \"Damage\", \"op\": \"mul\", \"value\": 0.7 }\n" +
+        "  ]\n" +
+        "}";
+
+    private async Task DemoCustomCards()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        var layer = new CanvasLayer { Name = "DemoCards", Layer = 15 };
+        AddChild(layer);
+        var screen = new Control { Theme = UiKit.BuildTheme(), MouseFilter = Control.MouseFilterEnum.Ignore };
+        screen.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        layer.AddChild(screen);
+        var scrim = new ColorRect { Color = new Color(0.03f, 0.03f, 0.05f, 0.88f), MouseFilter = Control.MouseFilterEnum.Ignore };
+        scrim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        screen.AddChild(scrim);
+
+        // The editor window: a title bar with the file's name over the text, sized to sit in the middle square.
+        var mono = new SystemFont { FontNames = new[] { "Cascadia Mono", "Consolas", "Courier New", "Monospace" }, Antialiasing = TextServer.FontAntialiasing.Gray };
+        var editor = new PanelContainer { Size = new Vector2(530, 300) };
+        editor.Position = (GetViewport().GetVisibleRect().Size - editor.Size) / 2;
+        editor.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color("#16141f"), BorderColor = new Color("#3a3550"),
+            BorderWidthLeft = 1, BorderWidthTop = 1, BorderWidthRight = 1, BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 8, CornerRadiusTopRight = 8, CornerRadiusBottomLeft = 8, CornerRadiusBottomRight = 8,
+            ContentMarginLeft = 14, ContentMarginTop = 10, ContentMarginRight = 14, ContentMarginBottom = 14,
+        });
+        screen.AddChild(editor);
+        var box = UiKit.VBox(10);
+        editor.AddChild(box);
+        box.AddChild(UiKit.Label("cards / disco-ball.json", UiKit.Small, Palette.TextDim, font: Fx.Fonts.Bold));
+        var code = new RichTextLabel { BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.Off, CustomMinimumSize = new Vector2(500, 0) };
+        code.AddThemeFontOverride("normal_font", mono);
+        code.AddThemeFontSizeOverride("normal_font_size", 13);
+        code.Text = DemoHighlight(DemoCardJson);
+        code.VisibleCharacters = 0;
+        box.AddChild(code);
+
+        await DemoWait(0.8);
+        DemoMark("typing");
+        int total = code.GetTotalCharacterCount();
+        for (double t = 0; code.VisibleCharacters < total; t += 1 / 60.0)
+        {
+            code.VisibleCharacters = Mathf.Min(total, (int)(t * 70));
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+        DemoMark("typed");
+        await DemoWait(1.6);
+
+        // Saved into the cards folder: the game reads it the same way it reads the folder at startup.
+        var log = new System.Collections.Generic.List<string>();
+        var cards = CustomCards.Collect(new[] { ("disco-ball.json", DemoCardJson) }, log);
+        if (cards.Count != 1) { Finish(1, $"demo customcards: the card didn't parse ({string.Join("; ", log)})"); return; }
+        CardRegistry.SetCustom(cards);
+        editor.Visible = false;
+        // The card at twice its size, its middle on the screen's (it sets its own Y as it rises into view).
+        var view = new CardView(cards[0], 0, 0) { Locked = true, Chosen = true };
+        var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Scale = Vector2.One * 2 };
+        holder.Position = GetViewport().GetVisibleRect().Size / 2 - view.CustomMinimumSize;
+        holder.AddChild(view);
+        screen.AddChild(holder);
+        DemoMark("card");
+        await DemoWait(3.2);
+
+        layer.QueueFree();
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        _game.StartingCards = new() { cards[0].Id };
+        await DemoWait(0.6);
+        DemoMark("match");
+        _game.HostStartMatch();
+        await DemoWait(20.0);
+        DemoMark("end");
+        _game.StartingCards = null;
+    }
+
+    /// <summary>JSON with editor colors: keys, strings and numbers.</summary>
+    private static string DemoHighlight(string json) =>
+        System.Text.RegularExpressions.Regex.Replace(json.Replace("[", "[lb]"), @"(""[^""]*"")(\s*:)?|(-?\d+(\.\d+)?)", m =>
+            m.Groups[1].Success
+                ? (m.Groups[2].Success ? $"[color=#8ec7ff]{m.Groups[1].Value}[/color]{m.Groups[2].Value}" : $"[color=#f2d58a]{m.Groups[1].Value}[/color]")
+                : $"[color=#c9a0ff]{m.Value}[/color]");
 }
