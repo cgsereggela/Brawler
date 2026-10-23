@@ -154,7 +154,7 @@ public partial class GameManager
 
     public enum KillCause { Shot, Fall, Left, Hazard }
 
-    public enum HazardHit { Magma, Poison, Saw }
+    public enum HazardHit { Magma, Poison, Saw, Crush }
 
     /// <summary>Last hazard that hurt each slot (every peer), so a hazard kill gets the right call-out.</summary>
     private readonly HazardHit[] _lastHazard = new HazardHit[LobbyState.MaxPlayers];
@@ -194,6 +194,15 @@ public partial class GameManager
     }
 
     public void HostPropBroken(int index, Vector2 at, bool fell) => Rpc(MethodName.PropBroken, index, at, fell);
+
+    public void HostHangerCut(int index, int mask, float fellAt, int by) => Rpc(MethodName.HangerCut, index, mask, fellAt, by);
+
+    /// <summary>Host: <paramref name="by"/> counts as having just hit <paramref name="victim"/>, for the kill credit.</summary>
+    public void CreditHit(Avatar victim, int by)
+    {
+        victim.LastHitBy = by;
+        victim.LastHitAt = _clock;
+    }
 
     /// <summary>Host: pick the end-of-match awards from everyone who played (even if they left) and share them.</summary>
     private void HostSendAwards()
@@ -529,7 +538,7 @@ public partial class GameManager
         // Blown up by your own shot (or nobody's): no one to credit.
         if (cause == KillCause.Shot && killer < 0) word = "UNLUCKY!";
         if (cause == KillCause.Hazard && victim >= 0)
-            word = _lastHazard[victim] switch { HazardHit.Saw => "SHREDDED!", HazardHit.Magma => "MELTED!", _ => "POISONED!" };
+            word = _lastHazard[victim] switch { HazardHit.Saw => "SHREDDED!", HazardHit.Magma => "MELTED!", HazardHit.Crush => "CRUSHED!", _ => "POISONED!" };
         Fx.Popup(at + new Vector2(0, fell ? -40 : -18), word, kc.Lightened(0.2f), 16 + tier * 3, 1.1f);
         if (killer >= 0 && killer < _battleKills.Length)
         {
@@ -610,6 +619,12 @@ public partial class GameManager
                 Sfx.Play("saw");
                 Shake(mine ? 0.45f : 0.2f);
                 break;
+            case HazardHit.Crush:
+                Fx.Emit(at, PKind.Chunk, Palette.Player(ColorOf(slot)), 6, 160, 0.6f, 2f, 500, Vector2.Up, 2f);
+                Fx.Popup(at + new Vector2(0, -14), Mathf.RoundToInt(damage).ToString(), new Color("#ffe1e1"), 13, 0.7f);
+                Sfx.Play("hit");
+                Shake(mine ? 0.5f : 0.25f);
+                break;
             case HazardHit.Magma:
                 Fx.Emit(at, PKind.Ember, new Color("#ffb13b"), 5, 90, 0.6f, 1.3f, -70, Vector2.Up, 1.6f);
                 Fx.Emit(at, PKind.Smoke, new Color(0.25f, 0.15f, 0.12f, 0.6f), 1, 20, 0.6f, 3f, -30);
@@ -623,6 +638,13 @@ public partial class GameManager
                 Sfx.Play("sizzle", 0.3f);
                 break;
         }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void HangerCut(int index, int mask, float fellAt, int by)
+    {
+        if (Map == null) return;
+        Arena.CutChains(index, mask, fellAt, by);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

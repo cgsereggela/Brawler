@@ -14,7 +14,7 @@ public sealed class MapDesign
 {
     public const int MaxName = 24;
     public const int MaxSpawns = 8;
-    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24;
+    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24, MaxHangers = 8;
     private const int Wall = MapGenerator.Wall, FloorY = MapGenerator.FloorY, Width = MapLayout.Width, Height = MapLayout.Height;
 
     public string Name = "";
@@ -33,6 +33,8 @@ public sealed class MapDesign
     public List<Mover> Movers = new();
     /// <summary>Drifting platforms (see <see cref="Drift"/>), at their spots.</summary>
     public List<Drift> Drifts = new();
+    /// <summary>Hanging platforms (see <see cref="Hanger"/>), where they hang.</summary>
+    public List<Hanger> Hangers = new();
 
     public ThemeId Theme => ThemeRules.ForSeed(Seed);
 
@@ -75,6 +77,7 @@ public sealed class MapDesign
         d.Saws.AddRange(map.Saws);
         d.Movers.AddRange(map.Movers);
         d.Drifts.AddRange(map.Drifts);
+        d.Hangers.AddRange(map.Hangers);
         return d;
     }
 
@@ -133,6 +136,7 @@ public sealed class MapDesign
         map.Hazards.AddRange(Hazards);
         map.Saws.AddRange(Saws);
         map.Movers.AddRange(Movers);
+        map.Hangers.AddRange(Hangers);
         return map;
     }
 
@@ -223,6 +227,10 @@ public sealed class MapDesign
         foreach (var h in Hazards)
             if (!OnSurface(map, h.X1, h.X2, h.Y)) pools++;
         if (pools > 0) list.Add(pools == 1 ? "A pool isn't on the ground." : $"{pools} pools aren't on the ground.");
+        int stuck = 0;
+        foreach (var h in Hangers)
+            if (map.Solids.Exists(r => r.Intersects(h.Rect))) stuck++;
+        if (stuck > 0) list.Add(stuck == 1 ? "A hanging platform is inside a block." : $"{stuck} hanging platforms are inside blocks.");
         return list;
     }
 
@@ -247,6 +255,7 @@ public sealed class MapDesign
         d.Saws.AddRange(Saws);
         d.Movers.AddRange(Movers);
         d.Drifts.AddRange(Drifts);
+        d.Hangers.AddRange(Hangers);
         return d;
     }
 

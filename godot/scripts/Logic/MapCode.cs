@@ -110,6 +110,8 @@ public static class MapCode
         // Drifting platforms snap to the tile grid, so each goes in as tiles: 7 bits for x, y and width, 2 for height.
         Count(w, d.Drifts.Count, MapDesign.MaxDrifts, 5);
         foreach (var dr in Take(d.Drifts, MapDesign.MaxDrifts)) Tiles(w, dr.X, dr.Y, dr.W, dr.H);
+        Count(w, d.Hangers.Count, MapDesign.MaxHangers, 4);
+        foreach (var h in Take(d.Hangers, MapDesign.MaxHangers)) Tiles(w, h.X, h.Y, h.W, h.H);
         var bytes = w.Done(1);
         bytes[^1] = Checksum(bytes, bytes.Length - 1);
         return bytes;
@@ -207,6 +209,12 @@ public static class MapCode
                 {
                     var t = ReadTiles(r);
                     d.Drifts.Add(new Drift(t.x, t.y, t.w, t.h));
+                }
+            if (version >= 2)
+                for (int i = r.Bits(4); i > 0; i--)
+                {
+                    var t = ReadTiles(r);
+                    d.Hangers.Add(new Hanger(t.x, t.y, t.w, t.h));
                 }
             why = MapCodeError.None;
             return d;

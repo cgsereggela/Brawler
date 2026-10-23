@@ -68,6 +68,7 @@ public partial class Arena : Node2D
 
     /// <summary>Host diagnostics for the battle log: seconds crates spent being pushed, damage dealt by hazards, how far drifts moved.</summary>
     public float PushedTime, HazardDamage, DriftTravel;
+    public int HangersDropped;
 
     public string Summary
     {
@@ -80,7 +81,7 @@ public partial class Arena : Node2D
                 if (p.Broken) broken++;
             }
             return $"{broken}/{Props.Count} props broken ({glass} glass), pushed {PushedTime:0.0}s, hazard damage {HazardDamage:0}, " +
-                   $"{_map?.Hazards.Count ?? 0} pools, {_map?.Saws.Count ?? 0} saws, {_movers.Count} movers, {Drifts.Count} drifts shoved {DriftTravel:0} px";
+                   $"{_map?.Hazards.Count ?? 0} pools, {_map?.Saws.Count ?? 0} saws, {_movers.Count} movers, {Drifts.Count} drifts shoved {DriftTravel:0} px, {HangersDropped}/{Hangers.Count} hangers dropped";
         }
     }
 
@@ -88,6 +89,7 @@ public partial class Arena : Node2D
     private readonly List<AnimatableBody2D> _movers = new();
     private readonly List<int> _solidProp = new(); // per Solids entry: prop index, or -1
     private readonly List<int> _solidDrift = new(); // per Solids entry: drift index, or -1
+    private readonly List<int> _solidChain = new(); // per Solids entry: hanger index * 4 + chain, or -1
     private readonly Dictionary<int, float> _poison = new(), _poolT = new(), _sawCd = new(), _lavaT = new();
     private DrawLayer _glow;
     private float _t;
@@ -103,15 +105,18 @@ public partial class Arena : Node2D
         foreach (var p in Props) p.QueueFree();
         foreach (var m in _movers) m.QueueFree();
         foreach (var d in Drifts) d.QueueFree();
+        foreach (var h in Hangers) h.QueueFree();
         Props.Clear();
         _movers.Clear();
         Drifts.Clear();
+        Hangers.Clear();
         _poison.Clear();
         _poolT.Clear();
         _sawCd.Clear();
         _lavaT.Clear();
         Clock = 0;
         PushedTime = HazardDamage = DriftTravel = 0;
+        HangersDropped = 0;
         _map = map;
         if (map != null)
         {
@@ -145,6 +150,7 @@ public partial class Arena : Node2D
                 AddChild(d);
                 Drifts.Add(d);
             }
+            BuildHangers(map);
         }
         RebuildSolids();
         QueueRedraw();
@@ -170,6 +176,7 @@ public partial class Arena : Node2D
             _movers[i].Position = new Vector2(m.XAt(Clock) + m.W * 0.5f, m.Y + m.H * 0.5f);
         }
         foreach (var d in Drifts) d.Position = d.Home + d.Off;
+        AdvanceHangers(dt > 0);
     }
 
     public void RebuildSolids()
@@ -177,12 +184,14 @@ public partial class Arena : Node2D
         Solids.Clear();
         _solidProp.Clear();
         _solidDrift.Clear();
+        _solidChain.Clear();
         if (_map == null) return;
-        void Add(RectI r, int prop, int drift)
+        void Add(RectI r, int prop, int drift, int chain = -1)
         {
             Solids.Add(r);
             _solidProp.Add(prop);
             _solidDrift.Add(drift);
+            _solidChain.Add(chain);
         }
         foreach (var r in _map.Solids) Add(r, -1, -1);
         foreach (var p in Props)
@@ -193,6 +202,7 @@ public partial class Arena : Node2D
             Add(new RectI(Mathf.RoundToInt(m.XAt(Clock)), m.Y, m.W, m.H), -1, -1);
         }
         foreach (var d in Drifts) Add(d.Rect, -1, d.Index);
+        AddHangerSolids((r, chain) => Add(r, -1, -1, chain));
     }
 
     /// <summary>The prop behind entry <paramref name="solid"/> of <see cref="Solids"/>, or null.</summary>
@@ -205,6 +215,8 @@ public partial class Arena : Node2D
     public bool BulletHitsSolid(Bullet b, int solid, bool host)
     {
         if (PropOfSolid(solid) is { } prop) return BulletHitsProp(b, prop, solid, host);
+        if (host && solid >= 0 && solid < _solidChain.Count && _solidChain[solid] is var chain and >= 0)
+            HostDamageChain(Hangers[chain / 4], chain % 4, b.Damage, b.Owner);
         if (host && solid >= 0 && solid < _solidDrift.Count && _solidDrift[solid] >= 0)
             Drifts[_solidDrift[solid]].Vel += b.Vel.Normalized() * Mathf.Min(80, b.Knockback * 0.3f);
         return false;
@@ -289,6 +301,7 @@ public partial class Arena : Node2D
     /// <summary>Host: blasts hurt and fling props.</summary>
     public void HostExplosion(Vector2 at, float radius, float damage, int owner, float knockback)
     {
+        HostBlastChains(at, radius, damage, owner);
         foreach (var p in Props)
         {
             if (p.Broken) continue;
@@ -351,6 +364,7 @@ public partial class Arena : Node2D
             d.Off = next;
             d.Accel = Vector2.Zero;
         }
+        HostCrush(fighting);
         if (!fighting) return;
 
         foreach (var a in Game.LiveAvatars())
@@ -592,6 +606,8 @@ public partial class Arena : Node2D
             foreach (float fx in new[] { 0.2f, 0.8f })
                 DrawColoredPolygon(Shapes.RoundRect(new Rect2(r.Position.X + r.Size.X * fx - 4, r.End.Y - 1, 8, 2.5f), 1), block.Darkened(0.5f));
         }
+
+        DrawHangers();
 
         foreach (var p in Props)
         {

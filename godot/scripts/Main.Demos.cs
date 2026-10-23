@@ -39,6 +39,7 @@ public partial class Main
             case "clips": await DemoClips(); break;
             case "access": await DemoAccess(); break;
             case "drift": await DemoDrift(DriftDemoArena()); break;
+            case "hanger": await DemoHanger(); break;
             case "driftstyle": await DemoDrift(MapDesign.Generate(MapStyle.Drift, ThemeId.CandyClouds, 1)); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
@@ -66,6 +67,87 @@ public partial class Main
             list.AddRange(FindAll(c, match));
         }
         return list;
+    }
+
+    // Hanging platforms: from a ledge in the middle the player shoots the chains of one platform after another while two
+    // bots fight underneath. One hangs from a block, one from the ceiling on two chains, and one over a pit falls right out.
+    private async Task DemoHanger()
+    {
+        _game.DisableKillCam = true;
+        var d = MapDesign.Empty(ThemeId.DungeonDepths, 2);
+        d.Name = "Hanger Demo";
+        d.Blocks.Add(new RectI(440, 304, 120, 16));
+        d.Blocks.Add(new RectI(560, 120, 120, 16));
+        d.Blocks.Add(new RectI(824, 440, 96, 16));
+        d.Pits.Add((680, 800));
+        d.Hangers.Add(new Hanger(600, 232, 48, 8));
+        d.Hangers.Add(new Hanger(232, 280, 128, 8));
+        d.Hangers.Add(new Hanger(696, 288, 96, 8));
+        d.Spawns.Add(new SpawnPoint(860, 440));
+        d.Spawns.Add(new SpawnPoint(300, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(560, MapGenerator.FloorY));
+        MapLibrary.LobbyMaps = new() { MapCode.Encode(d) };
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 3) _net.AddBot();
+        await DemoWait(1.0);
+        DemoMark("match");
+        _game.HostStartMatch();
+        double t = 0;
+        int dropped = 0;
+        bool placed = false;
+        while (_game.Phase != Phase.MatchOver && t < 60)
+        {
+            if (_game.LocalMatchPlayer is { } me && me.Input is not ChainShooter) me.Input = new ChainShooter(_game);
+            // Up on the ledge, level with the chains, once each fight starts, and kept alive to shoot them all.
+            if (_game.Phase != Phase.Fighting) placed = false;
+            else if (_game.LocalMatchPlayer?.Avatar is { Alive: true } av)
+            {
+                if (!placed) av.GlobalPosition = new Vector2(500, 304 - av.HalfSize.Y);
+                if (!placed) av.Velocity = Vector2.Zero;
+                placed = true;
+                av.Hp = Mathf.Max(av.Hp, av.S[Stat.MaxHp] * 0.6f);
+            }
+            if (_game.Arena.HangersDropped != dropped) DemoMark($"dropped {dropped = _game.Arena.HangersDropped}");
+            await DemoWait(0.1);
+            t += 0.1;
+        }
+        DemoMark($"over: {_game.Arena.Summary}");
+        await DemoWait(2.0);
+        DemoMark("end");
+    }
+
+    /// <summary>Demo input: stand still and shoot the nearest chain still holding a platform up.</summary>
+    private sealed class ChainShooter : IInputSource
+    {
+        private readonly GameManager _game;
+        private float _t;
+        public ChainShooter(GameManager game) => _game = game;
+
+        public InputFrame Next(Avatar self, float dt)
+        {
+            _t += dt;
+            var f = new InputFrame { Aim = self.GlobalPosition + Vector2.Up * 40 };
+            if (_game.Phase != Phase.Fighting || _t < 1.5f) return f;
+            float best = float.MaxValue;
+            foreach (var h in _game.Arena.Hangers)
+            {
+                if (h.FellAt >= 0) continue;
+                for (int c = 0; c < h.ChainXs.Length; c++)
+                {
+                    if (h.ChainCut(c)) continue;
+                    var at = new Vector2(h.ChainXs[c], h.Anchors[c] + (h.Y - h.Anchors[c]) * 0.5f);
+                    float dist = at.DistanceTo(self.GlobalPosition);
+                    if (dist < best) { best = dist; f.Aim = at; }
+                }
+            }
+            if (best == float.MaxValue) return f;
+            // Bullets drop: aim above the chain by as much as one falls on the way there.
+            float time = best / Mathf.Max(1, self.S[Stat.BulletSpeed]);
+            f.Aim -= new Vector2(0, 0.5f * self.S[Stat.BulletGravity] * time * time);
+            f.Shoot = (int)(_t * 3) % 2 == 0;
+            return f;
+        }
     }
 
     // A floor and a staircase of drifting platforms.

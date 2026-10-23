@@ -94,6 +94,15 @@ public static class MapThumb
             r.FillRect(ground, ToRect(dr.Rect));
             r.FillRect(tops, new Rect2(dr.X, dr.Y, dr.W, 7));
         }
+        var chains = r.NewMask();
+        foreach (var h in map.Hangers)
+        {
+            r.FillRect(ground, ToRect(h.Rect));
+            r.FillRect(tops, new Rect2(h.X, h.Y, h.W, 7));
+            var anchors = HangerMath.Anchors(map, h);
+            for (int k = 0; k < anchors.Length; k++) r.FillRect(chains, new Rect2(h.ChainXs[k] - 3, anchors[k], 6, h.Y - anchors[k]));
+        }
+        Fill(r, chains, new Color(0.6f, 0.62f, 0.68f, 0.6f));
         Fill(r, ground, t.Block.Lightened(0.12f));
         for (int i = 0; i < tops.Length; i++) tops[i] *= ground[i];
         Fill(r, tops, t.Edge with { A = 0.85f });

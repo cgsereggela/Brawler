@@ -47,6 +47,8 @@ public sealed class MapLayout
     public List<Mover> Movers { get; } = new();
     /// <summary>Drifting platforms (see <see cref="Drift"/>): not solids, but their tops are in Surfaces, at their spots.</summary>
     public List<Drift> Drifts { get; } = new();
+    /// <summary>Hanging platforms (see <see cref="Hanger"/>): not solids or surfaces, as they can fall.</summary>
+    public List<Hanger> Hangers { get; } = new();
     // Floor terrain (see TerrainGen): raised flat stretches are rects in Solids (also listed in Terrain), the ramps
     // between levels are Slopes, and Ground holds each terrain-bearing floor segment's top outline for drawing.
     public List<RectI> Terrain { get; } = new();

@@ -299,7 +299,7 @@ void Check(bool cond, string name, string detail = "")
     Check(a1.Props.SequenceEqual(a2.Props) && a1.Hazards.SequenceEqual(a2.Hazards) && a1.Saws.SequenceEqual(a2.Saws) && a1.Movers.SequenceEqual(a2.Movers),
         "Same seed produces identical arena features");
 
-    int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, drifts = 0, bad = 0;
+    int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, drifts = 0, hangers = 0, bad = 0;
     var why = new List<string>();
     void Bad(int seed, string what) { bad++; if (why.Count < 5) why.Add($"seed {seed}: {what}"); }
     for (int s = 0; s < maps; s++)
@@ -344,10 +344,30 @@ void Check(bool cond, string name, string detail = "")
             if (m.Style != MapStyle.Drift && m.Spawns.Any(sp => dr.Range.Grow(0, 40).Contains(sp.X, sp.Y))) Bad(seed, "drift over a spawn");
             if (!m.Surfaces.Contains(dr.Top)) Bad(seed, "drift top not a surface");
         }
+        foreach (var h in m.Hangers)
+        {
+            hangers++;
+            var anchors = HangerMath.Anchors(m, h);
+            for (int k = 0; k < anchors.Length; k++)
+            {
+                var chain = new RectI(h.ChainXs[k] - 2, anchors[k], 4, h.Y - anchors[k]);
+                if (anchors[k] < MapGenerator.Wall || m.Solids.Any(r => r.Intersects(chain))) Bad(seed, "hanger chain through a solid");
+                if (m.Props.Any(p => p.Rect.Intersects(chain)) || m.Drifts.Any(dr => dr.Range.Intersects(chain))) Bad(seed, "hanger chain through an extra");
+            }
+            if (m.Solids.Any(r => r.Intersects(h.Rect.Grow(16, MapGenerator.MinClearance)))) Bad(seed, "hanger boxed in");
+            if (!HangerMath.LandsFlat(m, h)) Bad(seed, "hanger lands on a slope");
+            if (HangerMath.LandY(m, h) is { } ly)
+            {
+                var landed = new RectI(h.X, ly, h.W, h.H);
+                if (m.Spawns.Any(sp => sp.Y == ly + h.H && sp.X > h.X - 26 && sp.X < h.X + h.W + 26) || m.Pads.Any(p => p.Y == ly + h.H && p.X2 > h.X && p.X1 < h.X + h.W)
+                    || m.Hazards.Any(z => z.Rect.Intersects(landed.Grow(4, 0))))
+                    Bad(seed, "hanger lands on a spawn, pad or pool");
+            }
+        }
     }
     Check(bad == 0, "Arena features stay clear of solids, spawns, pads and each other", $"{bad} bad. {string.Join("; ", why)}");
-    Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5 && drifts > maps / 5,
-        "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers, {drifts} drifts");
+    Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5 && drifts > maps / 5 && hangers > maps / 4,
+        "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers, {drifts} drifts, {hangers} hangers");
 
     var track = new SawTrack(100, 50, 200, 50, 9, 4, 0);
     Check(Vector2.Distance(track.At(0), new Vector2(100, 50)) < 0.01f && Vector2.Distance(track.At(2), new Vector2(200, 50)) < 0.01f
@@ -371,6 +391,27 @@ void Check(bool cond, string name, string detail = "")
         float least = 0;
         for (int i = 0; i < 60; i++) { wo = DriftMotion.Step(wall, wo, ref wv, Vector2.Zero, 1f / 60); least = Math.Min(least, wo.X); }
         Check(wall.X + least >= MapGenerator.Wall, "Drifting platforms can't be shoved into the arena wall", $"{least}");
+    }
+    {
+        // Hanging platforms: chains bolted to the block above (or the ceiling), landing on the floor or out through a pit.
+        var hd = MapDesign.Empty(ThemeId.SunsetPeaks, 1);
+        hd.Blocks.Add(new RectI(100, 120, 200, 16));
+        hd.Pits.Add((600, 700));
+        var hm = hd.Build(2);
+        var under = new Hanger(120, 240, 40, 8);
+        var wide = new Hanger(260, 240, 120, 8);
+        var overPit = new Hanger(610, 240, 64, 8);
+        Check(HangerMath.Anchors(hm, under).SequenceEqual(new[] { 136 }) && under.ChainXs.Length == 1, "A short hanger hangs on one chain from the block above it",
+            string.Join(",", HangerMath.Anchors(hm, under)));
+        Check(wide.ChainXs.SequenceEqual(new[] { 268, 372 }) && HangerMath.Anchors(hm, wide).SequenceEqual(new[] { 136, MapGenerator.Wall }),
+            "A long hanger hangs on two chains, each from whatever is above it", string.Join(",", HangerMath.Anchors(hm, wide)));
+        Check(HangerMath.LandY(hm, under) == MapGenerator.FloorY - 8 && HangerMath.LandsFlat(hm, under), "A cut hanger lands flat on the floor");
+        Check(HangerMath.LandY(hm, overPit) == null && HangerMath.LandsFlat(hm, overPit), "A hanger over a pit falls out of the arena");
+        float tLand = MathF.Sqrt(2 * (MapGenerator.FloorY - 8 - 240) / Hanger.Gravity);
+        Check(Hanger.Drop(0) == 0 && Hanger.Drop(-1) == 0 && Math.Abs(Hanger.Drop(tLand) - (MapGenerator.FloorY - 8 - 240)) < 0.01f && tLand < 0.8f,
+            "A hanger drops faster and faster and reaches the floor in under a second", $"{tLand:0.00}s");
+        hd.Hangers.Add(new Hanger(150, 116, 40, 8));
+        Check(hd.Problems().Any(p => p.Contains("hanging platform")), "Design: a hanger inside a block is a problem", string.Join(" | ", hd.Problems()));
     }
 
     // Reachability primitive.
@@ -1831,14 +1872,15 @@ static List<byte[]> DecodeGif(byte[] g)
     static string Shape(MapLayout m) => string.Join(";",
         string.Join(",", m.Solids), string.Join(",", m.Surfaces), string.Join(",", m.Slopes), string.Join(",", m.Ground.Select(g => string.Join("/", g))),
         string.Join(",", m.Spawns), string.Join(",", m.Pads), string.Join(",", m.Props), string.Join(",", m.Hazards),
-        string.Join(",", m.Movers.Select(v => (v.X1, v.X2, v.Y))), string.Join(",", m.Saws.Select(s => (MathF.Round(s.X1), s.Y1, MathF.Round(s.X2), s.Y2))));
+        string.Join(",", m.Movers.Select(v => (v.X1, v.X2, v.Y))), string.Join(",", m.Saws.Select(s => (MathF.Round(s.X1), s.Y1, MathF.Round(s.X2), s.Y2))),
+        string.Join(",", m.Drifts), string.Join(",", m.Hangers));
     static string Rounded(MapLayout m)
     {
         // Saws are stored to the pixel and phases to a sixteenth: compare the rest exactly.
         var copy = new MapLayout { Seed = m.Seed, Style = m.Style };
         copy.Solids.AddRange(m.Solids); copy.Surfaces.AddRange(m.Surfaces); copy.Slopes.AddRange(m.Slopes); copy.Ground.AddRange(m.Ground);
         copy.Spawns.AddRange(m.Spawns); copy.Pads.AddRange(m.Pads); copy.Props.AddRange(m.Props); copy.Hazards.AddRange(m.Hazards);
-        copy.Movers.AddRange(m.Movers); copy.Saws.AddRange(m.Saws);
+        copy.Movers.AddRange(m.Movers); copy.Saws.AddRange(m.Saws); copy.Drifts.AddRange(m.Drifts); copy.Hangers.AddRange(m.Hangers);
         return Shape(copy);
     }
 
@@ -1891,9 +1933,10 @@ static List<byte[]> DecodeGif(byte[] g)
     d.Saws.Add(new SawTrack(150, MapGenerator.FloorY - 2, 260, MapGenerator.FloorY - 2, ArenaFeatures.SawRadius, MapDesign.SawPeriod(150, 0, 260, 0), 0.25f));
     d.Movers.Add(new Mover(380, 460, 440, ArenaFeatures.MoverW, ArenaFeatures.MoverH, MapDesign.MoverPeriod(380, 460), 0.5f));
     d.Drifts.Add(new Drift(560, MapGenerator.TierY(1) - 40, 48, 8));
+    d.Hangers.Add(new Hanger(640, 200, 64, 8));
     var dc = MapCode.Decode(MapCode.Encode(d));
     Check(dc != null && Rounded(dc.Build(4)) == Rounded(d.Build(4)) && dc.Props.Count == 3 && Math.Abs(dc.Saws[0].Phase - 0.25f) < 1e-4f
-        && dc.Drifts.SequenceEqual(d.Drifts) && dc.Build(4).Surfaces.Any(s => s.Y == MapGenerator.TierY(1) - 40 && s.X1 == 560),
+        && dc.Drifts.SequenceEqual(d.Drifts) && dc.Hangers.SequenceEqual(d.Hangers) && dc.Build(4).Surfaces.Any(s => s.Y == MapGenerator.TierY(1) - 40 && s.X1 == 560),
         "Map code: a hand-made arena survives the trip", MapCode.Encode(d));
     var built = d.Build(2);
     Check(built.Slopes.Count == 2 && built.Ground.Count == 1, "Design: a hill that runs over a pit is left out", $"{built.Slopes.Count} slopes");
@@ -1940,7 +1983,9 @@ static List<byte[]> DecodeGif(byte[] g)
     for (int i = 0; i < MapDesign.MaxSaws; i++) full.Saws.Add(new SawTrack(8 + fr.Next(980), 8 + fr.Next(520), 8 + fr.Next(980), 8 + fr.Next(520), 6 + fr.Next(20), 1 + fr.Next(9), fr.NextSingle()));
     for (int i = 0; i < MapDesign.MaxMovers; i++) full.Movers.Add(new Mover(8 + fr.Next(400), 500 + fr.Next(400), 8 + fr.Next(520), 40, 8, 1 + fr.Next(9), fr.NextSingle()));
     for (int i = 0; i < MapDesign.MaxDrifts; i++) full.Drifts.Add(new Drift(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(20)), 8 * (1 + fr.Next(4))));
-    Check(MapCode.Decode(MapCode.Encode(full)) is { } fullBack && fullBack.Drifts.SequenceEqual(full.Drifts), "Map code: a full list of drifting platforms survives the trip");
+    for (int i = 0; i < MapDesign.MaxHangers; i++) full.Hangers.Add(new Hanger(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(20)), 8 * (1 + fr.Next(4))));
+    Check(MapCode.Decode(MapCode.Encode(full)) is { } fullBack && fullBack.Drifts.SequenceEqual(full.Drifts) && fullBack.Hangers.SequenceEqual(full.Hangers),
+        "Map code: full lists of drifting and hanging platforms survive the trip");
     int fullBytes = MapCode.Pack(full).Length;
     Console.WriteLine($"      (largest map: {fullBytes} bytes packed, {MapCode.Encode(full).Length}-character code)");
     Check(fullBytes <= 1500, $"Map code: the largest map packs into {fullBytes} bytes (at most 1500, so 12 fit a lobby sync)");

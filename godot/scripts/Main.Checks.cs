@@ -327,6 +327,19 @@ public partial class Main
         if (ed.Design.Drifts.Count != 0) { Fail("right-click didn't delete the drifting platform"); return; }
         Log.Info("EDITORCHECK drift: place, move, share and delete a drifting platform");
 
+        // A hanging platform: drag one out under the ceiling; it hangs on two chains and lands on the floor.
+        ed.SetTool(EditTool.Hang);
+        Drag(640, 200, 720, 200);
+        if (ed.Design.Hangers.Count != 1 || ed.Design.Hangers[0].W != 80) { Fail($"dragging with Hanger made {ed.Design.Hangers.Count} hanging platforms"); return; }
+        var hanger = ed.Design.Hangers[0];
+        if (HangerMath.Anchors(ed.Layout, hanger).Length != 2 || HangerMath.LandY(ed.Layout, hanger) != MapGenerator.FloorY - hanger.H)
+        { Fail($"the hanging platform {hanger} doesn't hang on two chains over the floor"); return; }
+        if (_shotDir != null) { await Wait(0.3); SaveShot("editor_hanger"); }
+        if (MapCode.Decode(MapCode.Encode(ed.Design)) is not { } hb || !hb.Hangers.SequenceEqual(ed.Design.Hangers)) { Fail("the hanging platform didn't survive the map code"); return; }
+        Click(hanger.X + 10, hanger.Y + 4, MouseButton.Right);
+        if (ed.Design.Hangers.Count != 0) { Fail("right-click didn't delete the hanging platform"); return; }
+        Log.Info("EDITORCHECK hanger: place, share and delete a hanging platform");
+
         // A controller: the stick moves a cursor, A places, B deletes, X/Y undo/redo, the bumpers change tools, View the buttons.
         const int padDev = 5;
         Pads.TestDevices.Add(padDev);

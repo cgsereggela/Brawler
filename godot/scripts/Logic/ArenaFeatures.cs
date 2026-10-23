@@ -58,6 +58,79 @@ public readonly record struct Drift(int X, int Y, int W, int H)
 }
 
 /// <summary>
+/// A platform hanging on chains from whatever is above it (the ceiling, or a block). Shooting or blasting a chain
+/// cuts it; once every chain is cut the platform drops, crushing whoever is under it, and lands on the ground below
+/// (or falls out through a pit). Top-left X, Y and size W, H.
+/// </summary>
+public readonly record struct Hanger(int X, int Y, int W, int H)
+{
+    /// <summary>Hit points of each chain: two ordinary shots, or one big one.</summary>
+    public const float ChainHp = 40;
+    /// <summary>Fall acceleration (px/s²), a little more than a player's, so it comes down hard.</summary>
+    public const float Gravity = 1100;
+    public const float CrushDamage = 45, CrushShove = 260;
+    public RectI Rect => new(X, Y, W, H);
+    /// <summary>Where each chain meets the platform: one in the middle of a short one, two near the ends of a long one.</summary>
+    public int[] ChainXs => W < 56 ? new[] { X + W / 2 } : new[] { X + 8, X + W - 8 };
+    /// <summary>How far it has dropped <paramref name="t"/> seconds after its last chain was cut.</summary>
+    public static float Drop(float t) => t <= 0 ? 0 : 0.5f * Gravity * t * t;
+}
+
+/// <summary>Where a <see cref="Hanger"/>'s chains are anchored and where it lands, from the arena's static parts.</summary>
+public static class HangerMath
+{
+    /// <summary>
+    /// For each chain, the y of the bottom of the lowest solid above it (the ceiling at worst): where the chain is
+    /// bolted on.
+    /// </summary>
+    public static int[] Anchors(MapLayout map, Hanger h)
+    {
+        var xs = h.ChainXs;
+        var tops = new int[xs.Length];
+        for (int i = 0; i < xs.Length; i++)
+        {
+            int best = 0;
+            foreach (var r in map.Solids)
+                if (r.X <= xs[i] && r.Right > xs[i] && r.Bottom <= h.Y) best = Math.Max(best, r.Bottom);
+            tops[i] = best;
+        }
+        return tops;
+    }
+
+    /// <summary>
+    /// The y its top comes to rest at after it drops: on the highest solid or slope under it, or null if there's
+    /// nothing under it at all and it falls out of the arena.
+    /// </summary>
+    public static int? LandY(MapLayout map, Hanger h)
+    {
+        int? ground = null;
+        void Take(int y) { if (y >= h.Y + h.H && (ground == null || y < ground)) ground = y; }
+        foreach (var r in map.Solids)
+            if (r.X < h.X + h.W && r.Right > h.X) Take(r.Y);
+        foreach (var s in map.Slopes)
+        {
+            int a = Math.Max(s.X1, h.X), b = Math.Min(s.X2, h.X + h.W);
+            if (a >= b) continue;
+            Take(Math.Min(SlopeY(s, a), SlopeY(s, b)));
+        }
+        return ground - h.H;
+    }
+
+    /// <summary>True if it would land flat on one solid's top (not on a slope or across a step).</summary>
+    public static bool LandsFlat(MapLayout map, Hanger h)
+    {
+        if (LandY(map, h) is not { } y) return true;
+        foreach (var s in map.Slopes)
+            if (s.X1 < h.X + h.W && s.X2 > h.X && s.Top <= y + h.H + 2) return false;
+        foreach (var r in map.Solids)
+            if (r.Y == y + h.H && r.X <= h.X && r.Right >= h.X + h.W) return true;
+        return false;
+    }
+
+    private static int SlopeY(Slope s, int x) => s.X2 == s.X1 ? s.Top : s.Y1 + (s.Y2 - s.Y1) * (x - s.X1) / (s.X2 - s.X1);
+}
+
+/// <summary>
 /// How a <see cref="Drift"/> moves: a damped spring back to its spot, shoves from players, bullets and blasts, and
 /// limits on how far it goes. Pure, so every peer (and the tests) agree on it; the host runs it and sends offsets.
 /// </summary>
@@ -126,6 +199,7 @@ public static class ArenaFeatures
         Pools(map, rng, keep, rules);
         Saws(map, rng, keep, rules);
         Crates(map, rng, keep, rules);
+        Hangers(map, rng, keep);
         Drifts(map, rng, keep);
     }
 
@@ -299,6 +373,40 @@ public static class ArenaFeatures
     {
         map.Drifts.Add(d);
         if (d.W >= 16) map.Surfaces.Add(d.Top);
+    }
+
+    // ---------- hanging platforms ----------
+
+    /// <summary>
+    /// Sometimes a platform or two hanging on chains in open air, with clear air for its chains, room to stand on it
+    /// and under it, and a flat spot below to land on that isn't on top of anything else (or a pit to fall through).
+    /// </summary>
+    private static void Hangers(MapLayout map, Rng rng, List<RectI> keep)
+    {
+        int want = rng.Chance(0.45f) ? rng.Range(1, 2) : 0;
+        int c = MapGenerator.MinClearance;
+        for (int i = 0; i < 80 && want > 0; i++)
+        {
+            int w = rng.Range(6, 12) * 8;
+            int y = MapGenerator.TierY(rng.Range(2, 6)) / 8 * 8;
+            int x = rng.Range(4, (MapLayout.Width - w) / 8 - 4) * 8;
+            var h = new Hanger(x, y, w, 8);
+            var room = new RectI(x - 16, y - c, w + 32, 2 * c + 8);
+            if (!Clear(map, keep, room)) continue;
+            var anchors = HangerMath.Anchors(map, h);
+            var xs = h.ChainXs;
+            var chains = new List<RectI>();
+            for (int k = 0; k < xs.Length; k++) chains.Add(new RectI(xs[k] - 3, anchors[k], 6, y - anchors[k]));
+            if (chains.Exists(ch => ch.H < 24 || !Clear(map, keep, ch))) continue;
+            if (!HangerMath.LandsFlat(map, h)) continue;
+            var landed = HangerMath.LandY(map, h) is { } ly ? new RectI(x, ly, w, h.H) : (RectI?)null;
+            if (landed is { } l && !Clear(map, keep, l.Grow(4, 0))) continue;
+            map.Hangers.Add(h);
+            keep.Add(room);
+            foreach (var ch in chains) keep.Add(ch.Grow(4, 0));
+            if (landed is { } lk) keep.Add(lk.Grow(4, 4));
+            want--;
+        }
     }
 
     // ---------- crates and barrels ----------
