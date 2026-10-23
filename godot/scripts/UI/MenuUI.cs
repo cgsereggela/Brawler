@@ -109,13 +109,21 @@ public partial class MenuUI : Control
         version.OffsetBottom = -8;
         AddChild(version);
 
-        // The tip card steps aside when the menu grows into its corner and it would cover the name box (a big UI scale).
+        // The tip card steps aside when the menu grows into its corner and it would cover something (a big UI scale, a
+        // small window): the character, the play panel or the controls line.
         var tip = TipCard();
         AddChild(tip);
         void FitTip()
         {
             tip.Visible = true;
-            Callable.From(() => tip.Visible = !Local(tip).Intersects(Local(body))).CallDeferred();
+            Callable.From(() =>
+            {
+                var r = Local(tip);
+                // The controls line is a full-width label with its text centred: only the text itself counts.
+                float slack = Mathf.Max(0, hint.Size.X - hint.GetMinimumSize().X) / 2;
+                var hintText = Local(hint).GrowIndividual(-slack, 0, -slack, 0);
+                tip.Visible = !r.Intersects(Local(body)) && !r.Intersects(Local(left)) && !r.Intersects(hintText);
+            }).CallDeferred();
         }
         Resized += FitTip;
         Accessibility.Changed += FitTip;
@@ -127,7 +135,10 @@ public partial class MenuUI : Control
     /// <summary>Where <paramref name="c"/> sits in this menu's own coordinates.</summary>
     private Rect2 Local(Control c) => GetGlobalTransform().AffineInverse() * c.GetGlobalTransform() * new Rect2(Vector2.Zero, c.Size);
 
-    /// <summary>Top-right, out of the way of the menu: a PayPal QR code with a friendly, no-pressure ask for a tip.</summary>
+    /// <summary>
+    /// Bottom-left, out of the way of the menu: a PayPal QR code with a short, no-pressure ask for a tip. It used to sit
+    /// top-right, where it ran into the name box.
+    /// </summary>
     private static Control TipCard()
     {
         var card = new PanelContainer();
@@ -139,10 +150,10 @@ public partial class MenuUI : Control
             CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10,
             ContentMarginLeft = 10, ContentMarginTop = 10, ContentMarginRight = 12, ContentMarginBottom = 10,
         });
-        card.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
-        card.GrowHorizontal = GrowDirection.Begin;
-        card.OffsetRight = -14;
-        card.OffsetTop = 14;
+        card.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomLeft);
+        card.GrowVertical = GrowDirection.Begin;
+        card.OffsetLeft = 14;
+        card.OffsetBottom = -14;
         card.MouseFilter = MouseFilterEnum.Ignore;
 
         var row = UiKit.HBox(12);
@@ -161,7 +172,7 @@ public partial class MenuUI : Control
             Texture = GD.Load<Texture2D>("res://assets/ui/paypal_qr.png"),
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            CustomMinimumSize = new Vector2(84, 84),
+            CustomMinimumSize = new Vector2(68, 68),
             TextureFilter = TextureFilterEnum.LinearWithMipmaps,
         });
         row.AddChild(qrBack);
@@ -169,11 +180,7 @@ public partial class MenuUI : Control
         var text = UiKit.VBox(4);
         text.Alignment = BoxContainer.AlignmentMode.Center;
         text.AddChild(UiKit.Label("ENJOYING BRAWLER?", UiKit.Small, Palette.Accent, font: Fonts.Bold));
-        var ask = UiKit.Label("It's free and always will be. If it's brought you some fun, a small tip helps keep it growing. Thank you for playing!",
-            UiKit.Tiny, Palette.Text);
-        ask.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        ask.CustomMinimumSize = new Vector2(160, 0);
-        text.AddChild(ask);
+        text.AddChild(UiKit.Label("Free forever. Tips welcome!", UiKit.Tiny, Palette.Text));
         text.AddChild(UiKit.Label("Scan to tip with PayPal", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         row.AddChild(text);
         return card;
