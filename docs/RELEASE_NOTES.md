@@ -1,3 +1,20 @@
+## New in 1.5.0
+
+- **Swinging hanging platforms:** shoot one of a platform's two chains and it swings down on the other, the swing
+  pulling that chain along with it, until it hangs still from one end. Cut the last chain mid-swing and it flies off
+  with the swing's speed, turning level as it falls, so timing the cut aims the crush.
+- **Survival:** once every bot in the lobby is in a wave, later waves give the bots respawns to share instead, so
+  each wave still gets harder. The wave banner and the HUD show how many respawns are left.
+- **Smarter bots:** they find a lobbed shot at someone on a ledge they can't reach instead of waiting underneath, shoot
+  the chains of a platform hanging over their target (and wait for a swinging one to come over them), and keep
+  their footing on drifting platforms.
+- **Lobby:** a player card's team, skill and remove buttons now sit in one column, and turning teams on or stepping
+  through the game modes no longer shifts the whole screen. **Friendly fire** always shows, greyed out in
+  free-for-all.
+- **Main menu:** the PayPal tip card moves to the bottom left, out of the way of your name, with a shorter ask.
+- **Map editor:** on a controller, B now always deletes the block A just placed.
+- **Install guide:** a new Steam Deck section.
+
 ## New in 1.4.0
 
 - **Sky arenas:** a new layout style with no floor at all. A row of islands along the bottom stands in for it, and a
