@@ -41,6 +41,7 @@ public partial class Main
             case "drift": await DemoDrift(DriftDemoArena()); break;
             case "hanger": await DemoHanger(); break;
             case "driftstyle": await DemoDrift(MapDesign.Generate(MapStyle.Drift, ThemeId.CandyClouds, 1)); break;
+            case "sky": await DemoDrift(MapDesign.Generate(MapStyle.Sky, ThemeId.SunsetPeaks, 1)); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
