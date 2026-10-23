@@ -85,6 +85,8 @@ namespace Brawler;
 //                         checks the arena, mode, starting hand and Hard bots, and that the best result is kept
 //   --trainingcheck       the autopilot on the training range: card browser, hand-set cards, dummies dying and coming
 //                         back, a sparring bot that never fires, Reset keeping the cards
+//   --artbench            the C# time and memory to draw one character (AvatarArt), over 32 looks in many poses; needs a
+//                         window
 //   --seed=N              seeds everything random that steers the run (arenas, card offers, bots, autopilot picks); every
 //                         check prints its seed in the AUTOTEST line, so with --fixed-fps a failing run replays exactly
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
@@ -227,6 +229,7 @@ public partial class Main
             else if (a == "--trainingcheck") StartTrainingCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
+            else if (a == "--artbench") ArtBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();
             else if (a == "--arenashots" && _shotDir != null) ArenaShots();
             else if (a == "--layoutshots" && _shotDir != null) LayoutShots();

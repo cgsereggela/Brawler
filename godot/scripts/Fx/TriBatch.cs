@@ -23,12 +23,14 @@ public sealed class TriBatch
     private Rid _tex;
     private Transform2D _xform = Transform2D.Identity;
     private bool _xf;
+    private float _xx = 1, _xy, _yx, _yy = 1, _ox, _oy; // _xform's numbers, for V
 
     // Scratch for triangulating and outlining one polygon at a time (polygons longer than this are skipped).
     private const int MaxPoly = 256;
     private static readonly int[] Clip = new int[MaxPoly];
     private static readonly int[] Tris = new int[(MaxPoly - 2) * 3];
     private static readonly Vector2[] Normals = new Vector2[MaxPoly];
+    private static readonly Vector2[] Edges = new Vector2[MaxPoly];
     private static readonly Color[] Shades = new Color[MaxPoly];
 
     // What a flush hands Godot, per size bucket: 64 << k vertices and 192 << k indices, k = 0..6 (up to the max).
@@ -73,7 +75,12 @@ public sealed class TriBatch
     public Transform2D Transform
     {
         get => _xform;
-        set { _xform = value; _xf = value != Transform2D.Identity; }
+        set
+        {
+            _xform = value;
+            _xf = value != Transform2D.Identity;
+            (_xx, _xy, _yx, _yy, _ox, _oy) = (value.X.X, value.X.Y, value.Y.X, value.Y.Y, value.Origin.X, value.Origin.Y);
+        }
     }
 
     private void Room(int verts, int indices)
@@ -81,10 +88,28 @@ public sealed class TriBatch
         if (_n + verts > MaxVerts || _ni + indices > MaxIndices) Flush();
     }
 
+    /// <summary>
+    /// Test hook: while true, every flush folds the exact bits of its vertices, colors and indices into <see cref="Hash"/>,
+    /// so a change meant to leave the picture alone (a speed-up) can be checked to draw exactly the same (--artbench).
+    /// </summary>
+    public static bool Hashing;
+    public static ulong Hash = 14695981039346656037UL;
+
+    private static void Fold(ReadOnlySpan<byte> bytes)
+    {
+        foreach (byte b in bytes) Hash = (Hash ^ b) * 1099511628211UL;
+    }
+
     /// <summary>Draws what has been added so far.</summary>
     public void Flush()
     {
         if (_ni == 0 || _ci == null) { _n = _ni = 0; return; }
+        if (Hashing)
+        {
+            Fold(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_pts.AsSpan(0, _n)));
+            Fold(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_cols.AsSpan(0, _n)));
+            Fold(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_idx.AsSpan(0, _ni)));
+        }
         int vb = Bucket(_n, 64), ib = Bucket(_ni, 192);
         var pts = _outPts[vb] ??= new Vector2[64 << vb];
         var cols = _outCols[vb] ??= new Color[64 << vb];
@@ -114,7 +139,8 @@ public sealed class TriBatch
 
     private int V(Vector2 p, Color c)
     {
-        _pts[_n] = _xf ? _xform * p : p;
+        // _xform * p written out, in the same order Godot's operator does it (so the same bits), without its calls.
+        _pts[_n] = _xf ? new Vector2(_xx * p.X + _yx * p.Y + _ox, _xy * p.X + _yy * p.Y + _oy) : p;
         _cols[_n] = c;
         return _n++;
     }
@@ -327,11 +353,14 @@ public sealed class TriBatch
         if (n < 2 || n > MaxPoly) return false;
         // Outward is to the right of each edge on a positive-area loop, to the left on a negative one.
         float sign = closed && SignedArea(pts) < 0 ? -1 : 1;
+        // Each edge's normal once (edge i runs from point i to the next), shared by the two points it joins.
+        int edges = closed ? n : n - 1;
+        for (int i = 0; i < edges; i++) Edges[i] = EdgeNormal(pts[i], pts[i + 1 < n ? i + 1 : 0], sign);
         for (int i = 0; i < n; i++)
         {
             bool hasPrev = closed || i > 0, hasNext = closed || i < n - 1;
-            var prev = hasPrev ? EdgeNormal(pts[(i - 1 + n) % n], pts[i], sign) : Vector2.Zero;
-            var next = hasNext ? EdgeNormal(pts[i], pts[(i + 1) % n], sign) : Vector2.Zero;
+            var prev = hasPrev ? Edges[i > 0 ? i - 1 : n - 1] : Vector2.Zero;
+            var next = hasNext ? Edges[i] : Vector2.Zero;
             var sum = prev + next;
             if (sum.LengthSquared() < 1e-8f) { Normals[i] = hasNext ? next : prev; continue; }
             var m = sum.Normalized();

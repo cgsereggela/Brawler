@@ -395,6 +395,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --cards=57,62,69    # everyone holds these card ids (offline only)
 "$GODOT" --path godot -- --themebench                                  # frame time per arena theme (vsync off)
 "$GODOT" --path godot -- --fxbench                                     # floods the arena with top-tier kill effects for 8 s, prints frame time and live particles (add --nofxcull to compare)
+"$GODOT" --path godot -- --artbench                                    # C# time and memory to draw one character (32 looks, many poses), plus a hash of every triangle drawn, so a speed-up can be checked to draw exactly the same
 "$GODOT" --headless --path godot -- --makeicon                         # rebuilds godot/icon.svg and godot/icon.ico (the exe icon) from the avatar art
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first, crosshair gives way to the pointer
 "$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
