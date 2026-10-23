@@ -44,6 +44,7 @@ Host-authoritative. Clients send one `InputFrame` per physics tick; the host sim
 - **Appearance option lists are append-only** (`EyeNames`, `HairNames`, … in `Logic/Appearance.cs`): profiles store indices. Each new entry needs a matching `case` in `AvatarArt.Draw…`.
 - Wire/save formats must stay readable from older data (tests check e.g. lobby data from before a field existed).
 - Step-by-step recipes for adding a card, a look part or an arena theme are in the README; follow them.
+- Before changing character art (`AvatarArt.cs`), read `docs/AVATAR_ART.md`: how avatars are rendered, the art process and the per-part checklist.
 
 ## Repo conventions
 

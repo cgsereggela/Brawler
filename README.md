@@ -308,7 +308,7 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 5. Optional: give it an effect flavor in `CardFlavors` in `godot/scripts/Game/FxStyle.cs`. Every card adds power on its own, flavored or not.
 
 ## Adding a face part, hairstyle or hat
-Character art is vector shapes drawn in code, so there are no image files to manage.
+Character art is vector shapes drawn in code, so there are no image files to manage. [docs/AVATAR_ART.md](docs/AVATAR_ART.md) explains how it is rendered and how to draw parts well.
 1. Add the option name to the end of its list in `godot/scripts/Logic/Appearance.cs` (`EyeNames`, `MouthNames`, `HairNames`, `HatNames` or `Dyes`). Saved profiles store indices, so append; don't reorder.
 2. Add a `case` with the same index to the matching `Draw…` method in `godot/scripts/Game/AvatarArt.cs` (`DrawEyes`, `DrawMouth`, `DrawHair`, `DrawHat`).
    - Shapes come from `Shapes` (`Ellipse`, `RoundRect`, `Capsule`, `Star`, or a point list). Draw them with `Shapes.Fill(ci, points, fill, outline, width)`.
