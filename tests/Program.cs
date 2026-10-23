@@ -353,6 +353,9 @@ void Check(bool cond, string name, string detail = "")
                 var chain = new RectI(h.ChainXs[k] - 2, anchors[k], 4, h.Y - anchors[k]);
                 if (anchors[k] < MapGenerator.Wall || m.Solids.Any(r => r.Intersects(chain))) Bad(seed, "hanger chain through a solid");
                 if (m.Props.Any(p => p.Rect.Intersects(chain)) || m.Drifts.Any(dr => dr.Range.Intersects(chain))) Bad(seed, "hanger chain through an extra");
+                int cx = h.ChainXs[k], at = anchors[k];
+                if (!m.Solids.Any(r => r.Bottom == at && r.X <= cx - HangerMath.AnchorMargin && r.Right >= cx + HangerMath.AnchorMargin))
+                    Bad(seed, "hanger chain bolted too near the edge of what it hangs from");
             }
             if (m.Solids.Any(r => r.Intersects(h.Rect.Grow(16, MapGenerator.MinClearance)))) Bad(seed, "hanger boxed in");
             if (!HangerMath.LandsFlat(m, h)) Bad(seed, "hanger lands on a slope");
@@ -405,6 +408,13 @@ void Check(bool cond, string name, string detail = "")
             string.Join(",", HangerMath.Anchors(hm, under)));
         Check(wide.ChainXs.SequenceEqual(new[] { 268, 372 }) && HangerMath.Anchors(hm, wide).SequenceEqual(new[] { 136, MapGenerator.Wall }),
             "A long hanger hangs on two chains, each from whatever is above it", string.Join(",", HangerMath.Anchors(hm, wide)));
+        var onEdge = new Hanger(276, 240, 40, 8); // its chain 4 px in from the block's end: the bracket would stick out
+        Check(HangerMath.AnchorsHidden(hm, under) && HangerMath.AnchorsHidden(hm, wide) && !HangerMath.AnchorsHidden(hm, onEdge),
+            "A chain bolted near the end of a block shows, one under the middle or the ceiling doesn't");
+        var edgeDesign = hd.Copy();
+        edgeDesign.Hangers.Add(onEdge);
+        Check(edgeDesign.Problems().Exists(p => p.Contains("off the end of a block")) && !hd.Problems().Exists(p => p.Contains("off the end")),
+            "The map editor warns about a chain hanging off the end of a block", string.Join(" / ", edgeDesign.Problems()));
         Check(HangerMath.LandY(hm, under) == MapGenerator.FloorY - 8 && HangerMath.LandsFlat(hm, under), "A cut hanger lands flat on the floor");
         Check(HangerMath.LandY(hm, overPit) == null && HangerMath.LandsFlat(hm, overPit), "A hanger over a pit falls out of the arena");
         float tLand = MathF.Sqrt(2 * (MapGenerator.FloorY - 8 - 240) / Hanger.Gravity);

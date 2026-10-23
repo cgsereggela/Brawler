@@ -231,6 +231,10 @@ public sealed class MapDesign
         foreach (var h in Hangers)
             if (map.Solids.Exists(r => r.Intersects(h.Rect))) stuck++;
         if (stuck > 0) list.Add(stuck == 1 ? "A hanging platform is inside a block." : $"{stuck} hanging platforms are inside blocks.");
+        int edge = 0;
+        foreach (var h in Hangers)
+            if (!HangerMath.AnchorsHidden(map, h)) edge++;
+        if (edge > 0) list.Add(edge == 1 ? "A hanging platform's chain hangs off the end of a block." : $"{edge} hanging platforms have chains hanging off the end of a block.");
         return list;
     }
 

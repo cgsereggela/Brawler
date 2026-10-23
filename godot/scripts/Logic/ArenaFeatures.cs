@@ -79,6 +79,19 @@ public readonly record struct Hanger(int X, int Y, int W, int H)
 /// <summary>Where a <see cref="Hanger"/>'s chains are anchored and where it lands, from the arena's static parts.</summary>
 public static class HangerMath
 {
+    /// <summary>How far what a chain hangs from must reach past it on each side, so it hides the chain's bracket (8 wide) and its own rounded corner.</summary>
+    public const int AnchorMargin = 8;
+
+    /// <summary>True if every chain hangs from something that reaches <see cref="AnchorMargin"/> past it on both sides.</summary>
+    public static bool AnchorsHidden(MapLayout map, Hanger h)
+    {
+        var xs = h.ChainXs;
+        var anchors = Anchors(map, h);
+        for (int i = 0; i < xs.Length; i++)
+            if (!map.Solids.Exists(r => r.Bottom == anchors[i] && r.X <= xs[i] - AnchorMargin && r.Right >= xs[i] + AnchorMargin)) return false;
+        return true;
+    }
+
     /// <summary>
     /// For each chain, the y of the bottom of the lowest solid above it (the ceiling at worst): where the chain is
     /// bolted on.
@@ -398,6 +411,7 @@ public static class ArenaFeatures
             var chains = new List<RectI>();
             for (int k = 0; k < xs.Length; k++) chains.Add(new RectI(xs[k] - 3, anchors[k], 6, y - anchors[k]));
             if (chains.Exists(ch => ch.H < 24 || !Clear(map, keep, ch))) continue;
+            if (!HangerMath.AnchorsHidden(map, h)) continue; // a bracket half off the end of a block shows
             if (!HangerMath.LandsFlat(map, h)) continue;
             var landed = HangerMath.LandY(map, h) is { } ly ? new RectI(x, ly, w, h.H) : (RectI?)null;
             if (landed is { } l && !Clear(map, keep, l.Grow(4, 0))) continue;
