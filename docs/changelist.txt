@@ -9,7 +9,6 @@ issues to fix:
 - the unit test runner is one 2,000-line Program.cs with no way to run one area. Split it into files by section and take an optional name filter (dotnet run -- MapCode), so a failure can be rerun on its own
 
 features to add:
-- I want to be able to record the game without the in-game music, only the player / bullet sound fx, and optionally without any audio at all, this way future short-form content can be made by adding the music separately to the video in a continuous loop
 - daily challenge: one seeded arena, mode and starting card set per day, played against Hard bots, with your best result for the day kept in your profile. The same seed for everyone, so friends can compare
 - training range: a solo mode from the main menu where you pick any cards from a browsable list (rares and curses included) and try them on target dummies and a passive bot, with a reset button. It helps players learn 100+ cards without playing a whole match
 - match stats on the match-over screen: a Stats tab with each player's kills, damage dealt and taken, accuracy and blocks for the match. The game already records all of this for the card balance stats
