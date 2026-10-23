@@ -82,6 +82,8 @@ namespace Brawler;
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 //                         autopilot; checks at the end that they played and picked cards like everyone else
 //   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
+//   --nomusic             mute the music for this run only (not saved), so a --write-movie recording has just the sound
+//                         effects, to lay music under it later; --noaudio mutes everything (the recording's track is silent)
 public partial class Main
 {
     private string _autoMode;
@@ -116,6 +118,8 @@ public partial class Main
         {
             if (a.StartsWith("--shots=")) _shotDir = a["--shots=".Length..];
             else if (a == "--streamer") StreamerMode.SetForRun(true);
+            else if (a == "--nomusic") { AudioSettings.MuteMusicForRun = true; AudioSettings.Apply(); }
+            else if (a == "--noaudio") { AudioSettings.MuteAllForRun = true; AudioSettings.Apply(); }
             else if (a.StartsWith("--lava=") && int.TryParse(a["--lava=".Length..], out int lava)) _game.LavaOverride = lava;
             else if (a.StartsWith("--rarechance=") && int.TryParse(a["--rarechance=".Length..], out int rare)) _game.RareOverride = Mathf.Clamp(rare, 0, 100);
             else if (a.StartsWith("--teams=") && int.TryParse(a["--teams=".Length..], out int teams)) _net.TestTeamSize = Mathf.Clamp(teams, 0, 4);

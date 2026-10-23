@@ -13,6 +13,10 @@ public static class AudioSettings
 
     public static float Master = 0.8f, Music = 0.6f, Effects = 0.8f;
 
+    /// <summary>For this run only (never saved), from --nomusic or --noaudio: mute the music, or everything, e.g. so a
+    /// recording made with --write-movie carries only the sound effects (to lay music under it later), or no sound.</summary>
+    public static bool MuteMusicForRun, MuteAllForRun;
+
     public static void Init()
     {
         int sfx = EnsureBus(SfxBus);
@@ -34,8 +38,8 @@ public static class AudioSettings
 
     public static void Apply()
     {
-        SetBus(0, Master);
-        SetBus(AudioServer.GetBusIndex(MusicBus), Music);
+        SetBus(0, MuteAllForRun ? 0 : Master);
+        SetBus(AudioServer.GetBusIndex(MusicBus), MuteMusicForRun ? 0 : Music);
         SetBus(AudioServer.GetBusIndex(SfxBus), Effects);
     }
 

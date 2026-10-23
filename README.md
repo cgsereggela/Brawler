@@ -399,6 +399,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot --write-movie C:/tmp/match.avi -- --videomatch --focuslog=C:/tmp/match.focus  # records a full 6-player match (lobby to match-over) for a video; the focus log says where the action is each frame, for a portrait crop
 "$GODOT" --path godot --write-movie C:/tmp/ctf.avi -- --videomatch --mode=ctf                # the same in a game mode (--mode, --teams, --rounds; --couch=N adds autopilot guests, e.g. --mode=survival --couch=3); the lobby on screen already shows them
 "$GODOT" --path godot --write-movie C:/tmp/demo.avi -- --demo=thumbs  # a scripted walk through one feature for a Short; "DEMO <frame> <label>" log lines mark the moments to cut to
+"$GODOT" --path godot --write-movie C:/tmp/sfx.avi -- --videomatch --nomusic  # the same with the music muted for this run (not saved): only the sound effects, to lay music under it later; --noaudio records a silent track
 "$GODOT" --headless --path godot --fixed-fps 60 -- --simulate=12 --players=2 --rounds=1 --botskills=hard  # one-round duels: a Hard bot against the Normal autopilot (--botskills gives bots skills in turn as they are added)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --carddir=C:/tmp/cards --cards=1000  # load custom cards from another folder
 ```
