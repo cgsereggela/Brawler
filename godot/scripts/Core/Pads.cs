@@ -24,6 +24,7 @@ public static class Pads
 
     private static readonly Dictionary<int, Pad> _pads = new();
     private static readonly List<int> _devices = new();
+    private static readonly Dictionary<int, uint> _tapped = new(); // buttons pressed since the last Poll, per device
 
     /// <summary>--padcheck: device ids treated as connected, fed with synthetic joypad events.</summary>
     public static readonly List<int> TestDevices = new();
@@ -58,13 +59,24 @@ public static class Pads
             p.Now = Read(d);
             p.LtHeld = Gamepad.TriggerHeld(p.Now.LT, p.LtHeld);
             p.RtHeld = Gamepad.TriggerHeld(p.Now.RT, p.RtHeld);
-            p.Pressed = Gamepad.Pressed(p.Before.Buttons, p.Now.Buttons);
+            p.Pressed = Gamepad.Pressed(p.Before.Buttons, p.Now.Buttons) | (_tapped.TryGetValue(d, out uint tap) ? tap : 0);
             if ((p.Pressed & Mask(PadLayout.Jump)) != 0) p.Jumps++;
             if ((p.Pressed & Mask(PadLayout.Block)) != 0 || (p.LtHeld && !p.LtBefore)) p.Blocks++;
             if (p.Now.Active && (p.Pressed != 0 || p.Now.Move != System.Numerics.Vector2.Zero || p.Now.Look != System.Numerics.Vector2.Zero)) LastUsed = true;
         }
+        _tapped.Clear();
         foreach (var d in new List<int>(_pads.Keys))
             if (!_devices.Contains(d)) _pads.Remove(d);
+    }
+
+    /// <summary>
+    /// Main._Input: a button went down. Kept until the next <see cref="Poll"/>, so a tap released before then still counts
+    /// as a press: reading the buttons once a frame lost quick taps whenever a frame ran long.
+    /// </summary>
+    public static void Note(InputEvent e)
+    {
+        if (e is not InputEventJoypadButton { Pressed: true } b || (int)b.ButtonIndex >= PadLayout.Buttons) return;
+        _tapped[b.Device] = (_tapped.TryGetValue(b.Device, out uint m) ? m : 0) | 1u << (int)b.ButtonIndex;
     }
 
     /// <summary>Main: the mouse moved or a key went down, so prompts and focus go back to mouse-and-keyboard mode.</summary>

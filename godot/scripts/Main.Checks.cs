@@ -365,7 +365,7 @@ public partial class Main
         await PadTap(PadLayout.A);
         if (ed.Design.Blocks.Count != padBlocks + 1) { Fail($"A with the block tool left {ed.Design.Blocks.Count} blocks, not {padBlocks + 1}"); return; }
         await PadTap(PadLayout.B);
-        if (ed.Design.Blocks.Count != padBlocks) { Fail("B on a controller didn't delete the block under the cursor"); return; }
+        if (ed.Design.Blocks.Count != padBlocks) { Fail($"B on a controller didn't delete the block under the cursor at {ed.PadAt} (blocks {string.Join(" ", ed.Design.Blocks.Skip(padBlocks))})"); return; }
         await PadTap(PadLayout.X);
         await PadTap(PadLayout.Y);
         if (ed.Design.Blocks.Count != padBlocks) { Fail("X then Y (undo, redo) on a controller didn't end where they started"); return; }

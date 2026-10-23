@@ -265,6 +265,7 @@ public partial class Main : Node
     public override void _Input(InputEvent e)
     {
         if (e.Device == PadEscDevice) return;
+        Pads.Note(e);
         if (e is InputEventMouseMotion m && m.Relative.LengthSquared() > 4 || e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true })
             Pads.KeyboardUsed();
     }

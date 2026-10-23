@@ -61,7 +61,7 @@ public partial class MapEditorUI
             }
             if (Pads.JustPressed(d, PadLayout.A)) { _padHeld = true; PadPointer(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true }); }
             else if (_padHeld && !s.Held(PadLayout.A)) { _padHeld = false; PadPointer(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false }); }
-            if (Pads.JustPressed(d, PadLayout.B)) PadPointer(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true });
+            if (Pads.JustPressed(d, PadLayout.B)) PadDelete();
             if (Pads.JustPressed(d, PadLayout.LeftShoulder)) StepTool(-1);
             if (Pads.JustPressed(d, PadLayout.RightShoulder)) StepTool(1);
             if (Pads.JustPressed(d, PadLayout.X)) Undo();
@@ -74,6 +74,19 @@ public partial class MapEditorUI
     {
         e.Position = _padAt * Zoom;
         CanvasInput(e);
+    }
+
+    /// <summary>
+    /// B: delete what's under the cursor, else what A just put down there. Placing snaps to the grid, so a block can
+    /// start a few px below the cursor that placed it, and B there used to miss it (editorcheck failed when the stick
+    /// happened to stop just above a tile line).
+    /// </summary>
+    private void PadDelete()
+    {
+        var at = _padAt;
+        if (Hit(at).K == Kind.None) _padAt = new Vector2(Snap(at.X), Snap(at.Y) + 1);
+        PadPointer(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true });
+        _padAt = at;
     }
 
     private void StepTool(int dir)
