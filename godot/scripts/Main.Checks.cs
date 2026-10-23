@@ -996,6 +996,10 @@ public partial class Main
     // ---------- --hazardcheck: bots on an arena full of hazards ----------
 
     private const float HazardCheckSeconds = 300;
+    // Limits set against the worst of seeds 1-8 (tools/check.sh runs seeds 1-3), with room to spare: pools 41-67 damage per
+    // bot-minute, saws 8-19, 5-11 pit crossings. The pool limit was 40, inside that spread, so the check was a coin flip.
+    private const float HzMaxPools = 75, HzMaxSaws = 30;
+    private const int HzMinCrossings = 3;
     private float _hzBotSeconds, _hzMoverSeconds, _hzFight;
     private readonly float[] _hzDamage = new float[3];
     private readonly System.Collections.Generic.Dictionary<int, int> _hzSide = new();
@@ -1069,9 +1073,9 @@ public partial class Main
         string line = $"magma {_hzDamage[0] / minutes:0.0}, poison {_hzDamage[1] / minutes:0.0}, saw {saws:0.0} damage per bot-minute; "
             + $"{_hzMoverSeconds:0}s on the mover, crossed the pit {_hzCrossings} times, fell in {_hzFalls} times, in {_hzFight:0}s of fighting ({_game.BattleNumber} battles)";
         Log.Info($"HAZARDCHECK {line}");
-        if (pools > 40) Finish(1, $"hazardcheck: bots stand in pools ({line})");
-        else if (saws > 30) Finish(1, $"hazardcheck: bots walk into sawblades ({line})");
-        else if (_hzCrossings < 5) Finish(1, $"hazardcheck: bots don't ride the mover across ({line})");
+        if (pools > HzMaxPools) Finish(1, $"hazardcheck: bots stand in pools ({line})");
+        else if (saws > HzMaxSaws) Finish(1, $"hazardcheck: bots walk into sawblades ({line})");
+        else if (_hzCrossings < HzMinCrossings) Finish(1, $"hazardcheck: bots don't ride the mover across ({line})");
         else Finish(0, line);
     }
 
@@ -1132,6 +1136,7 @@ public partial class Main
         float under = _vcUnder / _vcFight, dps = _vcDamage / _vcFight;
         string line = $"bot spent {under:P0} of {_vcFight:0}s under the ledge and dealt {dps:0.0} damage/s";
         Log.Info($"VANTAGECHECK {line}");
+        // Seeds 1-8: 1-9% of the time under the ledge, 4.2-7.9 damage/s.
         if (under > 0.5f) Finish(1, $"vantagecheck: the bot hides under the ledge ({line})");
         else if (dps < 2) Finish(1, $"vantagecheck: the bot hardly hits ({line})");
         else Finish(0, line);
@@ -1139,6 +1144,7 @@ public partial class Main
 
     // ---------- --hangercheck: a bot, and someone standing under a hanging platform ----------
 
+    // Seeds 1-8 drop the platform in 8.6-15.0 s, so 30 s leaves twice the slowest.
     private const float HangerCheckSeconds = 30;
     private float _hcFight;
     private bool _hcPlaced, _hcCrushed;
@@ -1245,6 +1251,7 @@ public partial class Main
 
     // Before the fixes bots fell on their own about 13 times a bot-minute; after, 3.5-4.5. Jumps between drifting
     // platforms still miss now and then (one is shoved off mid-flight): this catches a slide back, not that.
+    // Seeds 1-8: 2.9-4.7 falls on their own per bot-minute.
     private const float DriftCheckMaxFalls = 6f;
 
     /// <summary>Test input: stand still, aiming nowhere in particular.</summary>
