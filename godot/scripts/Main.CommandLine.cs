@@ -83,6 +83,8 @@ namespace Brawler;
 //                         fails if the game logged an error, naming the first)
 //   --dailycheck[=DAY]    the autopilot plays a day's daily challenge (yyyymmdd, default today) on a scratch profile:
 //                         checks the arena, mode, starting hand and Hard bots, and that the best result is kept
+//   --trainingcheck       the autopilot on the training range: card browser, hand-set cards, dummies dying and coming
+//                         back, a sparring bot that never fires, Reset keeping the cards
 //   --seed=N              seeds everything random that steers the run (arenas, card offers, bots, autopilot picks); every
 //                         check prints its seed in the AUTOTEST line, so with --fixed-fps a failing run replays exactly
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
@@ -222,6 +224,7 @@ public partial class Main
             else if (a == "--driftcheck") StartDriftCheck();
             else if (a == "--errorcheck") ErrorCheck();
             else if (a.StartsWith("--dailycheck")) StartDailyCheck(a);
+            else if (a == "--trainingcheck") StartTrainingCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();

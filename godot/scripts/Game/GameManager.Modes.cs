@@ -20,10 +20,16 @@ public partial class GameManager
     public GameMode Mode => Settings.Mode;
 
     /// <summary>Seconds of fighting before sudden-death lava rises in this battle's mode (0 = never).</summary>
-    public int LavaAfter => GameModes.LavaAfter(Mode, Settings.LavaAfter);
+    public int LavaAfter => Training ? 0 : GameModes.LavaAfter(Mode, Settings.LavaAfter);
 
     /// <summary>Whether the fallen come back: a respawn mode, before sudden death.</summary>
-    public bool RespawnsNow => GameModes.RespawnsNow(Mode, Arena.FightTime, Settings.LavaAfter);
+    public bool RespawnsNow => Training || GameModes.RespawnsNow(Mode, Arena.FightTime, Settings.LavaAfter);
+
+    /// <summary>
+    /// The training range (offline): one battle that never ends. The fallen come back, there is no lava, and the cards are
+    /// set by hand (<see cref="SetTrainingCards"/>) rather than picked.
+    /// </summary>
+    public bool Training;
 
     /// <summary>Simulated seconds since the game started, on this peer.</summary>
     public float Clock => _clock;

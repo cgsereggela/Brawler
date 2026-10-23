@@ -8,7 +8,7 @@ namespace Brawler.UI;
 
 public partial class MenuUI : Control
 {
-    public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor, Daily;
+    public event Action PlayBots, HostLan, JoinLan, Customize, Options, MapEditor, Daily, Training;
 
     /// <summary>Where Report Bug sends people: the issues page of the GitHub repository.</summary>
     public const string IssuesUrl = "https://github.com/cgsereggela/Brawler/issues";
@@ -58,16 +58,26 @@ public partial class MenuUI : Control
         body.AddChild(NameEdit);
         body.AddChild(UiKit.Spacer(2));
         body.AddChild(UiKit.Primary("PLAY VS BOTS", () => PlayBots?.Invoke()));
-        body.AddChild(UiKit.Button("Host Game", () => HostLan?.Invoke()));
+        // Two to a row, so the panel still fits on screen at the biggest UI scale.
+        void Pair(Button a, Button b)
+        {
+            var r = UiKit.HBox(6);
+            a.SizeFlagsHorizontal = b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            r.AddChild(a);
+            r.AddChild(b);
+            body.AddChild(r);
+        }
+        var editor = UiKit.Button("Map Editor", () => MapEditor?.Invoke());
+        editor.TooltipText = "Build your own arenas and share them as map codes";
+        Pair(UiKit.Button("Host Game", () => HostLan?.Invoke()), editor);
         var daily = UiKit.Button("Daily Challenge", () => Daily?.Invoke());
         daily.TooltipText = "Today's arena, mode and starting cards against three Hard bots: the same for everyone, so friends can compare";
-        body.AddChild(daily);
+        var training = UiKit.Button("Training Range", () => Training?.Invoke());
+        training.TooltipText = "Try any card on target dummies and a bot that never fires";
+        Pair(daily, training);
         _daily = UiKit.Label("", UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center);
         _daily.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         body.AddChild(_daily);
-        var editor = UiKit.Button("Map Editor", () => MapEditor?.Invoke());
-        editor.TooltipText = "Build your own arenas and share them as map codes";
-        body.AddChild(editor);
 
         body.AddChild(UiKit.Label("JOIN A FRIEND", UiKit.Tiny, Palette.TextDim, font: Fonts.Bold));
         var joinRow = UiKit.HBox();

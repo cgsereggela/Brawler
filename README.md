@@ -153,6 +153,9 @@ When upgrading Godot, change `GODOT_VERSION` in the workflow and the SDK line in
 ### Daily challenge
 **Daily Challenge** on the main menu starts a match straight away, against three **Hard** bots. Today's arena, game mode (Elimination, King of the Hill or Headhunter) and three starting cards come from the date alone (UTC), so everyone, anywhere, gets the same day. The card offers follow the same seed, and custom cards stay out of them. Every player starts with the day's three cards. The menu shows today's mode, cards and your best result so far. Your profile keeps the best of the day: a win beats any loss, then more rounds won, then more kills. A new day starts over (`Logic/Daily.cs`).
 
+### Training range
+**Training Range** on the main menu puts you on a small arena with two target **dummies** that stand still and a **sparring bot** that moves, jumps and blocks but never fires. It is one battle that never ends: anyone who falls comes back after a moment, and there is no lava. The **card browser** on the left lists every card, rares and curses included. Search it or filter it by category, and click a card to hold it (it takes hold at once, at full health and a full magazine). Click a held card to drop it. **Clear Cards** drops them all, and **Reset Range** puts everyone back at a spawn at full health while you keep your cards. **Tab** hides or shows the browser; while it shows, your character stands still. Esc leaves as usual. The range never counts toward your career or the card balance stats.
+
 ## Cards
 There are 103 cards: 81 common cards in five categories, 10 rare cards and 12 curses. Strong cards come with a tradeoff (less damage, HP, ammo, speed, ...). The full list with exact numbers is in `godot/scripts/Logic/Cards.cs`.
 - **Gun** (orange): more, bigger, faster or slower bullets. For example Sniper, Minigun, Twin Shot, Hail Storm, Cannonball, Needles, Ricochet, plus the originals (Bouncy, Big Bullet, Pierce, Splitter, Homing, Explosive, Shotgun, Burst, ...).
@@ -383,6 +386,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --driftcheck      # bots only, on Drift arenas: fails if they fall off the drifting platforms on their own too often (DRIFTCHECK)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --errorcheck      # throws an exception in a frame callback and checks it is counted (every check fails if the game logged an error)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --dailycheck      # the autopilot plays today's daily challenge (--dailycheck=20261023 for a given day) on a scratch profile: arena, mode, starting cards, Hard bots, best result kept
+"$GODOT" --headless --path godot --fixed-fps 60 -- --trainingcheck   # the autopilot on the training range: card browser and Tab, hand-set cards, dummies dying and coming back, a sparring bot that never fires, Reset (with --shots=DIR saves the browser)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part

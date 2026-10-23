@@ -69,6 +69,26 @@ public partial class GameManager
 
     private int _arenaTurn; // host: battles started this match, for the custom arenas' turns
 
+    /// <summary>Training range: start the battle over (everyone back at a spawn at full health), keeping the cards.</summary>
+    public void HostResetTraining()
+    {
+        if (IsHost && Training && Phase is Phase.Fighting or Phase.Countdown) HostStartBattle();
+    }
+
+    /// <summary>Training range: give a player these cards right away, topped up to the new health and magazine.</summary>
+    public void SetTrainingCards(MatchPlayer p, IEnumerable<int> ids)
+    {
+        if (!Training || Networked || p == null) return;
+        p.Cards.Clear();
+        p.Cards.AddRange(ids);
+        p.RecomputeStats();
+        if (p.Avatar is { Alive: true } a)
+        {
+            a.Hp = a.S[Stat.MaxHp];
+            a.Ammo = a.S.Int(Stat.Ammo);
+        }
+    }
+
     /// <summary>
     /// A battle's arena on every peer: with custom arenas in the lobby, the one whose turn the seed carries (a code that
     /// doesn't read falls back to a generated arena); otherwise the seed's generated arena.

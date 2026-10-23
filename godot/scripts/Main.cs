@@ -106,6 +106,7 @@ public partial class Main : Node
         _options = new OptionsUI(_sfx) { Name = "Options" };
         _editor = new MapEditorUI(_game) { Name = "MapEditor", Visible = false };
         foreach (var c in Screens) root.AddChild(c);
+        AddTrainingUI(root);
 
         // Above every screen: the crosshair that stands in for the mouse pointer while you fight. The normal cursor
         // comes back for the card pick, the match-over screen, the Esc overlay and everything outside a match.
@@ -114,7 +115,7 @@ public partial class Main : Node
         _crosshair = new Crosshair(_game)
         {
             Name = "Crosshair",
-            ShouldShow = () => _hud.Visible && !_pick.Visible && !_over.Visible && !_options.Visible && !_game.KillCam.Playing,
+            ShouldShow = () => _hud.Visible && !_training.Visible && !_pick.Visible && !_over.Visible && !_options.Visible && !_game.KillCam.Playing,
         };
         aimLayer.AddChild(_crosshair);
 
@@ -169,6 +170,8 @@ public partial class Main : Node
         _menu.Customize += () => OpenCustomize(_menu);
         _menu.MapEditor += () => Show(_editor);
         _menu.Daily += StartDaily;
+        _menu.Training += StartTraining;
+        _game.BattleStarted += TrainingBattleStarted;
         _game.MatchEnded += DailyMatchEnded;
         _menu.SetDaily(DailyLine());
         _editor.Closed += () => Show(_menu);
@@ -193,6 +196,7 @@ public partial class Main : Node
         {
             _game.ResetWorld();
             DailyEnded();
+            TrainingEnded();
             Show(_playtest ? _editor : _menu);
             _playtest = false;
             _menu.SetStatus(reason);
@@ -266,11 +270,13 @@ public partial class Main : Node
     {
         Pads.Poll();
         PadMenus();
+        UpdateTrainingUI();
     }
 
     public override void _Input(InputEvent e)
     {
         if (e.Device == PadEscDevice) return;
+        if (TrainingKey(e)) return;
         Pads.Note(e);
         if (e is InputEventMouseMotion m && m.Relative.LengthSquared() > 4 || e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true })
             Pads.KeyboardUsed();

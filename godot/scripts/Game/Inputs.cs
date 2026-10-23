@@ -174,3 +174,23 @@ public sealed class RemoteInput : IInputSource
     public InputFrame Latest;
     public InputFrame Next(Avatar self, float dt) => Latest;
 }
+
+/// <summary>Training range target: stands where it spawned, facing the middle, and never acts.</summary>
+public sealed class DummyInput : IInputSource
+{
+    public InputFrame Next(Avatar self, float dt) => new() { Aim = new Vector2(MapLayout.Width / 2f, self.GlobalPosition.Y) };
+}
+
+/// <summary>Training range sparring partner: a bot's moving, jumping and blocking, but it never fires.</summary>
+public sealed class PassiveInput : IInputSource
+{
+    private readonly IInputSource _bot;
+    public PassiveInput(IInputSource bot) => _bot = bot;
+
+    public InputFrame Next(Avatar self, float dt)
+    {
+        var f = _bot.Next(self, dt);
+        f.Shoot = false;
+        return f;
+    }
+}
