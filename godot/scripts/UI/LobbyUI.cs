@@ -79,7 +79,6 @@ public partial class LobbyUI : Control
         _arenas = AddToggle(grid, "Arenas", "Random: a freshly generated arena every battle. Or pick custom arenas from the Map Editor (or a friend's map code) to take turns.", () => _arenaPool.Open(), out _);
         _gameMode = AddToggle(grid, "Game mode", "Elimination: last one standing wins the battle. King of the Hill: hold the glowing zone alone for 10 s in total. Capture the Flag (teams): bring the enemy flag to your base while yours is there. Headhunter: the leader wears a crown, and whoever takes them out wins the battle. Gun Game (free-for-all): one card at a time, and every kill swaps it for the next; a kill with the last card wins the match. Survival (free-for-all, add bots): the humans team up against waves of bots, one more each wave and tougher as they come; clear 10 waves to win. In King of the Hill and Capture the Flag the fallen respawn until sudden death, which comes twice as late; in Gun Game they always respawn.", CycleGame, out _);
         _mode = AddToggle(grid, "Teams", "Free-for-all, or two teams (2v2, 3v3, 4v4): the last team standing wins the battle, and the whole team scores. Click a player's team tag to move them.", CycleMode, out _);
-        // Only in team modes.
         _friendly = AddToggle(grid, "Friendly fire", "Whether your shots and blasts hurt your teammates. Off, they pass straight through.", ToggleFriendlyFire, out _friendlyLabel);
         _battles = AddSpin(grid, "Battle wins per round", 1, 5);
         _rounds = AddSpin(grid, "Round wins to win", 1, 10);
@@ -90,6 +89,18 @@ public partial class LobbyUI : Control
         _killCam = AddToggle(grid, "Kill cam", "After each battle, replay the final kill in slow motion. Anyone can skip it; it ends once everyone has.", ToggleKillCam, out _);
         _draft = AddToggle(grid, "Draft", "Before the first battle, everyone takes turns picking cards from one shared pool (two each, or one with five or more players), so the match starts with builds.", ToggleDraft, out _);
         right.AddChild(grid);
+        // The value column is as wide as its widest button: size it for the longest mode names up front, so stepping
+        // through the modes (or turning teams on) doesn't widen the panel and shove the screen sideways.
+        Callable.From(() =>
+        {
+            var font = _gameMode.GetThemeFont("font");
+            int size = _gameMode.GetThemeFontSize("font_size");
+            var box = _gameMode.GetThemeStylebox("normal");
+            float widest = 0;
+            foreach (var text in GameModes.All.Select(GameModes.Name).Append(Teams.ModeName(0)))
+                widest = Mathf.Max(widest, font.GetStringSize(text, HorizontalAlignment.Left, -1, size).X);
+            _gameMode.CustomMinimumSize = new Vector2(Mathf.Ceil(widest + box.GetMinimumSize().X) + 4, 0);
+        }).CallDeferred();
 
         // The card pool: the host picks which cards can be offered; everyone else can look.
         var poolRow = UiKit.HBox(8);
@@ -377,14 +388,13 @@ public partial class LobbyUI : Control
         nameLabel.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         v.AddChild(nameLabel);
         string tag = p.IsBot ? p.Skill == BotSkill.Normal ? "BOT" : $"{BotTuning.Name(p.Skill).ToUpperInvariant()} BOT" : p.PeerId == _net.LocalPeer ? "YOU" : p.Guest > 0 ? "COUCH" : "PLAYER";
-        // Under the name: the team tag (team modes), then the bot's skill or who this is; remove (the host's bots, your
-        // couch guests) gets a line of its own below, since the cards have room to grow down but not sideways.
-        var foot = UiKit.HBox(4);
-        v.AddChild(foot);
-        void AddRemove(Button x)
+        // Under the name, one per line: the team tag (team modes), then the bot's skill or who this is, then remove (the
+        // host's bots, your couch guests). The cards have room to grow down but not sideways: a row of them widened the
+        // card and shoved the settings column over when teams came on.
+        void Add(Control c)
         {
-            x.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-            v.AddChild(x);
+            c.SizeFlagsHorizontal = c is Button ? SizeFlags.Fill : SizeFlags.ShrinkBegin;
+            v.AddChild(c);
         }
         int s = p.Slot;
         if (team >= 0)
@@ -397,7 +407,7 @@ public partial class LobbyUI : Control
             t.TooltipText = canSwap ? "Move to the other team" : "";
             t.AddThemeColorOverride("font_color", Palette.Team(team).Lightened(0.3f));
             t.AddThemeColorOverride("font_disabled_color", Palette.Team(team).Lightened(0.3f));
-            foot.AddChild(t);
+            Add(t);
         }
         bool myGuest = !p.IsBot && p.Guest > 0 && p.PeerId == _net.LocalPeer;
         if (myGuest)
@@ -405,26 +415,26 @@ public partial class LobbyUI : Control
             int guest = p.Guest;
             var l = UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold);
             l.VerticalAlignment = VerticalAlignment.Center;
-            foot.AddChild(l);
+            Add(l);
             var x = UiKit.Button("Remove", () => _net.RemoveGuest(guest), 0, "Small");
             x.TooltipText = $"Remove this local player ({PadName(guest)})";
-            AddRemove(x);
+            Add(x);
         }
         else if (host && p.IsBot)
         {
             var skill = UiKit.Button(BotTuning.Name(p.Skill), () => _net.CycleBotSkill(s), 0, "Small");
             skill.TooltipText = "How well this bot plays: Easy, Normal or Hard (click to change)";
             skill.AddThemeColorOverride("font_color", SkillColor(p.Skill));
-            foot.AddChild(skill);
+            Add(skill);
             var x = UiKit.Button("Remove", () => _net.RemoveBot(s), 0, "Small");
             x.TooltipText = "Remove this bot";
-            AddRemove(x);
+            Add(x);
         }
         else
         {
             var l = UiKit.Label(tag, UiKit.Tiny, Palette.Player(p.ColorIdx).Lightened(0.3f), HorizontalAlignment.Center, Fonts.Bold);
             l.VerticalAlignment = VerticalAlignment.Center;
-            foot.AddChild(l);
+            Add(l);
         }
         return card;
     }
@@ -550,9 +560,11 @@ public partial class LobbyUI : Control
         _gameMode.Disabled = !host;
         _mode.Text = Teams.ModeName(st.TeamSize);
         _mode.Disabled = !host;
-        _friendly.Text = st.FriendlyFire ? "On" : "Off";
-        _friendly.Disabled = !host;
-        _friendly.Visible = _friendlyLabel.Visible = lobby.TeamMode;
+        // Only matters in team modes, but always there (greyed out in free-for-all): a row coming and going would change the
+        // panel's height and so the whole screen's scale.
+        _friendly.Text = !lobby.TeamMode ? "-" : st.FriendlyFire ? "On" : "Off";
+        _friendly.Disabled = !host || !lobby.TeamMode;
+        _friendlyLabel.Modulate = lobby.TeamMode ? Colors.White : new Color(1, 1, 1, 0.45f);
         _cards.Text = $"Cards {CardPool.EnabledCount(st.DisabledCards)}/{CardRegistry.All.Count}";
         _arenas.Text = ArenaPoolUI.Summary(st);
 

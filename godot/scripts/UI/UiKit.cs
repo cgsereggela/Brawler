@@ -64,6 +64,8 @@ public static class UiKit
         t.SetStylebox("normal", "Small", Box(new Color(1, 1, 1, 0.08f), new Color(1, 1, 1, 0.14f), 8, 9, 3));
         t.SetStylebox("hover", "Small", Box(new Color(1, 1, 1, 0.18f), Palette.Cool, 8, 9, 3));
         t.SetStylebox("pressed", "Small", Box(Palette.Cool with { A = 0.35f }, Palette.Cool, 8, 9, 3));
+        // Same size as the others: without it a disabled one takes Button's bigger padding and grows (shifting the lobby).
+        t.SetStylebox("disabled", "Small", Box(new Color(1, 1, 1, 0.03f), new Color(1, 1, 1, 0.06f), 8, 9, 3));
 
         t.SetStylebox("normal", "LineEdit", Box(new Color(0.03f, 0.02f, 0.08f, 0.65f), new Color(1, 1, 1, 0.14f), 8, 10, 6));
         t.SetStylebox("focus", "LineEdit", Box(new Color(0.03f, 0.02f, 0.08f, 0.8f), Palette.Cool, 8, 10, 6, 2));
