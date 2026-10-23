@@ -184,8 +184,12 @@ Some card pairs unlock a bonus on top of both cards: hold one card from each sid
   - *Mirror*: a symmetric layout.
   - *Islands*: floating islands over deadly pits.
   - *Towers*: solid towers rising from the floor, climbed by zigzag ledges.
+  - *Cave*: a ragged rock ceiling with stalactites, and stalagmites to hop onto.
+  - *Tunnel*: stacked corridors joined by shafts with ledges to climb.
+  - *Temple*: a stepped temple in the middle, mirrored either side.
+  - *Sky* (one arena in ten): no floor at all. A row of islands along the bottom stands in for it, with platforms above, and a fall from anywhere is a knock-out. In the map editor, **Empty** in the Sky style starts from no floor too.
 - About 40% of arenas get **floor terrain** (`godot/scripts/Logic/Terrain.cs`): hills up to 64 px tall, stepped hills, mesas and shelves against the side walls, with valleys between them. Ramps are at most 40° (under the 45° walkable limit) and you can run up them; bullets bounce off them at the real angle. Mirror arenas mirror their terrain.
-- The floor is a thick band (`MapGenerator.FloorDepth`, 32 px) along the bottom of the screen. Your cards are listed inside it, so they never cover the fight.
+- The floor is a thick band (`MapGenerator.FloorDepth`, 32 px) along the bottom of the screen. Your cards are listed inside it, so they never cover the fight. (Sky arenas leave that band open.)
 - Stacked platforms always leave at least 50 px of clear air (`MapGenerator.MinClearance`), enough for a Giant to walk under.
 - **Jump pads** (glowing plates with rising chevrons) launch you about 215 px up. Maps never rely on them to connect spawns.
 - **Arena features**, also seeded (`godot/scripts/Logic/ArenaFeatures.cs`). Like pads, maps never rely on them to connect spawns, and they always stay clear of spawns:

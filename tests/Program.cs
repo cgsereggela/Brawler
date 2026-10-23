@@ -217,6 +217,40 @@ void Check(bool cond, string name, string detail = "")
         Check(made.Values.All(v => v.bad == 0), "Cave, tunnel and temple maps have their parts, in reach", string.Join("; ", why));
     }
 
+    // Sky arenas: no floor at all, a row of islands along the bottom tier, and everyone can reach everyone.
+    {
+        int sky = 0, skyFallbacks = 0, skyBad = 0, kept = 0, others = 0;
+        string skyWhy = "";
+        for (int s = 0; s < 3000; s++)
+        {
+            int seed = s * 7919 + 3, players = 2 + s % 7;
+            var style = MapGenerator.StyleFor(seed);
+            if (style != MapStyle.Sky)
+            {
+                // Seeds that aren't Sky keep the style they always had (their first roll).
+                others++;
+                if (style == (MapStyle)new Rng((ulong)(uint)seed).Range(0, 6)) kept++;
+                continue;
+            }
+            sky++;
+            var m = MapGenerator.Generate(seed, players);
+            if (m.UsedFallback) { skyFallbacks++; continue; }
+            string fail = null;
+            if (m.Solids.Any(r => r.Bottom == MapLayout.Height && r.X > 0 && r.Right < MapLayout.Width)) fail = "has a floor";
+            else if (m.Surfaces.Any(x => x.Y == MapGenerator.FloorY)) fail = "a surface at floor height";
+            else if (m.Solids.Count(r => r.Y == MapGenerator.TierY(1)) < 2) fail = "fewer than two bottom islands";
+            else if (!MapGenerator.SpawnsMutuallyReachable(m)) fail = "spawns can't reach each other";
+            if (fail != null) { skyBad++; if (skyWhy == "") skyWhy = $"seed {seed}: {fail}"; }
+        }
+        Check(sky > 200 && skyFallbacks <= sky / 200, "Sky maps build", $"{sky} maps, {skyFallbacks} fallbacks");
+        Check(skyBad == 0, "Sky maps have no floor, islands along the bottom, and spawns in reach of each other", skyWhy);
+        Check(kept == others, "Seeds that aren't Sky keep their old style", $"{kept}/{others}");
+        var empty = MapDesign.Empty(ThemeId.SunsetPeaks, 1, floor: false);
+        var built = empty.Build(4);
+        Check(empty.Floor().Count == 0 && empty.Style == MapStyle.Sky && built.Surfaces.Count == 0
+              && MapCode.Decode(MapCode.Encode(empty))?.Floor().Count == 0, "Design: an empty Sky arena has no floor, also after a map code");
+    }
+
     // A pad launch still clears the planned climb under the softer gravity.
     float padApex = MapGenerator.PadVelocity * MapGenerator.PadVelocity / (2 * MapGenerator.BaseGravity);
     Check(padApex >= MapGenerator.PadRise + 5 && MapGenerator.BaseGravity == StatBlock.Base()[Stat.Gravity],
@@ -732,8 +766,8 @@ void Check(bool cond, string name, string detail = "")
     Check(bad == 0, "Terrain: slopes meet surfaces, spawns stay flat, nothing intrudes", $"{bad} bad. {string.Join("; ", why)}");
     Check(unreached == 0, "Terrain maps keep every spawn reachable", $"{unreached} unreachable");
     string shares = string.Join(", ", byStyle.OrderBy(p => p.Key).Select(p => $"{p.Key} {100f * p.Value.terrain / p.Value.maps:0}%"));
-    Check(withTerrain > maps / 4 && withTerrain < maps * 3 / 4 && byStyle.Values.All(v => v.terrain > v.maps / 6),
-        "A good share of maps (every style) have terrain", $"{100f * withTerrain / maps:0}% of {maps}: {shares}; {slopes} slopes, {plateaus} raised stretches");
+    Check(withTerrain > maps / 4 && withTerrain < maps * 3 / 4 && byStyle.Where(p => TerrainGen.ChanceFor(p.Key) > 0).All(p => p.Value.terrain > p.Value.maps / 6),
+        "A good share of maps (every style with a floor) have terrain", $"{100f * withTerrain / maps:0}% of {maps}: {shares}; {slopes} slopes, {plateaus} raised stretches");
 
     // Mirror arenas get mirrored terrain.
     int asym = 0;

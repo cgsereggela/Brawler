@@ -27,7 +27,7 @@ public readonly record struct JumpPad(int X1, int X2, int Y)
     public int CenterX => (X1 + X2) / 2;
 }
 
-public enum MapStyle { Tiers, Mirror, Islands, Towers, Cave, Tunnel, Temple }
+public enum MapStyle { Tiers, Mirror, Islands, Towers, Cave, Tunnel, Temple, Sky }
 
 public sealed class MapLayout
 {
@@ -75,7 +75,7 @@ public sealed class MapLayout
 /// <summary>
 /// Seeded random arenas. The host broadcasts only the seed; every peer rebuilds the same layout.
 /// Each seed picks a <see cref="MapStyle"/> (scattered tiers, a mirrored layout, floating islands over pits,
-/// towers, a cave under a ragged rock ceiling, stacked tunnels joined by shafts, or a stepped temple), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
+/// towers, a cave under a ragged rock ceiling, stacked tunnels joined by shafts, a stepped temple, or floorless sky islands), and many get rolling floor terrain (<see cref="TerrainGen"/>). Each candidate is validated (spawn
 /// spacing, mutual reachability between spawns) and rerolled on failure. Jump pads are added afterwards as extras: reachability never relies on them.
 /// </summary>
 public static class MapGenerator
@@ -121,14 +121,23 @@ public static class MapGenerator
     public const float BaseGravity = 650f;
 
     /// <summary>The layout style a seed asks for (a map that falls back is a plain Mirror arena instead).</summary>
-    public static MapStyle StyleFor(int seed) => StyleFor(new Rng((ulong)(uint)seed));
+    public static MapStyle StyleFor(int seed) => StyleFor(new Rng((ulong)(uint)seed), seed);
 
-    private static MapStyle StyleFor(Rng rng) => (MapStyle)rng.Range(0, Enum.GetValues<MapStyle>().Length - 1);
+    /// <summary>
+    /// The first seven styles come from the seed's first roll, as they always have, so a seed keeps its arena. A
+    /// separate roll on the seed turns some seeds into the newer styles (one in ten is a floorless Sky arena).
+    /// </summary>
+    private static MapStyle StyleFor(Rng rng, int seed)
+    {
+        var style = (MapStyle)rng.Range(0, (int)MapStyle.Temple);
+        int late = new Rng((ulong)(uint)seed ^ 0x5C1E5EEDUL).Range(0, 99);
+        return late < 10 ? MapStyle.Sky : style;
+    }
 
     public static MapLayout Generate(int seed, int playerCount)
     {
         var rng = new Rng((ulong)(uint)seed);
-        var style = StyleFor(rng);
+        var style = StyleFor(rng, seed);
         for (int attempt = 1; attempt <= 300; attempt++)
         {
             var layout = TryBuild(rng, seed, playerCount, style);
@@ -161,6 +170,7 @@ public static class MapGenerator
             MapStyle.Temple => Temple(rng, placed, out summit),
             MapStyle.Tunnel => PitFloor(rng, 0),
             MapStyle.Cave => PitFloor(rng, rng.Range(0, 1)),
+            MapStyle.Sky => new List<(int x1, int x2)>(),
             _ => PitFloor(rng, rng.Range(0, 2)),
         };
         foreach (var s in floor)
@@ -188,6 +198,10 @@ public static class MapGenerator
                 break;
             case MapStyle.Islands:
                 TierPlatforms(rng, placed, rng.Range(5, 8), 4);
+                break;
+            case MapStyle.Sky:
+                SkyIslands(rng, placed);
+                TierPlatforms(rng, placed, rng.Range(6, 8), 3, first: 2);
                 break;
             default:
                 TierPlatforms(rng, placed, rng.Range(6, 9), 4);
@@ -290,10 +304,27 @@ public static class MapGenerator
     /// </summary>
     public static int TierY(int tier) => FloorY - MinClearance - Tile - (tier - 1) * TierSpacing;
 
-    /// <summary>Floating platforms in loose height tiers, each tier one comfortable jump above the last.</summary>
-    private static void TierPlatforms(Rng rng, List<RectI> placed, int tierCount, int maxPerTier)
+    /// <summary>
+    /// A Sky arena's lowest tier, standing in for the floor it doesn't have: a row of wide islands across the arena,
+    /// each a running jump (56-112 px) from the next, over a bottomless drop.
+    /// </summary>
+    private static void SkyIslands(Rng rng, List<RectI> placed)
     {
-        for (int tier = 1; tier <= tierCount; tier++)
+        int y = TierY(1);
+        for (int x = Wall + rng.Range(2, 8) * Tile; ;)
+        {
+            int w = rng.Range(10, 18) * Tile;
+            if (x + w > Width - Wall - 2 * Tile) w = Width - Wall - 2 * Tile - x;
+            if (w < 6 * Tile) break;
+            placed.Add(new RectI(x, y, w, rng.Chance(0.5f) ? Tile : Tile * 2));
+            x += w + rng.Range(7, 14) * Tile;
+        }
+    }
+
+    /// <summary>Floating platforms in loose height tiers, each tier one comfortable jump above the last.</summary>
+    private static void TierPlatforms(Rng rng, List<RectI> placed, int tierCount, int maxPerTier, int first = 1)
+    {
+        for (int tier = first; tier <= tierCount; tier++)
         {
             int tierY = TierY(tier);
             int count = rng.Range(1, maxPerTier);

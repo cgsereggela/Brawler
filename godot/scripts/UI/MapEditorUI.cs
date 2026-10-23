@@ -121,8 +121,8 @@ public partial class MapEditorUI : Control
         var fresh = UiKit.HBox(4);
         var gen = UiKit.Button("Generate", Generate, 0, "Small");
         gen.TooltipText = "A new random arena in this style (press again for another)";
-        var empty = UiKit.Button("Empty", () => Replace(MapDesign.Empty(Design.Theme, Design.Seed)), 0, "Small");
-        empty.TooltipText = "Just the walls and a flat floor";
+        var empty = UiKit.Button("Empty", () => Replace(MapDesign.Empty(Design.Theme, Design.Seed, floor: _style != MapStyle.Sky)), 0, "Small");
+        empty.TooltipText = "Just the walls and a flat floor (in the Sky style, not even a floor)";
         foreach (var b in new[] { gen, empty })
         {
             b.SizeFlagsHorizontal = SizeFlags.ExpandFill;

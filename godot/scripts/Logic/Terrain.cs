@@ -80,6 +80,7 @@ public static class TerrainGen
         MapStyle.Islands => 0.5f,
         MapStyle.Cave => 0.85f,
         MapStyle.Tunnel => 0.4f,
+        MapStyle.Sky => 0f, // no floor to raise hills on
         _ => 0.45f,
     };
 

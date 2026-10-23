@@ -86,8 +86,13 @@ public sealed class MapDesign
             }
     }
 
-    /// <summary>Just the walls and a solid floor, in the given theme.</summary>
-    public static MapDesign Empty(ThemeId theme, int from) => new() { Seed = SeedFor(theme, from), Style = MapStyle.Tiers };
+    /// <summary>Just the walls and a solid floor (or, without <paramref name="floor"/>, a bottomless drop), in the given theme.</summary>
+    public static MapDesign Empty(ThemeId theme, int from, bool floor = true)
+    {
+        var d = new MapDesign { Seed = SeedFor(theme, from), Style = floor ? MapStyle.Tiers : MapStyle.Sky };
+        if (!floor) d.Pits.Add((Wall, Width - Wall));
+        return d;
+    }
 
     private static bool IsBorder(RectI r) =>
         r == new RectI(0, 0, Wall, Height) || r == new RectI(Width - Wall, 0, Wall, Height) || r == new RectI(0, 0, Width, Wall);
