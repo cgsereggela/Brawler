@@ -73,6 +73,8 @@ namespace Brawler;
 //   --hazardcheck         bots only, on an arena with pools, a sawblade and a platform only a moving platform reaches;
 //                         logs hazard damage per bot-minute and mover rides, and fails if bots walk into hazards or never
 //                         ride the mover
+//   --vantagecheck        one bot against a player standing still on a ledge it can't reach; fails if the bot rarely has
+//                         a clear shot (it used to wait under the ledge, out of sight) or hardly hits
 //   --couch=N             (with --autotest, --autohost or --autojoin) N local co-op guests (1-3) join from this machine on
 //                         autopilot; checks at the end that they played and picked cards like everyone else
 //   --streamer            streamer mode on for this run only (not saved); with --menushots, shows the hosted lobby hiding addresses
@@ -200,6 +202,7 @@ public partial class Main
             else if (a.StartsWith("--autojoin")) StartAutoJoin(a);
             else if (a.StartsWith("--simulate")) StartSimulate(a);
             else if (a == "--hazardcheck") StartHazardCheck();
+            else if (a == "--vantagecheck") StartVantageCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();

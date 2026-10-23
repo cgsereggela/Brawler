@@ -369,6 +369,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --lobbycheck                                  # the main menu, a full lobby in every game mode and team size, then every Options tab (menu and in-match), at every UI scale: fails if any control ends up off screen (LOBBYCHECK; add --shots=DIR to save each layout)
 "$GODOT" --path godot -- --clipcheck                                   # an offline match until a kill cam is kept, then saves it as a GIF from the Esc menu and checks the file (CLIPCHECK; with --shots=DIR keeps a copy)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --hazardcheck     # 4 bots fight 300 s on a pit arena with pools, a saw and a mover: limits hazard damage, needs pit crossings (HAZARDCHECK)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --vantagecheck    # a bot vs a player standing on a ledge it can't reach: it must find a spot with a shot, straight or lobbed (VANTAGECHECK)
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part

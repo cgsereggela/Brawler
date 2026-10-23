@@ -594,6 +594,7 @@ public partial class Main
         if (_chatCheck) PollGhosts();
         if (_lavaCheck) PollLava();
         if (_autoMode == "hazardcheck") PollHazards();
+        if (_autoMode == "vantagecheck") PollVantage();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;
@@ -1070,6 +1071,74 @@ public partial class Main
         else if (saws > 30) Finish(1, $"hazardcheck: bots walk into sawblades ({line})");
         else if (_hzCrossings < 5) Finish(1, $"hazardcheck: bots don't ride the mover across ({line})");
         else Finish(0, line);
+    }
+
+    // ---------- --vantagecheck: a bot against someone on a ledge it can't reach ----------
+
+    private const float VantageCheckSeconds = 60;
+    private float _vcFight, _vcUnder, _vcDamage, _vcLastHp = -1;
+    private bool _vcPlaced;
+
+    // The ledge: far too high to jump to from the floor, with nothing else in the arena to climb.
+    private static readonly RectI VcLedge = new(440, 304, 120, 16);
+
+    /// <summary>
+    /// One Normal bot on a bare floor against a player standing still on a ledge it has no way up to (kept alive, lava
+    /// off). The bot can't reach the ledge, so it has to find a spot on the floor with a shot, straight or lobbed over
+    /// the ledge's edge. Fails if it spends most of the time right under the ledge, out of sight (where bots used to
+    /// wait for the lava), or hardly lands a hit.
+    /// </summary>
+    private void StartVantageCheck()
+    {
+        _autoMode = "vantagecheck";
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var d = MapDesign.Empty(ThemeId.DungeonDepths, 1);
+        d.Blocks.Add(VcLedge);
+        d.Spawns.Add(new SpawnPoint(VcLedge.X + VcLedge.W / 2, VcLedge.Y));
+        d.Spawns.Add(new SpawnPoint(VcLedge.X + VcLedge.W / 2 + 20, MapGenerator.FloorY));
+        _net.LocalName = "Ledge";
+        _net.StartOffline();
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { KillCam = false, Maps = { MapCode.Pack(d) } });
+        _game.HostStartMatch();
+    }
+
+    private void PollVantage()
+    {
+        if (_game.LocalMatchPlayer is { } me && me.Input is not StillInput) me.Input = new StillInput();
+        if (_game.Phase != Phase.Fighting) { _vcPlaced = false; return; }
+        if (_game.LocalMatchPlayer?.Avatar is not { Alive: true } target) return;
+        var bot = _game.LiveAvatars().FirstOrDefault(a => a != target);
+        if (bot == null) return;
+        if (!_vcPlaced)
+        {
+            target.GlobalPosition = new Vector2(VcLedge.X + VcLedge.W / 2f, VcLedge.Y - target.HalfSize.Y);
+            target.Velocity = Vector2.Zero;
+            _vcPlaced = true;
+            _vcLastHp = target.Hp;
+        }
+        const float dt = 1f / 60;
+        _vcFight += dt;
+        var from = bot.GlobalPosition;
+        if (from.X > VcLedge.X - 8 && from.X < VcLedge.Right + 8) _vcUnder += dt;
+        if (target.Hp < _vcLastHp) _vcDamage += _vcLastHp - target.Hp;
+        target.Hp = target.S[Stat.MaxHp]; // never let the battle end
+        _vcLastHp = target.Hp;
+        if (_vcFight < VantageCheckSeconds) return;
+        float under = _vcUnder / _vcFight, dps = _vcDamage / _vcFight;
+        string line = $"bot spent {under:P0} of {_vcFight:0}s under the ledge and dealt {dps:0.0} damage/s";
+        Log.Info($"VANTAGECHECK {line}");
+        if (under > 0.5f) Finish(1, $"vantagecheck: the bot hides under the ledge ({line})");
+        else if (dps < 2) Finish(1, $"vantagecheck: the bot hardly hits ({line})");
+        else Finish(0, line);
+    }
+
+    /// <summary>Test input: stand still, aiming nowhere in particular.</summary>
+    private sealed class StillInput : IInputSource
+    {
+        public InputFrame Next(Avatar self, float dt) => new() { Aim = self.GlobalPosition + Vector2.Right * 40 };
     }
 
     private void Finish(int code, string why)

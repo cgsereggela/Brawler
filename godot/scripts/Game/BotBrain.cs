@@ -52,6 +52,7 @@ public sealed class BotBrain : IInputSource
         }
 
         var me = self.GlobalPosition;
+        bool canShoot = false;
         if (target != null)
         {
             // --- aim with lead and drop compensation ---
@@ -68,6 +69,13 @@ public sealed class BotBrain : IInputSource
             }
             f.Aim = predicted + _aimWobble;
             bool sight = HasLineOfSight(me, target.GlobalPosition);
+            // No straight line (someone up on a ledge, say), but an arc over the edge may get there: lob it.
+            if (!sight && tDist < _tune.Range && LobAim(me, target.GlobalPosition, speed, self.S[Stat.BulletGravity], out var lob))
+            {
+                f.Aim = me + lob * tDist + _aimWobble;
+                sight = true;
+            }
+            canShoot = sight;
             // Reaction time: a target has to stay in sight a moment before the first shot.
             if (!sight || target != _seen) _seenT = 0;
             else _seenT += dt;
@@ -99,7 +107,7 @@ public sealed class BotBrain : IInputSource
         else move = _strafeDir * 0.6f;
         if (!los) move = Mathf.Sign(to.X == 0 ? 1 : to.X);
 
-        bool wantJump = false;
+        bool wantJump = false, vantageHop = false;
         bool onFloor = self.IsOnFloor();
 
         // --- navigation: out of sight, or far above/below → follow the jump graph one surface at a time ---
@@ -148,9 +156,26 @@ public sealed class BotBrain : IInputSource
                 _hop = goalSurface >= 0 ? MapGenerator.NextHop(map, _surface, goalSurface) : -1;
                 // Can't get to the target's surface (it's on a ledge with no way up from here): head for the
                 // reachable surface with the best shot at it instead of milling about underneath.
-                if (_hop < 0 && goal == null) _hop = MapGenerator.NextHop(map, _surface, VantageSurface(map, self, target));
+                _atVantage = false;
+                if (_hop < 0 && goal == null)
+                {
+                    int vantage = VantageSurface(map, self, target);
+                    _hop = MapGenerator.NextHop(map, _surface, vantage);
+                    _atVantage = vantage == _surface;
+                }
             }
             navigating = _hop >= 0 && _hop != _surface;
+        }
+        // Already on the best surface for a shot at a target we can't reach: walk to the spot on it with a clear line,
+        // rather than straight at the target (two bots stood under a ledge out of each other's sight until the lava).
+        // With a shot (straight or lobbed), only strafe about near it: closing in would walk us back under the ledge.
+        if (!navigating && far && !flee && goal == null && _atVantage && !float.IsNaN(_vantageX))
+        {
+            float off = _vantageX - me.X;
+            if (!canShoot || Mathf.Abs(off) > 30) move = Mathf.Abs(off) < 4 ? 0 : Mathf.Sign(off);
+            else move = _strafeDir * 0.6f;
+            // The shot only opens up from the top of a jump: jump, and hold it all the way up.
+            if (_vantageJump && onFloor && Mathf.Abs(off) <= 30) { wantJump = true; vantageHop = true; }
         }
         if (navigating)
         {
@@ -286,7 +311,7 @@ public sealed class BotBrain : IInputSource
         if (wantJump && _jumpHold <= -0.15f)
         {
             _jumps++;
-            _jumpHold = jet && !onFloor ? _rng.RandfRange(0.5f, 0.8f) : _rng.RandfRange(0.15f, 0.35f);
+            _jumpHold = jet && !onFloor ? _rng.RandfRange(0.5f, 0.8f) : vantageHop ? 0.6f : _rng.RandfRange(0.15f, 0.35f);
         }
         f.MoveX = Mathf.Clamp(move, -1, 1);
         // Climbing: hold jump all the way up. Letting go early cuts the rise (the short-hop rule), which made bots
@@ -351,10 +376,13 @@ public sealed class BotBrain : IInputSource
     }
 
     private int _surface = -1, _hop = -1, _vantage = -1;
+    /// <summary>Where on <see cref="_vantage"/> to stand; <see cref="_atVantage"/> while that's our own surface.</summary>
+    private float _vantageX = float.NaN;
+    private bool _atVantage, _vantageJump;
     private float _navT, _stuckT, _wanderT, _wanderDir = 1, _airT;
     private Vector2 _stuckFrom;
 
-    public string DebugState => $"surface {_surface} hop {_hop} stuck {_stuckT:0.0}s wander {_wanderT:0.0}s trail {string.Join(" ", _trail)}";
+    public string DebugState => $"surface {_surface} hop {_hop} vantage {_vantage}{(_atVantage ? "*" : "")} x {_vantageX:0} stuck {_stuckT:0.0}s wander {_wanderT:0.0}s trail {string.Join(" ", _trail)}";
     private readonly Queue<string> _trail = new();
     private float _trailT;
 
@@ -395,25 +423,54 @@ public sealed class BotBrain : IInputSource
 
     /// <summary>
     /// The surface reachable from where we stand that's best for shooting at <paramref name="target"/>: in line
-    /// of sight if possible, then closest. Used when the target's own surface can't be reached.
+    /// of sight if possible, then closest. Used when the target's own surface can't be reached. Each surface is tried
+    /// at a row of spots, nearest the target first, so a floor under a ledge offers the spot just out from under it
+    /// rather than the one right below, with no shot. That spot's x is kept in <see cref="_vantageX"/>.
     /// </summary>
     private int VantageSurface(MapLayout map, Avatar self, Avatar target)
     {
         var reach = MapGenerator.ReachableFrom(map, _surface);
         var tp = target.GlobalPosition;
         int best = _surface;
-        float bestScore = float.MaxValue;
+        float bestScore = float.MaxValue, bestX = float.NaN, inset = self.HalfSize.X + 2;
+        bool bestJump = false;
+        // Most of a full jump's rise, in case we let go a little early.
+        float jv = self.S[Stat.JumpVelocity], apex = 0.8f * jv * jv / (2 * self.S[Stat.Gravity]);
         for (int i = 0; i < map.Surfaces.Count; i++)
         {
             if (!reach[i]) continue;
             var s = map.Surfaces[i];
-            var stand = new Vector2(Inside(tp.X, s, self.HalfSize.X + 2), s.Y - self.HalfSize.Y);
-            float score = stand.DistanceTo(tp) + (HasLineOfSight(stand, tp) ? 0 : 1000);
+            float near = Inside(tp.X, s, inset), score = float.MaxValue, x = near;
+            bool jump = false;
+            // The spot nearest the target, then one step to either side, two steps, ... out to the surface's ends. A
+            // spot counts if we have a shot from it, straight or lobbed, standing or from the top of a jump.
+            for (int k = 0; k <= VantageSteps * 2; k++)
+            {
+                float cx = near + (k + 1) / 2 * VantageStep * (k % 2 == 0 ? 1 : -1);
+                if (cx < s.X1 + inset - 0.5f || cx > s.X2 - inset + 0.5f) continue;
+                var stand = new Vector2(cx, s.Y - self.HalfSize.Y);
+                jump = !HasShot(self, stand, tp);
+                if (jump && !HasShot(self, stand - new Vector2(0, apex), tp)) continue;
+                score = stand.DistanceTo(tp) + (jump ? 40 : 0);
+                x = cx;
+                break;
+            }
+            if (score == float.MaxValue) { score = new Vector2(near, s.Y - self.HalfSize.Y).DistanceTo(tp) + 1000; jump = false; }
             if (i == _vantage) score -= 60; // stick with the last pick unless another is clearly better, or we flip-flop
-            if (score < bestScore) { bestScore = score; best = i; }
+            if (score < bestScore) { bestScore = score; best = i; bestX = x; bestJump = jump; }
         }
+        _vantageX = bestX;
+        _vantageJump = bestJump;
         return _vantage = best;
     }
+
+    /// <summary>True if a shot from <paramref name="from"/> can reach <paramref name="to"/>: a clear line, or a clear lob.</summary>
+    private bool HasShot(Avatar self, Vector2 from, Vector2 to)
+        => HasLineOfSight(from, to) || LobAim(from, to, self.S[Stat.BulletSpeed], self.S[Stat.BulletGravity], out _);
+
+    /// <summary>Spacing and count (each way) of the spots <see cref="VantageSurface"/> tries along a surface.</summary>
+    private const float VantageStep = 24;
+    private const int VantageSteps = 20;
 
     /// <summary>How far above the lava a surface must be for bots to feel safe on it.</summary>
     private const float LavaMargin = 80;
@@ -541,6 +598,47 @@ public sealed class BotBrain : IInputSource
             if (s.Y >= p.Y - 4 && p.X >= s.X1 - 4 && p.X <= s.X2 + 4 && (best < 0 || s.Y < map.Surfaces[best].Y)) best = i;
         }
         return best;
+    }
+
+    /// <summary>
+    /// The way to fire (a unit vector) for a bullet of speed <paramref name="v"/> and gravity <paramref name="g"/> to
+    /// arc from <paramref name="from"/> to <paramref name="to"/> without touching a solid on the way: the flatter of the
+    /// two arcs that reach it if that one is clear, else the high lob. False if neither is clear or it's out of range.
+    /// </summary>
+    private bool LobAim(Vector2 from, Vector2 to, float v, float g, out Vector2 dir)
+    {
+        dir = default;
+        float dx = to.X - from.X, ax = Mathf.Abs(dx), up = from.Y - to.Y;
+        if (g < 1 || ax < 4) return false;
+        float v2 = v * v, disc = v2 * v2 - g * (g * ax * ax + 2 * up * v2);
+        if (disc < 0) return false;
+        float root = Mathf.Sqrt(disc);
+        for (int k = 0; k < 2; k++)
+        {
+            float angle = Mathf.Atan((v2 + (k == 0 ? -root : root)) / (g * ax));
+            var vel = new Vector2(Mathf.Sign(dx) * v * Mathf.Cos(angle), -v * Mathf.Sin(angle));
+            if (!ArcClear(from, vel, g, ax / (v * Mathf.Cos(angle)))) continue;
+            dir = vel / v;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>True if a bullet fired at <paramref name="vel"/> under gravity <paramref name="g"/> meets no solid for most of <paramref name="time"/> seconds.</summary>
+    private bool ArcClear(Vector2 from, Vector2 vel, float g, float time)
+    {
+        const int Steps = 12;
+        var p = from;
+        for (int i = 1; i <= Steps; i++)
+        {
+            // Stop just short of the end: the target stands on something, which the arc's last bit may graze.
+            float t = time * 0.95f * i / Steps;
+            var q = from + vel * t + new Vector2(0, 0.5f * g * t * t);
+            var d = q - p;
+            if (Sweep.Cast(new NVec(p.X, p.Y), new NVec(d.X, d.Y), 1, _game.Map.Solids, _game.Map.Slopes) != null) return false;
+            p = q;
+        }
+        return true;
     }
 
     private bool HasLineOfSight(Vector2 from, Vector2 to)
