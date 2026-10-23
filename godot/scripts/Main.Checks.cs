@@ -804,7 +804,7 @@ public partial class Main
     private bool _lavaCheck;
     private readonly System.Collections.Generic.HashSet<int> _lavaBattles = new(), _lavaShots = new();
     private readonly System.Collections.Generic.Dictionary<int, float> _inLava = new();
-    private float _lavaWorst;
+    private float _lavaWorst, _lavaOver; // longest anyone stood in it; and longest past what their max HP should last
 
     private void PollLava()
     {
@@ -821,6 +821,8 @@ public partial class Main
             float t = inside ? (_inLava.TryGetValue(slot, out float was) ? was : 0) + 1f / 60f : 0;
             _inLava[slot] = t;
             _lavaWorst = Mathf.Max(_lavaWorst, t);
+            // Cards that add HP make the lava take longer: measure past the time it needs to burn through a full health bar.
+            _lavaOver = Mathf.Max(_lavaOver, t - a.S[Stat.MaxHp] / RisingLava.Dps);
         }
     }
 
@@ -828,10 +830,10 @@ public partial class Main
     private string LavaCheckProblem()
     {
         if (!_lavaCheck) return null;
-        Log.Info($"LAVACHECK setting {_game.Settings.LavaAfter}s, lava over the floor in {_lavaBattles.Count}/{_game.BattleNumber} battles, longest anyone lived in it {_lavaWorst:0.00}s");
+        Log.Info($"LAVACHECK setting {_game.Settings.LavaAfter}s, lava over the floor in {_lavaBattles.Count}/{_game.BattleNumber} battles, longest anyone lived in it {_lavaWorst:0.00}s ({_lavaOver:0.00}s past what their max HP should last)");
         if (_game.Settings.LavaAfter != 3) return $"lavacheck: this peer got lava after {_game.Settings.LavaAfter}s, not 3";
         if (_lavaBattles.Count == 0) return "lavacheck: the lava never rose over the floor";
-        if (_lavaWorst > 2.5f) return $"lavacheck: someone lived {_lavaWorst:0.0}s in the lava";
+        if (_lavaOver > 1f) return $"lavacheck: someone lived {_lavaOver:0.0}s longer in the lava than their max HP should last";
         return null;
     }
 
