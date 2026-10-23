@@ -1,6 +1,15 @@
 issues to fix:
+- bots stall out of reach of each other. In the hanger demo two bots stood still for about 45 s, each on a spot the other had no path or line of sight to, until the lava came. Find why their target-seeking gives up, and give them a fallback (head for a spot with line of sight, or wander) so a battle never waits on sudden death
+- bots ignore the 1.4 arena features. They never shoot a hanging platform's chains, even with an enemy standing in its landing spot, and they treat drifting platforms as solid ground, so they fall a lot in Drift arenas. Have them shoot a chain when its drop would land on an enemy, and allow for a drift dipping and sliding when they jump onto or off one
+- editorcheck's controller step "B on a controller didn't delete the block" fails about one run in three. Find the race (probably the cursor or the input frame landing before the editor is ready) and make the step reliable, so a red editorcheck always means a real bug
+- themebench on D3D12 sometimes gives odd readings: one 1.4.0 run timed Mainframe at 5.7 ms against about 22 ms in every other run, and an earlier run segfaulted at exit after finishing every theme. Check that each theme's timing starts only once it has loaded and drawn, and that the bench quits cleanly
 
 features to add:
+- conveyor belts: strips of ground that carry players, props and dropped flags along, in either direction. Seeded like the other arena features (never needed to reach a spawn), plus a map editor tool and map code support
+- portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
+- training range: a solo mode from the main menu where you pick any cards from a browsable list (rares and curses included) and try them on target dummies and a passive bot, with a reset button. It helps players learn 100+ cards without playing a whole match
+- match stats on the match-over screen: a Stats tab with each player's kills, damage dealt and taken, accuracy and blocks for the match. The game already records all of this for the card balance stats
+- daily challenge: one seeded arena, mode and starting card set per day, played against Hard bots, with your best result for the day kept in your profile. The same seed for everyone, so friends can compare
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame
