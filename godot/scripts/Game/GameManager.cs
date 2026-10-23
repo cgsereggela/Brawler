@@ -337,8 +337,12 @@ public partial class GameManager : Node2D
     private void HostCheckBattleEnd(float dt)
     {
         var alive = LiveAvatars().ToList();
+        // Down but coming back (a Survival wave's respawns): they still count for their side.
+        var back = Active().Where(p => p.Avatar is { Alive: false } && RespawnIn(p.Slot) >= 0).ToList();
         // An objective won it (the hill, a flag, the head). Otherwise, while the fallen still respawn, nothing else ends it.
-        bool over = _objectiveWinner >= 0 || (!RespawnsNow && (TeamMode ? Teams.Settled(alive.Select(a => a.Player.Info.Team), out _) : alive.Count <= 1));
+        bool over = _objectiveWinner >= 0 || (!RespawnsNow && (TeamMode
+            ? Teams.Settled(alive.Select(a => a.Player.Info.Team).Concat(back.Select(p => p.Info.Team)), out _)
+            : alive.Count + back.Count <= 1));
         if (!over)
         {
             _endCheckT = -1;
@@ -350,7 +354,8 @@ public partial class GameManager : Node2D
         if (_endCheckT > 0) return;
         _endCheckT = -1;
         // In team modes a survivor stands for their team (see SideOf).
-        _pendingWinner = _objectiveWinner >= 0 ? _objectiveWinner : alive.Count == 1 || (TeamMode && alive.Count > 0) ? alive[0].Player.Slot : -1;
+        _pendingWinner = _objectiveWinner >= 0 ? _objectiveWinner : alive.Count == 1 || (TeamMode && alive.Count > 0) ? alive[0].Player.Slot
+            : TeamMode && back.Count > 0 ? back[0].Slot : -1;
         HostBotChat(_pendingWinner, 0.45f, 0, 1);
         Phase = Phase.Intermission;
         HostAfter(0.8f, HostKillCamOrResolve);

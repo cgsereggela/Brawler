@@ -74,7 +74,7 @@ public partial class GameManager
             GameMode.Headhunter when HeadSlot >= 0 && Allies(HeadSlot, me) => $"PROTECT {NameOf(HeadSlot).ToUpperInvariant()}!",
             GameMode.Headhunter when HeadSlot >= 0 => $"HUNT {NameOf(HeadSlot).ToUpperInvariant()}!",
             GameMode.GunGame => $"GUN GAME: {GameModes.GunLadder.Length} KILLS TO WIN!",
-            GameMode.Survival => $"WAVE {BattleNumber}: {WaveBots} BOT{(WaveBots == 1 ? "" : "S")}!",
+            GameMode.Survival => $"WAVE {BattleNumber}: {WaveBots} BOT{(WaveBots == 1 ? "" : "S")}{(WaveRespawns > 0 ? $" + {WaveRespawns} RESPAWN{(WaveRespawns == 1 ? "" : "S")}" : "")}!",
             _ => "FIGHT!",
         };
     }
@@ -159,18 +159,24 @@ public partial class GameManager
         Array.Fill(_respawnAt, -1f);
     }
 
+    /// <summary>Survival: a bot of this wave comes back while the wave has respawns left, until sudden death.</summary>
+    private bool WaveRespawnNow(int slot) => SurvivalRespawns && WaveRespawnsLeft > 0 && Slots[slot]?.Info.IsBot == true;
+
+    private bool SurvivalRespawns => Mode == GameMode.Survival && RisingLava.Rising(Arena.FightTime, LavaAfter) <= 0;
+
     /// <summary>Died (every peer): start the respawn countdown, if this mode and moment allow one.</summary>
     private void NoteRespawn(int slot, KillCause cause)
     {
         // Not for someone who left: if they rejoin, they sit out the rest of the battle like everywhere else.
-        bool back = RespawnsNow && Phase == Phase.Fighting && cause != KillCause.Left;
+        bool back = (RespawnsNow || WaveRespawnNow(slot)) && Phase == Phase.Fighting && cause != KillCause.Left;
+        if (back && Mode == GameMode.Survival) WaveRespawnsLeft--;
         _respawnAt[slot] = back ? _clock + GameModes.RespawnTime : -1;
     }
 
     /// <summary>Every peer: sudden death (or the battle ending) cancels respawns still counting down.</summary>
     private void TickRespawnTimers()
     {
-        if (RespawnsNow && Phase == Phase.Fighting) return;
+        if ((RespawnsNow || SurvivalRespawns) && Phase == Phase.Fighting) return;
         for (int i = 0; i < _respawnAt.Length; i++) _respawnAt[i] = -1;
     }
 
@@ -438,6 +444,9 @@ public partial class GameManager
 
     /// <summary>Survival: bots fighting in this wave.</summary>
     public int WaveBots { get; private set; }
+    /// <summary>Survival: respawns this wave's bots have between them, and how many are left (every peer counts the deaths).</summary>
+    public int WaveRespawns { get; private set; }
+    public int WaveRespawnsLeft { get; private set; }
 
     /// <summary>
     /// Survival, on every peer at the start of a wave: which bots fight it (the rest sit it out, with no avatar), how well
@@ -447,7 +456,9 @@ public partial class GameManager
     {
         var bots = Active().Where(p => p.Info.IsBot).OrderBy(p => p.Slot).ToList();
         int wave = BattleNumber;
-        WaveBots = GameModes.WaveSize(wave, Active().Count(p => !p.Info.IsBot), bots.Count);
+        int humans = Active().Count(p => !p.Info.IsBot);
+        WaveBots = GameModes.WaveSize(wave, humans, bots.Count);
+        WaveRespawnsLeft = WaveRespawns = GameModes.WaveRespawns(wave, humans, bots.Count);
         var skill = GameModes.WaveSkill(wave);
         var rng = new Rng((ulong)(uint)seed + 991);
         for (int i = 0; i < bots.Count; i++)

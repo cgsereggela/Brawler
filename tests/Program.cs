@@ -1786,6 +1786,9 @@ static List<byte[]> DecodeGif(byte[] g)
           "Survival: waves start at one bot per human and grow every second wave");
     Check(Enumerable.Range(1, GameModes.SurvivalWaves).All(w => GameModes.WaveSize(w, 3, 2) <= 2) && GameModes.WaveSize(1, 3, 2) == 2,
           "Survival: a wave never needs more bots than the lobby has");
+    Check(Enumerable.Range(1, GameModes.SurvivalWaves).All(w => GameModes.WaveSize(w, 1, 2) + GameModes.WaveRespawns(w, 1, 2) == 1 + (w - 1) / 2)
+          && GameModes.WaveRespawns(10, 1, 2) == 3 && GameModes.WaveRespawns(10, 1, 7) == 0 && GameModes.WaveRespawns(3, 3, 2) == 2 && GameModes.WaveRespawns(10, 1, 0) == 0,
+          "Survival: once the lobby runs out of bots, the wave's extra bots come as respawns instead");
     Check(GameModes.WaveSkill(1) == BotSkill.Easy && GameModes.WaveSkill(5) == BotSkill.Normal && GameModes.WaveSkill(GameModes.SurvivalWaves) == BotSkill.Hard
           && GameModes.WaveCards(1) == 0 && GameModes.WaveCards(2) == 0 && GameModes.WaveCards(3) == 1 && GameModes.WaveCards(GameModes.SurvivalWaves) < GameModes.SurvivalWaves,
           "Survival: bots get tougher, and gain cards slower than the humans' one a wave");

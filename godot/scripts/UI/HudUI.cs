@@ -187,6 +187,8 @@ public partial class HudUI : Control
         }
 
         string label = $"{(_game.Mode == GameMode.Survival ? "WAVE" : "BATTLE")} {_game.BattleNumber}";
+        // Survival, a wave with more bots than the lobby has: the respawns they have left.
+        if (_game.Mode == GameMode.Survival && _game.WaveRespawns > 0) label += $"  +{_game.WaveRespawnsLeft} RESPAWN{(_game.WaveRespawnsLeft == 1 ? "" : "S")}";
         float lw = bold.GetStringSize(label, HorizontalAlignment.Left, -1, 12).X + 22;
         var counter = new Rect2(vs.X - 10 - lw, 10, lw, 22);
 

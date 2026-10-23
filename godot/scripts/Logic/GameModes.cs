@@ -80,6 +80,12 @@ public static class GameModes
     /// <summary>Survival: bots in <paramref name="wave"/> (from 1): as many as there are humans, then one more every second wave, up to the lobby's <paramref name="bots"/>.</summary>
     public static int WaveSize(int wave, int humans, int bots) => Math.Clamp(Math.Max(1, humans) + (wave - 1) / 2, Math.Min(1, bots), bots);
 
+    /// <summary>
+    /// Survival: respawns the bots in <paramref name="wave"/> share, for the bots the wave wants but the lobby hasn't got: so a
+    /// small lobby still gets a harder wave each time the size would have grown. None with no bots at all.
+    /// </summary>
+    public static int WaveRespawns(int wave, int humans, int bots) => bots <= 0 ? 0 : Math.Max(0, Math.Max(1, humans) + (wave - 1) / 2 - bots);
+
     /// <summary>Survival: how well the bots in <paramref name="wave"/> play. Easy for four waves, then Normal for three, then Hard.</summary>
     public static BotSkill WaveSkill(int wave) => wave <= 4 ? BotSkill.Easy : wave <= 7 ? BotSkill.Normal : BotSkill.Hard;
 
