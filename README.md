@@ -346,6 +346,8 @@ How to read it:
 - Bot data shows raw power. Human data shows power once players aim and pick on purpose. Compare the two.
 
 ## Tests
+Run everything at once with `tools/check.sh`: it builds once, runs the unit tests and every check below that has an AUTOTEST result (headless ones, the networked host + client pairs, and the windowed ones when there is a display), a few at a time, and prints a pass/fail table with each failure's AUTOTEST line. `--headless` skips the windowed checks, `-j N` sets how many run at once, and any other words pick checks by name (`tools/check.sh hazard net`). Logs go to `check-logs/`. The Checks workflow runs `tools/check.sh --headless` on every push.
+
 ```bash
 cd tests && dotnet run
 ```

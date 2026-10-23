@@ -1,0 +1,50 @@
+# Runs the unit tests and every headless check (tools/check.sh --headless) on each push, so a regression shows up
+# before a release rather than at it. The windowed checks (editor, lobby, clips, window) need a display and only run
+# locally; the release workflow still runs --editorcheck.
+name: Checks
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.7.2
+  DOTNET_VERSION: 9.0.x
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache Godot
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-mono-editor-${{ env.GODOT_VERSION }}
+
+      - name: Download Godot .NET
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip
+          unzip -q /tmp/godot.zip -d ~/godot
+
+      - name: Unit tests and headless checks
+        run: |
+          export GODOT=$(find ~/godot -name 'Godot_v*_mono_linux.x86_64' | head -1)
+          tools/check.sh --headless -j 4
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-logs
+          path: check-logs/

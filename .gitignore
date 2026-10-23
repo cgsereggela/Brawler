@@ -8,3 +8,6 @@ tools/*/out/
 build/
 dist/
 .claude/worktrees/
+
+# tools/check.sh output
+check-logs/
