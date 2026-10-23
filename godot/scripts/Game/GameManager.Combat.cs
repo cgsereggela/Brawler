@@ -195,7 +195,7 @@ public partial class GameManager
 
     public void HostPropBroken(int index, Vector2 at, bool fell) => Rpc(MethodName.PropBroken, index, at, fell);
 
-    public void HostHangerCut(int index, int mask, float fellAt, int by) => Rpc(MethodName.HangerCut, index, mask, fellAt, by);
+    public void HostHangerCut(int index, int mask, float at, int by) => Rpc(MethodName.HangerCut, index, mask, at, by);
 
     /// <summary>Host: <paramref name="by"/> counts as having just hit <paramref name="victim"/>, for the kill credit.</summary>
     public void CreditHit(Avatar victim, int by)
@@ -641,10 +641,10 @@ public partial class GameManager
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void HangerCut(int index, int mask, float fellAt, int by)
+    private void HangerCut(int index, int mask, float at, int by)
     {
         if (Map == null) return;
-        Arena.CutChains(index, mask, fellAt, by);
+        Arena.CutChains(index, mask, at, by);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

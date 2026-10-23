@@ -674,17 +674,22 @@ public sealed class BotBrain : IInputSource
         foreach (var h in _game.Arena.Hangers)
         {
             if (h.FellAt >= 0 || h.Gone) continue;
-            if (!InDrop(h, target.Bounds) || InDrop(h, self.Bounds)) continue;
+            // A swinging one has to be over them when the shot gets there, so allow for the flight (arcs run long).
+            var (cTop, cBottom) = h.ChainEnds(h.ChainCut(0) ? h.ChainXs.Length - 1 : 0);
+            float lead = (cTop + cBottom).DistanceTo(me * 2) * 0.5f / Mathf.Max(1, self.S[Stat.BulletSpeed]) * 1.3f;
+            if (!InDrop(h, target.Bounds, lead) || InDrop(h, self.Bounds, lead)) continue;
             var feet = me.Y + self.HalfSize.Y;
             if (Mathf.Abs(feet - h.Y) < 4 && me.X > h.Spec.X - self.HalfSize.X && me.X < h.Spec.X + h.Spec.W + self.HalfSize.X) continue;
-            var xs = h.ChainXs;
-            for (int c = 0; c < xs.Length; c++)
+            for (int c = 0; c < h.ChainXs.Length; c++)
             {
                 if (h.ChainCut(c)) continue;
-                // Any point on the chain will do: try from just over the platform (the easiest to reach) upward.
-                for (float y = h.Y - 6; y > h.Anchors[c] + 4; y -= 16)
+                // Any point on the chain will do (it may be swinging at a slant): try from just over the platform (the
+                // easiest to reach) upward.
+                var (top, bottom) = h.ChainEnds(c);
+                float len = top.DistanceTo(bottom);
+                for (float along = 6; along < len - 4; along += 16)
                 {
-                    var at = new Vector2(xs[c], y);
+                    var at = bottom + (top - bottom) * (along / len);
                     float d = at.DistanceTo(me);
                     if (d >= best || d > _tune.Range) break;
                     if (ChainDir(self, me, at, out var dir)) { best = d; aim = me + dir * d; jumpFirst = false; break; }
@@ -729,12 +734,28 @@ public sealed class BotBrain : IInputSource
         return g < 1 && g > -1 && HasLineOfSight(from, at);
     }
 
-    /// <summary>True if <paramref name="r"/> is under hanging platform <paramref name="h"/>, above where it lands.</summary>
-    private static bool InDrop(HangBody h, Rect2 r)
+    /// <summary>
+    /// True if <paramref name="r"/> is under hanging platform <paramref name="h"/>, above where it lands, should its last
+    /// chain go about <paramref name="lead"/> seconds from now.
+    /// </summary>
+    private static bool InDrop(HangBody h, Rect2 r, float lead = 0.25f)
     {
-        var s = h.Spec;
-        float landBottom = (h.LandY ?? MapLayout.Height) + s.H;
-        return r.End.X > s.X && r.Position.X < s.X + s.W && r.End.Y > h.Y + s.H && r.Position.Y < landBottom;
+        var b = h.Bounds;
+        float landBottom = (h.LandY ?? MapLayout.Height) + h.Spec.H;
+        if (r.End.Y <= b.End.Y || r.Position.Y >= landBottom) return false;
+        if (h.Swing == null || h.FellAt >= 0) return r.End.X > b.Position.X && r.Position.X < b.End.X;
+        // Swinging: cut, it flies on with the swing's speed and comes down to one side of where it is. The shot's timing is
+        // rough, so it has to come down on them whenever within a quarter second of then the chain goes.
+        float now = h.GetParent<Arena>().Clock - h.SwungAt, mid = r.GetCenter().X, half = (h.Spec.W + r.Size.X) * 0.5f - 4;
+        for (float ahead = Mathf.Max(0, lead - 0.25f); ahead <= lead + 0.25f; ahead += 0.1f)
+        {
+            h.Swing.At(now + ahead, out var c, out _, out var v, out _);
+            float drop = Mathf.Max(0, (h.LandY ?? MapLayout.Height) - (c.Y - h.Spec.H * 0.5f));
+            float t = (-v.Y + Mathf.Sqrt(v.Y * v.Y + 2 * Hanger.Gravity * drop)) / Hanger.Gravity;
+            float x = Mathf.Clamp(c.X + v.X * t, h.Spec.W * 0.5f, MapLayout.Width - h.Spec.W * 0.5f);
+            if (Mathf.Abs(x - mid) > half) return false;
+        }
+        return true;
     }
 
     /// <summary>

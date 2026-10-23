@@ -137,7 +137,8 @@ public partial class Main
                 for (int c = 0; c < h.ChainXs.Length; c++)
                 {
                     if (h.ChainCut(c)) continue;
-                    var at = new Vector2(h.ChainXs[c], h.Anchors[c] + (h.Y - h.Anchors[c]) * 0.5f);
+                    var (top, bottom) = h.ChainEnds(c);
+                    var at = (top + bottom) * 0.5f;
                     float dist = at.DistanceTo(self.GlobalPosition);
                     if (dist < best) { best = dist; f.Aim = at; }
                 }

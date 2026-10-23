@@ -410,6 +410,44 @@ void Check(bool cond, string name, string detail = "")
         float tLand = MathF.Sqrt(2 * (MapGenerator.FloorY - 8 - 240) / Hanger.Gravity);
         Check(Hanger.Drop(0) == 0 && Hanger.Drop(-1) == 0 && Math.Abs(Hanger.Drop(tLand) - (MapGenerator.FloorY - 8 - 240)) < 0.01f && tLand < 0.8f,
             "A hanger drops faster and faster and reaches the floor in under a second", $"{tLand:0.00}s");
+        // One chain of two cut: it swings on the other, the swing pulling that chain along, and settles hanging under it.
+        var swing = new HangerSwing(wide, 268, MapGenerator.Wall);
+        var wideCenter = new Vector2(320, 244);
+        swing.At(0, out var c0, out float r0, out _, out _);
+        float Energy(float t) { swing.At(t, out var c, out _, out var v, out float w); return 0.5f * (v.LengthSquared() + (120 * 120 + 64) / 12f * w * w) - Hanger.Gravity * c.Y; }
+        float e0 = Energy(0), worst = float.MinValue, chainOut = 0;
+        for (float t = 0; t < HangerSwing.Seconds; t += 0.05f)
+        {
+            worst = Math.Max(worst, Energy(t) - e0);
+            chainOut = Math.Max(chainOut, Math.Abs(swing.ChainEndAt(t).X - 268));
+        }
+        swing.At(0.4f, out var cEarly, out float rEarly, out _, out _);
+        swing.At(HangerSwing.Seconds, out var cEnd, out float rEnd, out var vEnd, out float wEnd);
+        Check(Vector2.Distance(c0, wideCenter) < 0.01f && r0 == 0, "Swing: it starts where it hung, level", $"{c0} {r0}");
+        Check(cEarly.X < 319 && cEarly.Y > 250 && rEarly > 0.2f, "Swing: the cut end drops and the platform swings in under its last chain",
+            $"{cEarly} {rEarly:0.00}");
+        Check(chainOut > 5, "Swing: the platform's swing is passed into the chain, which swings too", $"{chainOut:0.0}px");
+        Check(worst < 50, "Swing: it never gains energy", $"+{worst:0.0}");
+        Check(Math.Abs(cEnd.X - 268) < 3 && vEnd.Length() < 20 && Math.Abs(wEnd) < 0.05f, "Swing: it settles hanging still, straight under its chain",
+            $"{cEnd} v{vEnd.Length():0.0} w{wEnd:0.00} r{rEnd:0.00}");
+        var again = new HangerSwing(wide, 268, MapGenerator.Wall);
+        again.At(2.345f, out var sw1, out float ar1, out _, out _);
+        swing.At(2.345f, out var sw2, out float ar2, out _, out _);
+        Check(sw1 == sw2 && ar1 == ar2, "Swing: the same cut swings the same on every peer");
+
+        // The last chain goes: from rest it lands where it always did; mid-swing it carries the swing's speed and lands level.
+        var still = new HangerFall(hm, wide, wideCenter, Vector2.Zero, 0, 0);
+        Check(still.LandTop == HangerMath.LandY(hm, wide) && Math.Abs(still.LandX - 320) < 0.01f, "Fall: from rest it lands straight under where it hung",
+            $"{still.LandTop} {still.LandX}");
+        Check(new HangerFall(hm, overPit, new Vector2(642, 244), Vector2.Zero, 0, 0).LandTop == null, "Fall: over a pit it falls out of the arena");
+        swing.At(0.6f, out var cFrom, out float rFrom, out var vFrom, out float wFrom);
+        var flung = new HangerFall(hm, wide, cFrom, vFrom, rFrom, wFrom);
+        bool landed = flung.At(flung.LandT + 0.01f, out var cLand, out float rLand);
+        flung.At(0, out var cStart, out float rStart);
+        Check(landed && flung.LandTop == MapGenerator.FloorY - 8 && rLand == 0 && Math.Abs(cLand.X - (cFrom.X + vFrom.X * flung.LandT)) < 1
+            && Vector2.Distance(cStart, cFrom) < 0.01f && rStart == rFrom,
+            "Fall: cut mid-swing, it carries on from there with the swing's speed and lands level", $"{cFrom} -> {cLand} t{flung.LandT:0.00}");
+
         hd.Hangers.Add(new Hanger(150, 116, 40, 8));
         Check(hd.Problems().Any(p => p.Contains("hanging platform")), "Design: a hanger inside a block is a problem", string.Join(" | ", hd.Problems()));
     }
