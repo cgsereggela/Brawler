@@ -1,4 +1,6 @@
 issues to fix:
+- the paypal link in the main screen overlaps with the player name sometimes, move it to the bottom left and change the wording of the text so it is less wordy
+- the platforms that hang from change don't follow the laws of physics, when a single chain breaks the platform should swing and that momentum should be passed into the other chain
 - nothing runs the checks except a release. The only workflow, release.yml, fires on a v* tag and runs the unit tests plus --editorcheck; the other ~20 check modes (autotest, autohost/autojoin, padcheck, hazardcheck, vantagecheck, hangercheck, driftcheck, overlaycheck, rebindcheck...) only run when someone remembers to. Add a tools/check.sh that builds once, runs every headless check (and the windowed ones when a display is there), and prints a pass/fail table with each failure's AUTOTEST line; then a CI workflow on every push that runs the unit tests and the headless set
 - a check passes even when the game logs errors. Godot logs an exception thrown in _Process or a signal handler and carries on, and Finish only looks at the check's own condition, so a NullReferenceException in a card effect every battle still ends "AUTOTEST PASS". Count errors during a check (a Godot logger hook or AppDomain exception events, plus Log.Error) and fail any check that saw one, naming the first
 - bot checks can't be replayed. BotBrain's RandomNumberGenerator is never seeded, and autopilot card picks use GD.Randf, so --fixed-fps runs still differ every time (hangercheck took 9-22 s across six runs of the same build). Seed bots and picks from the match seed (or a --seed=N flag), print the seed in every check's result line, and let a failing seed be rerun exactly
@@ -9,11 +11,12 @@ issues to fix:
 - the unit test runner is one 2,000-line Program.cs with no way to run one area. Split it into files by section and take an optional name filter (dotnet run -- MapCode), so a failure can be rerun on its own
 
 features to add:
-- conveyor belts: strips of ground that carry players, props and dropped flags along, in either direction. Seeded like the other arena features (never needed to reach a spawn), plus a map editor tool and map code support
-- portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
+- I want to be able to record the game without the in-game music, only the player / bullet sound fx, and optionally without any audio at all, this way future short-form content can be made by adding the music separately to the video in a continuous loop
+- daily challenge: one seeded arena, mode and starting card set per day, played against Hard bots, with your best result for the day kept in your profile. The same seed for everyone, so friends can compare
 - training range: a solo mode from the main menu where you pick any cards from a browsable list (rares and curses included) and try them on target dummies and a passive bot, with a reset button. It helps players learn 100+ cards without playing a whole match
 - match stats on the match-over screen: a Stats tab with each player's kills, damage dealt and taken, accuracy and blocks for the match. The game already records all of this for the card balance stats
-- daily challenge: one seeded arena, mode and starting card set per day, played against Hard bots, with your best result for the day kept in your profile. The same seed for everyone, so friends can compare
+- conveyor belts: strips of ground that carry players, props and dropped flags along, in either direction. Seeded like the other arena features (never needed to reach a spawn), plus a map editor tool and map code support
+- portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
 
 performance improvements
 - cut AvatarArt's CPU cost. Drawing one character takes about 0.22 ms of C# (Debug build) even batched, so the HUD's chip heads cost about 0.9 ms a frame and the fighters as much again: profile Solve and the per-shape array allocations, and consider caching each look's static parts (mask, hair, hat) as triangles that only get a transform per frame
