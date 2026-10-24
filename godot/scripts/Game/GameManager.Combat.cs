@@ -211,12 +211,13 @@ public partial class GameManager
         victim.LastHitAt = _clock;
     }
 
-    /// <summary>Host: pick the end-of-match awards from everyone who played (even if they left) and share them.</summary>
+    /// <summary>Host: pick the end-of-match awards from everyone who played (even if they left) and share them, with everyone's numbers for the Stats tab.</summary>
     private void HostSendAwards()
     {
         var awards = Awards.Pick(Book, Slots.Where(p => p != null).Select(p => p.Slot), HostRng);
         var w = new Wire().U8(awards.Count);
         foreach (var a in awards) w.U8(a.Slot).U8(a.Id).F(a.Value);
+        w.Raw(b => MatchStats.Write(b, MatchStats.From(Book, Slots.Where(p => p != null).Select(p => p.Slot))));
         Rpc(MethodName.SyncAwards, w.Done());
     }
 
@@ -227,6 +228,7 @@ public partial class GameManager
         MatchAwards.Clear();
         int n = r.U8();
         for (int i = 0; i < n; i++) MatchAwards.Add(new Award(r.U8(), r.U8(), r.F()));
+        MatchStatLines = r.More ? r.Raw(MatchStats.Read) : new();
         Log.Info($"awards: {string.Join("; ", MatchAwards.Select(a => $"{a.Title} = {NameOf(a.Slot)} ({a.Blurb})"))}");
     }
 

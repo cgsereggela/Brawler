@@ -85,6 +85,8 @@ public partial class GameManager : Node2D
     public readonly AwardBook Book = new();
     /// <summary>This match's awards, once it's over (every peer).</summary>
     public readonly List<Award> MatchAwards = new();
+    /// <summary>Everyone's numbers for the match (the Stats tab), once it's over (every peer).</summary>
+    public List<MatchStatLine> MatchStatLines = new();
     private readonly float[] _airT = new float[LobbyState.MaxPlayers];
 
     public Dictionary<int, List<int>> PickOptions { get; private set; } = new();

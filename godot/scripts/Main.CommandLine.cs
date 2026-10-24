@@ -205,7 +205,13 @@ public partial class Main
                     SaveShot();
                     // Then with a hover card open, which must draw over the match-over screen.
                     _hud.DebugHover = 0;
-                    GetTree().CreateTimer(0.1, true, false, true).Timeout += () => { SaveShot(); _hud.DebugHover = -1; };
+                    GetTree().CreateTimer(0.1, true, false, true).Timeout += () =>
+                    {
+                        SaveShot();
+                        _hud.DebugHover = -1;
+                        // And the Stats tab.
+                        if (_over.ShowStats()) GetTree().CreateTimer(0.1, true, false, true).Timeout += SaveShot;
+                    };
                 };
             };
             // The kill cam's build-up, its slow-motion kill and the aftermath (real seconds: it slows game time).

@@ -40,6 +40,7 @@ var sections = new (string Name, string Title, Action Run)[]
     ("ArenaAndMovementScale", "Arena and movement scale (25% bigger arena, faster run, higher jump)", ArenaAndMovementScaleTests.Run),
     ("ReadmeCaptureHelpers", "README capture helpers", ReadmeCaptureHelpersTests.Run),
     ("EndOfMatchAwards", "End-of-match awards", EndOfMatchAwardsTests.Run),
+    ("MatchStats", "Match stats (the match-over Stats tab)", MatchStatsTests.Run),
     ("KillCamTiming", "Kill cam timing", KillCamTimingTests.Run),
     ("TeamModes", "Team modes", TeamModesTests.Run),
     ("GameModes", "Game modes", GameModesTests.Run),

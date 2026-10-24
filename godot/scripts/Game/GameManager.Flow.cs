@@ -637,6 +637,7 @@ public partial class GameManager
         MatchWinner = -1;
         RematchVotes.Clear();
         MatchAwards.Clear();
+        MatchStatLines = new();
         Book.Reset();
         Net.InMatch = true;
         Visible = true;

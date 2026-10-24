@@ -70,7 +70,8 @@ public partial class MatchOverUI : Control
         var champCol = winner >= 0 ? _game.WinnerColor(winner) : Palette.Text;
         _body.AddChild(new TitleText(_game.MatchTitle(winner), 34, 2.5f,
             champCol, champCol.Lightened(0.3f), Palette.Accent));
-        // The champion on a pedestal, with the awards either side of them.
+        // Results: the champion on a pedestal with the awards either side, then the standings. Stats: everyone's numbers.
+        var results = UiKit.VBox(10);
         var awards = _game.MatchAwards;
         var stage = UiKit.HBox(12);
         var left = UiKit.VBox(10);
@@ -100,15 +101,15 @@ public partial class MatchOverUI : Control
             stage.AddChild(podium);
         }
         stage.AddChild(right);
-        if (awards.Count > 0 || stage.GetChildCount() > 2) _body.AddChild(stage);
+        if (awards.Count > 0 || stage.GetChildCount() > 2) results.AddChild(stage);
 
-        Container standings = _body;
+        Container standings = results;
         if (crowded)
         {
             var grid = new GridContainer { Columns = 2 };
             grid.AddThemeConstantOverride("h_separation", 18);
             grid.AddThemeConstantOverride("v_separation", 6);
-            _body.AddChild(grid);
+            results.AddChild(grid);
             standings = grid;
         }
         // Two columns read top to bottom: places 1-4 on the left, the rest on the right.
@@ -139,8 +140,20 @@ public partial class MatchOverUI : Control
             var unlocked = UiKit.Label($"UNLOCKED: {string.Join(", ", names).ToUpperInvariant()}! Wear {(CareerBook.JustUnlocked.Count > 1 ? "them" : "it")} in Customize.", UiKit.Body, Palette.Accent,
                 HorizontalAlignment.Center, Fonts.Bold);
             unlocked.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            _body.AddChild(unlocked);
+            results.AddChild(unlocked);
         }
+
+        if (_game.MatchStatLines.Count > 0)
+        {
+            var tabs = _tabs = new TabContainer();
+            _body.AddChild(tabs);
+            results.Name = "Results";
+            tabs.AddChild(results);
+            var stats = StatsTable(players);
+            stats.Name = "Stats";
+            tabs.AddChild(stats);
+        }
+        else _body.AddChild(results);
 
         _votes = UiKit.Label("", UiKit.Small, Palette.TextDim, HorizontalAlignment.Center);
         _votes.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -161,6 +174,56 @@ public partial class MatchOverUI : Control
         ShowVotes();
     }
 
+    private static readonly (string Head, MatchStats.Column Col)[] StatColumns =
+    {
+        ("KILLS", MatchStats.Column.Kills), ("DAMAGE", MatchStats.Column.DamageDealt), ("TAKEN", MatchStats.Column.DamageTaken),
+        ("ACCURACY", MatchStats.Column.Accuracy), ("BLOCKED", MatchStats.Column.Blocked),
+    };
+
+    /// <summary>
+    /// The Stats tab: kills, damage dealt and taken, accuracy and hits blocked for the whole match, in the standings'
+    /// order. Whoever leads a column has it lit.
+    /// </summary>
+    private Control StatsTable(System.Collections.Generic.List<MatchPlayer> players)
+    {
+        var lines = _game.MatchStatLines;
+        var grid = new GridContainer { Columns = StatColumns.Length + 1 };
+        grid.AddThemeConstantOverride("h_separation", 16);
+        grid.AddThemeConstantOverride("v_separation", 8);
+        grid.AddChild(UiKit.Label("", UiKit.Tiny));
+        foreach (var (head, _) in StatColumns) grid.AddChild(UiKit.Label(head, UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Right, Fonts.Bold));
+        var leaders = StatColumns.Select(c => MatchStats.Leader(lines, c.Col)).ToArray();
+        foreach (var p in players)
+        {
+            int at = lines.FindIndex(l => l.Slot == p.Slot);
+            if (at < 0) continue;
+            var line = lines[at];
+            var name = UiKit.Label(p.Info.Name, UiKit.Body, p.Color.Lightened(0.2f), font: Fonts.Bold);
+            name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            name.ClipText = true;
+            grid.AddChild(name);
+            for (int c = 0; c < StatColumns.Length; c++)
+            {
+                string text = StatColumns[c].Col switch
+                {
+                    MatchStats.Column.Kills => $"{line.Kills}",
+                    MatchStats.Column.DamageDealt => $"{line.DamageDealt:0}",
+                    MatchStats.Column.DamageTaken => $"{line.DamageTaken:0}",
+                    MatchStats.Column.Accuracy => line.AccuracyText,
+                    _ => $"{line.Blocked}",
+                };
+                bool lead = leaders[c] == p.Slot;
+                grid.AddChild(UiKit.Label(text, UiKit.Body, lead ? Palette.Accent : Colors.White, HorizontalAlignment.Right, lead ? Fonts.Heavy : Fonts.Bold));
+            }
+        }
+        var box = UiKit.VBox(10);
+        box.AddChild(grid);
+        var note = UiKit.Label("Accuracy is hits per shot. Blocked is hits taken on the shield.", UiKit.Tiny, Palette.TextDim, HorizontalAlignment.Center);
+        note.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        box.AddChild(note);
+        return box;
+    }
+
     /// <summary>One award: its title, who got it, and the number behind it.</summary>
     private Control AwardCard(Award a, HorizontalAlignment align)
     {
@@ -173,6 +236,16 @@ public partial class MatchOverUI : Control
         blurb.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         box.AddChild(blurb);
         return box;
+    }
+
+    private TabContainer _tabs;
+
+    /// <summary>Test hook (--shots): opens the Stats tab, if there is one. False if not.</summary>
+    public bool ShowStats()
+    {
+        if (_tabs == null || !IsInstanceValid(_tabs) || _tabs.GetTabCount() < 2) return false;
+        _tabs.CurrentTab = 1;
+        return true;
     }
 
     private Label _votes;

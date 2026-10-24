@@ -220,6 +220,8 @@ public sealed class Wire
     public Wire V2(Vector2 v) { _w.Write(v.X); _w.Write(v.Y); return this; }
     public Wire Bool(bool v) { _w.Write(v); return this; }
     public Wire Snap(AvatarSnap s) { s.Write(_w); return this; }
+    /// <summary>Writes with a Logic type's own BinaryWriter format.</summary>
+    public Wire Raw(System.Action<BinaryWriter> write) { write(_w); return this; }
     public Wire Str(string v) { _w.Write(v ?? ""); return this; }
     public Wire Bytes(byte[] v) { _w.Write((byte)v.Length); _w.Write(v, 0, System.Math.Min(v.Length, 255)); return this; }
     /// <summary>Like <see cref="Bytes"/> with a 16-bit length, for payloads that can pass 255 bytes.</summary>
@@ -241,6 +243,7 @@ public sealed class WireReader
     public Vector2 V2() => new(_r.ReadSingle(), _r.ReadSingle());
     public bool Bool() => _r.ReadBoolean();
     public AvatarSnap Snap() => AvatarSnap.Read(_r);
+    public T Raw<T>(System.Func<BinaryReader, T> read) => read(_r);
     public string Str() => _r.ReadString();
     public byte[] Bytes() => _r.ReadBytes(_r.ReadByte());
     public byte[] Blob() => _r.ReadBytes(_r.ReadUInt16());
