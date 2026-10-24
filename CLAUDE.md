@@ -10,11 +10,11 @@ Brawler: a ROUNDS-style 2–8 player platform shooter in **Godot 4.7.2 .NET (C#,
 
 ```bash
 dotnet build godot/Brawler.csproj                 # build the game (needed before running Godot from a terminal)
-cd tests && dotnet run                            # unit tests for godot/scripts/Logic (prints PASS/FAIL per check, exit 1 on any failure)
+cd tests && dotnet run [-- AREA]                  # unit tests for godot/scripts/Logic (prints PASS/FAIL per check, exit 1 on any failure)
 cd tools/CardStats && dotnet run                  # card balance report from the stats log
 ```
 
-There is no way to run a single unit test: `tests/Program.cs` is one top-level-statements file of `Check(cond, name)` calls grouped in `// ---------- Section ----------` blocks. Add new checks to the relevant section.
+Unit tests are grouped by area, one file each: `tests/Sections/<Name>Tests.cs`, a static class whose `Run()` makes `Check(cond, name)` calls (from `tests/Harness.cs`); `tests/Program.cs` lists the areas. `dotnet run -- MapCode` runs only the areas whose name contains the word (or, when none does, the checks whose name does). Add new checks to the relevant area, or add a file and list it.
 
 End-to-end checks run the real game with a command-line mode after `--`. On this machine Godot is at `C:/Users/cgser/Downloads/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64/`; use the `_console.exe` so log output reaches the terminal (the plain `.exe` is the editor/GUI build):
 
