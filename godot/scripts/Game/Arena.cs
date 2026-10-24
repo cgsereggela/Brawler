@@ -350,6 +350,8 @@ public partial class Arena : Node2D
             if (p.Pushed) PushedTime += dt;
             p.Pushed = false;
             p.PushV = 0;
+            if (fighting && p.IsOnFloor() && Conveyor.Under(_map.Conveyors, p.GlobalPosition.X, p.GlobalPosition.Y + p.Size.Y * 0.5f) is var belt and not 0)
+                p.MoveAndCollide(new Vector2(belt * dt, 0));
             p.Velocity = v;
             p.MoveAndSlide();
             if (p.GlobalPosition.Y > MapLayout.KillY) HostBreak(p, fell: true);

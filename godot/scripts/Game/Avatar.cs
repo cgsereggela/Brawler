@@ -364,6 +364,10 @@ public partial class Avatar : CharacterBody2D
             }
         }
 
+        // A conveyor belt underfoot carries us along (a move of its own, so a wall stops it and our speed stays ours).
+        if (onFloor && Game.Map != null && Conveyor.Under(Game.Map.Conveyors, GlobalPosition.X, GlobalPosition.Y + HalfSize.Y) is var belt and not 0)
+            MoveAndCollide(new Vector2(belt * dt, 0));
+
         Velocity = v;
         MoveAndSlide();
 

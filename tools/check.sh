@@ -74,6 +74,7 @@ CHECKS=(
   "hangercheck-1|0|600|--hangercheck --seed=1"
   "hangercheck-2|0|600|--hangercheck --seed=2"
   "hangercheck-3|0|600|--hangercheck --seed=3"
+  "beltcheck|0|300|--beltcheck --seed=1"
   "driftcheck-1|0|900|--driftcheck --seed=1"
   "driftcheck-2|0|900|--driftcheck --seed=2"
   "driftcheck-3|0|900|--driftcheck --seed=3"

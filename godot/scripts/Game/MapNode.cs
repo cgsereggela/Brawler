@@ -112,6 +112,8 @@ public partial class MapNode : Node2D
                 bool onPad = false;
                 foreach (var p in Layout.Pads)
                     if (p.Y == s.Y && x > p.X1 - 6 && x < p.X2 + 6) onPad = true;
+                foreach (var c in Layout.Conveyors)
+                    if (c.Y == s.Y && x > c.X - 6 && x < c.X + c.W + 6) onPad = true; // nor on a belt, which would run under it
                 if (!onPad) _decos.Add((new Vector2(x, s.Y), rng.Range(0.7f, 1.3f), rng.Range(0, 2), rng.Range(0f, Mathf.Tau), false));
             }
         }
@@ -215,7 +217,30 @@ public partial class MapNode : Node2D
             l.DrawColoredPolygon(Shapes.RoundRect(new Rect2(p.X1 + 3, p.Y - 5.5f, p.X2 - p.X1 - 6, 2.2f), 1.1f),
                 Shapes.Hdr(Theme.Edge, 1.2f + _padFlash[i] * 2));
         }
+
+        // Conveyor belts: a dark track set into the ground with a roller at each end, and chevrons running the way it
+        // carries you (all of them in one batch).
+        if (Layout.Conveyors.Count == 0) return;
+        _beltLines.Clear();
+        foreach (var c in Layout.Conveyors)
+        {
+            var track = new Rect2(c.X, c.Y - 2, c.W, Conveyor.Thick + 2);
+            Shapes.Fill(l, Shapes.RoundRect(track, 3), new Color("#2b2f45"), new Color("#11131c"), 0.8f);
+            foreach (float rx in new[] { c.X + 3.5f, c.X + c.W - 3.5f })
+                l.DrawCircle(new Vector2(rx, c.Y + 1), 2.2f, new Color("#4a5070"));
+            const float Gap = 8;
+            float shift = Mathf.PosMod(_t * c.Vel, Gap);
+            for (float x = c.X + 4 + shift; x < c.X + c.W - 6; x += Gap)
+            {
+                float tip = x + c.Dir * 2.5f;
+                _beltLines.Add(new Vector2(x, c.Y - 1.2f)); _beltLines.Add(new Vector2(tip, c.Y + 1));
+                _beltLines.Add(new Vector2(tip, c.Y + 1)); _beltLines.Add(new Vector2(x, c.Y + 3.2f));
+            }
+        }
+        l.DrawMultiline(_beltLines.ToArray(), Shapes.Hdr(Theme.Edge, 0.9f), 1.2f);
     }
+
+    private readonly System.Collections.Generic.List<Vector2> _beltLines = new();
 
     private void DrawGlow(DrawLayer l)
     {

@@ -13,10 +13,10 @@ static class ArenaFeaturesTests
     {
         var a1 = MapGenerator.Generate(4242, 4);
         var a2 = MapGenerator.Generate(4242, 4);
-        Check(a1.Props.SequenceEqual(a2.Props) && a1.Hazards.SequenceEqual(a2.Hazards) && a1.Saws.SequenceEqual(a2.Saws) && a1.Movers.SequenceEqual(a2.Movers),
+        Check(a1.Props.SequenceEqual(a2.Props) && a1.Hazards.SequenceEqual(a2.Hazards) && a1.Saws.SequenceEqual(a2.Saws) && a1.Movers.SequenceEqual(a2.Movers) && a1.Conveyors.SequenceEqual(a2.Conveyors),
             "Same seed produces identical arena features");
 
-        int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, drifts = 0, hangers = 0, bad = 0;
+        int maps = 2000, crates = 0, barrels = 0, glass = 0, pools = 0, saws = 0, movers = 0, drifts = 0, hangers = 0, belts = 0, bad = 0;
         var why = new List<string>();
         void Bad(int seed, string what) { bad++; if (why.Count < 5) why.Add($"seed {seed}: {what}"); }
         for (int s = 0; s < maps; s++)
@@ -61,6 +61,17 @@ static class ArenaFeaturesTests
                 if (m.Style != MapStyle.Drift && m.Spawns.Any(sp => dr.Range.Grow(0, 40).Contains(sp.X, sp.Y))) Bad(seed, "drift over a spawn");
                 if (!m.Surfaces.Contains(dr.Top)) Bad(seed, "drift top not a surface");
             }
+            foreach (var c in m.Conveyors)
+            {
+                belts++;
+                if (!Conveyor.OnBlock(m, c) || c.X % 8 != 0 || c.W % 8 != 0 || c.Dir is not (1 or -1)) Bad(seed, $"belt {c} not along a block top on the grid");
+                var zone = new RectI(c.X, c.Y - 30, c.W, 30);
+                if (m.Spawns.Any(sp => sp.Y == c.Y && sp.X > c.X - 26 && sp.X < c.X + c.W + 26)) Bad(seed, "belt at a spawn");
+                if (m.Pads.Any(p => p.Y == c.Y && p.X2 > c.X - 10 && p.X1 < c.X + c.W + 10) || m.Hazards.Any(z => z.Y == c.Y && z.X2 > c.X && z.X1 < c.X + c.W))
+                    Bad(seed, "belt under a pad or pool");
+                if (m.Props.Any(p => p.Rect.Intersects(zone)) || m.Slopes.Any(sl => sl.Intersects(zone.Grow(8, 2))) || m.Conveyors.Any(o => o != c && o.Rect.Intersects(c.Rect.Grow(8, 0))))
+                    Bad(seed, "belt crowded by a prop, ramp or belt");
+            }
             foreach (var h in m.Hangers)
             {
                 hangers++;
@@ -86,8 +97,15 @@ static class ArenaFeaturesTests
             }
         }
         Check(bad == 0, "Arena features stay clear of solids, spawns, pads and each other", $"{bad} bad. {string.Join("; ", why)}");
-        Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5 && drifts > maps / 5 && hangers > maps / 4,
-            "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers, {drifts} drifts, {hangers} hangers");
+        Check(crates > maps && barrels > maps / 4 && glass > maps / 2 && pools > maps / 3 && saws > maps / 4 && movers > maps / 5 && drifts > maps / 5 && hangers > maps / 4 && belts > maps / 4,
+            "Every arena feature shows up often", $"per {maps} maps: {crates} crates, {barrels} barrels, {glass} glass, {pools} pools, {saws} saws, {movers} movers, {drifts} drifts, {hangers} hangers, {belts} belts");
+
+        var belt = new Conveyor(200, 400, 80, -1);
+        var beltList = new List<Conveyor> { belt };
+        Check(Conveyor.Under(beltList, 240, 400.5f) == -Conveyor.Speed && Conveyor.Under(beltList, 290, 400) == 0 && Conveyor.Under(beltList, 240, 380) == 0
+              && Conveyor.Under(null, 240, 400) == 0,
+              "A belt carries whoever stands on it, its way, and nobody beside or above it");
+        Check(Conveyor.Speed < StatBlock.Base()[Stat.MoveSpeed] * 0.6f, "Walking against a belt is slow but always gets somewhere");
 
         var track = new SawTrack(100, 50, 200, 50, 9, 4, 0);
         Check(Vector2.Distance(track.At(0), new Vector2(100, 50)) < 0.01f && Vector2.Distance(track.At(2), new Vector2(200, 50)) < 0.01f

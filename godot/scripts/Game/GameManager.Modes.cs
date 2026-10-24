@@ -223,6 +223,21 @@ public partial class GameManager
 
         if (Flags != null)
         {
+            // A dropped flag on a conveyor belt rides it, stops at a wall, and drops to whatever is below when it runs off
+            // the end (going home if that's a pit).
+            for (int t = 0; t < 2; t++)
+            {
+                var f = Flags.Team[t];
+                if (!f.Dropped || Conveyor.Under(Map.Conveyors, f.Pos.X, f.Pos.Y + FlagLift) is not (var belt and not 0)) continue;
+                float x = f.Pos.X + belt * dt;
+                if (x < MapGenerator.Wall + 6 || x > MapLayout.Width - MapGenerator.Wall - 6 || Map.Solids.Exists(r => r.Contains((int)x, (int)f.Pos.Y))) continue;
+                if (DropSpot(new Vector2(x, f.Pos.Y)) is { } spot) f.Pos = spot;
+                else
+                {
+                    Flags.SendHome(t);
+                    Rpc(MethodName.ObjectiveEvent, (int)ObjEvent.FlagReturned, t, -1);
+                }
+            }
             // A dropped flag the lava reaches goes home.
             for (int t = 0; t < 2; t++)
                 if (Flags.Team[t].Dropped && Flags.Team[t].Pos.Y > Arena.LavaY)

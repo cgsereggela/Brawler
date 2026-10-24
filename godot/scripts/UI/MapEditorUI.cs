@@ -9,12 +9,12 @@ using Godot;
 
 namespace Brawler.UI;
 
-public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover, Drift, Hang }
+public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover, Drift, Hang, Belt }
 
 /// <summary>
 /// The level editor: the arena drawn by the game itself (themed ground, backdrop, extras) at a smaller scale, with
 /// tools down the side to draw blocks, cut gaps in the floor, raise hills and place spawns, jump pads, crates,
-/// barrels, glass, pools, sawblades, and moving, drifting and hanging platforms. Everything snaps to the 8 px tile grid; spawns, pads, crates
+/// barrels, glass, pools, sawblades, conveyor belts, and moving, drifting and hanging platforms. Everything snaps to the 8 px tile grid; spawns, pads, crates
 /// and pools drop onto whatever is below them. Arenas start from a generated one in any style and theme (or an empty
 /// one), save to the player's map list and share as a map code (<see cref="MapCode"/>). Unsaved work is kept between
 /// visits (<see cref="MapLibrary.Draft"/>).
@@ -53,7 +53,7 @@ public partial class MapEditorUI : Control
     private string _armedDelete;
 
     // Pointer state, in world pixels.
-    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover, Drift, Hang }
+    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover, Drift, Hang, Belt }
     private (Kind K, int I) _sel = (Kind.None, -1), _hover = (Kind.None, -1);
     private Vector2 _mouse, _down;
     private bool _pressed, _dragged, _shift;
@@ -79,6 +79,7 @@ public partial class MapEditorUI : Control
         (EditTool.Saw, "Saw", "W", "Drag from one end of a sawblade's track to the other. Click for a track along the ground."),
         (EditTool.Mover, "Mover", "O", "Drag sideways for a moving platform's lane (it starts at the left end)."),
         (EditTool.Drift, "Drift", "F", "Drag to draw a drifting platform. Landing on it, walking into it, shooting or blasting it shoves it, and it eases back. Click for a short one."),
+        (EditTool.Belt, "Belt", "T", "Drag along the top of a block for a conveyor belt: it runs the way you drag and carries players, crates and flags. Click a belt to turn it around."),
         (EditTool.Hang, "Hanger", "K", "Drag to draw a platform hanging on chains from whatever is above it. Shoot its chains and it drops, crushing whoever is under it. The dashed box shows where it lands."),
     };
 
@@ -667,6 +668,8 @@ public partial class MapEditorUI : Control
             var s = d.Saws[i];
             if (Geometry2D.GetClosestPointToSegment(p, new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2)).DistanceTo(p) < s.Radius + 3) return (Kind.Saw, i);
         }
+        for (int i = d.Conveyors.Count - 1; i >= 0; i--)
+            if (BeltBox(d.Conveyors[i]).Contains((int)p.X, (int)p.Y)) return (Kind.Belt, i);
         for (int i = d.Hazards.Count - 1; i >= 0; i--)
             if (Grow(d.Hazards[i].Rect, 2).Contains((int)p.X, (int)p.Y)) return (Kind.Hazard, i);
         for (int i = d.Movers.Count - 1; i >= 0; i--)
@@ -760,6 +763,14 @@ public partial class MapEditorUI : Control
                         ? p with { X = p.X + dx, Y = p.Y + dy }
                         : DropProp(p.Kind, p.X + p.W / 2f + (_mouse.X - _down.X), p.Y + (_mouse.Y - _down.Y));
                 }
+                break;
+            }
+            case Kind.Belt:
+            {
+                var b = _dragBase.Conveyors[i];
+                int x = Snap(b.X + (_mouse.X - _down.X));
+                var s = MapDesign.SurfaceBelow(_layout, x + b.W / 2, (int)(b.Y - 10 + (_mouse.Y - _down.Y)));
+                d.Conveyors[i] = s is { } surf ? b with { X = x, Y = surf.Y } : b with { X = x };
                 break;
             }
             case Kind.Hazard:
@@ -913,6 +924,7 @@ public partial class MapEditorUI : Control
                 foreach (int k in GlassRow(d, item.I).OrderByDescending(k => k)) d.Props.RemoveAt(k);
                 break;
             case Kind.Hazard: d.Hazards.RemoveAt(item.I); break;
+            case Kind.Belt: d.Conveyors.RemoveAt(item.I); break;
             case Kind.Saw: d.Saws.RemoveAt(item.I); break;
             case Kind.Mover: d.Movers.RemoveAt(item.I); break;
             case Kind.Drift: d.Drifts.RemoveAt(item.I); break;
@@ -1035,6 +1047,18 @@ public partial class MapEditorUI : Control
                     if (a + k * g >= Wall && a + (k + 1) * g <= W - Wall) d.Props.Add(new PropSpawn(PropKind.Glass, a + k * g, y, g, g));
                 break;
             }
+            case EditTool.Belt:
+            {
+                if (!drag && Hit(_down) is (Kind.Belt, var bi))
+                {
+                    d.Conveyors[bi] = d.Conveyors[bi] with { Dir = -d.Conveyors[bi].Dir };
+                    break;
+                }
+                if (Full(d.Conveyors.Count, MapDesign.MaxConveyors, "conveyor belts")) break;
+                if (BeltSpan() is { } belt) d.Conveyors.Add(belt);
+                else Flash("A belt needs the top of a block under it, at least two tiles long.");
+                break;
+            }
             case EditTool.Magma or EditTool.Poison:
             {
                 if (Full(d.Hazards.Count, MapDesign.MaxHazards, "pools")) break;
@@ -1099,6 +1123,34 @@ public partial class MapEditorUI : Control
             _redo.Clear();
         }
         Rebuild();
+    }
+
+    /// <summary>
+    /// The belt the Belt tool would lay: along the ground under where the drag began, over the stretch dragged (a
+    /// six-tile one centred on a click), on the tile grid and running the way the drag went. Null with no ground there.
+    /// </summary>
+    private Conveyor? BeltSpan()
+    {
+        bool drag = _pressed ? _dragged : _dragged && (_mouse - _down).Length() >= Tile;
+        var from = drag ? _down : _mouse;
+        if (MapDesign.SurfaceBelow(_layout, (int)from.X, (int)from.Y) is not { } s) return null;
+        int a = drag ? Snap(Math.Min(_down.X, _mouse.X)) : Snap(from.X) - 3 * Tile, b = drag ? Snap(Math.Max(_down.X, _mouse.X)) : a + 6 * Tile;
+        a = Math.Max(a, (s.X1 + Tile - 1) / Tile * Tile);
+        b = Math.Min(b, s.X2 / Tile * Tile);
+        if (b - a < 2 * Tile) return null;
+        return new Conveyor(a, s.Y, b - a, drag && _mouse.X < _down.X ? -1 : 1);
+    }
+
+    /// <summary>A belt's box in the editor, for picking and outlining it.</summary>
+    private static RectI BeltBox(Conveyor c) => new(c.X - 2, c.Y - 4, c.W + 4, Conveyor.Thick + 4);
+
+    /// <summary>An arrow along a belt, the way it runs.</summary>
+    private static void BeltArrow(Control c, Conveyor b, Color col, float px)
+    {
+        float y = b.Y - 9, from = b.Dir > 0 ? b.X + 6 : b.X + b.W - 6, to = b.Dir > 0 ? b.X + b.W - 6 : b.X + 6;
+        c.DrawLine(new Vector2(from, y), new Vector2(to, y), col, px * 1.5f);
+        c.DrawLine(new Vector2(to, y), new Vector2(to - b.Dir * 5, y - 4), col, px * 1.5f);
+        c.DrawLine(new Vector2(to, y), new Vector2(to - b.Dir * 5, y + 4), col, px * 1.5f);
     }
 
     /// <summary>
@@ -1231,6 +1283,10 @@ public partial class MapEditorUI : Control
                 foreach (int k in GlassRow(d, i)) Box(ToRect(d.Props[k].Rect));
                 break;
             case Kind.Hazard when i < d.Hazards.Count: Box(ToRect(d.Hazards[i].Rect)); break;
+            case Kind.Belt when i < d.Conveyors.Count:
+                Box(ToRect(BeltBox(d.Conveyors[i])));
+                BeltArrow(c, d.Conveyors[i], col, width * 0.7f);
+                break;
             case Kind.Saw when i < d.Saws.Count:
                 var s = d.Saws[i];
                 foreach (var p in new[] { new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2) }) c.DrawArc(p, s.Radius + 2, 0, Mathf.Tau, 20, col, width);
@@ -1306,6 +1362,15 @@ public partial class MapEditorUI : Control
                 int a = drag ? Snap(x1) : Snap(_mouse.X) - 2 * g, n = drag ? Math.Max(1, (Snap(x2) - Snap(x1)) / g) : 4;
                 int y = Snap(drag ? _down.Y : _mouse.Y);
                 for (int k = 0; k < n; k++) Box(new Rect2(a + k * g, y, g, g));
+                break;
+            }
+            case EditTool.Belt:
+            {
+                if (BeltSpan() is { } belt)
+                {
+                    Box(ToRect(BeltBox(belt)));
+                    BeltArrow(c, belt, col, px);
+                }
                 break;
             }
             case EditTool.Magma or EditTool.Poison:

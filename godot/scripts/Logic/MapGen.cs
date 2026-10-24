@@ -49,6 +49,8 @@ public sealed class MapLayout
     public List<Drift> Drifts { get; } = new();
     /// <summary>Hanging platforms (see <see cref="Hanger"/>): not solids or surfaces, as they can fall.</summary>
     public List<Hanger> Hangers { get; } = new();
+    /// <summary>Conveyor belts (see <see cref="Conveyor"/>), along the tops of blocks.</summary>
+    public List<Conveyor> Conveyors { get; } = new();
     // Floor terrain (see TerrainGen): raised flat stretches are rects in Solids (also listed in Terrain), the ramps
     // between levels are Slopes, and Ground holds each terrain-bearing floor segment's top outline for drawing.
     public List<RectI> Terrain { get; } = new();

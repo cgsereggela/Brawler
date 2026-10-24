@@ -15,8 +15,8 @@ public enum MapCodeError { None, NotACode, Damaged, Newer }
 /// </summary>
 public static class MapCode
 {
-    /// <summary>2 added drifting platforms and a fourth style bit; codes from version 1 still open.</summary>
-    public const int Version = 2;
+    /// <summary>2 added drifting platforms, hanging platforms and a fourth style bit; 3 added conveyor belts. Older codes still open.</summary>
+    public const int Version = 3;
     private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     public static string Encode(MapDesign d) => Text(Pack(d));
@@ -112,6 +112,15 @@ public static class MapCode
         foreach (var dr in Take(d.Drifts, MapDesign.MaxDrifts)) Tiles(w, dr.X, dr.Y, dr.W, dr.H);
         Count(w, d.Hangers.Count, MapDesign.MaxHangers, 4);
         foreach (var h in Take(d.Hangers, MapDesign.MaxHangers)) Tiles(w, h.X, h.Y, h.W, h.H);
+        // Belts: x and length in tiles (7 bits each), y to the pixel (block tops aren't all on the grid), which way they run.
+        Count(w, d.Conveyors.Count, MapDesign.MaxConveyors, 4);
+        foreach (var c in Take(d.Conveyors, MapDesign.MaxConveyors))
+        {
+            w.Bits(Math.Clamp((c.X + T / 2) / T, 0, 127), 7);
+            w.Bits(Math.Clamp(c.Y, 0, 1023), 10);
+            w.Bits(Math.Clamp((c.W + T / 2) / T, 1, 127), 7);
+            w.Bits(c.Dir > 0 ? 1 : 0, 1);
+        }
         var bytes = w.Done(1);
         bytes[^1] = Checksum(bytes, bytes.Length - 1);
         return bytes;
@@ -215,6 +224,12 @@ public static class MapCode
                 {
                     var t = ReadTiles(r);
                     d.Hangers.Add(new Hanger(t.x, t.y, t.w, t.h));
+                }
+            if (version >= 3)
+                for (int i = r.Bits(4); i > 0; i--)
+                {
+                    int x = r.Bits(7) * T, y = r.Bits(10), w = Math.Max(1, r.Bits(7)) * T;
+                    d.Conveyors.Add(new Conveyor(x, y, w, r.Bits(1) == 1 ? 1 : -1));
                 }
             why = MapCodeError.None;
             return d;

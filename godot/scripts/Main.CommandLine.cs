@@ -78,6 +78,8 @@ namespace Brawler;
 //                         a clear shot (it used to wait under the ledge, out of sight) or hardly hits
 //   --hangercheck         one bot against a player standing still under a hanging platform; fails if the bot doesn't shoot
 //                         the chains and crush them within 30 s
+//   --beltcheck           a player and a crate standing on conveyor belts (and a bot standing still); fails unless both
+//                         are carried along at the belt's speed, the way it runs
 //   --driftcheck          bots only, on Drift arenas; counts falls nobody caused per bot-minute and fails if there are many
 //   --errorcheck          throws an exception in a frame callback and checks the checks would have seen it (every check
 //                         fails if the game logged an error, naming the first)
@@ -231,6 +233,7 @@ public partial class Main
             else if (a == "--hazardcheck") StartHazardCheck();
             else if (a == "--vantagecheck") StartVantageCheck();
             else if (a == "--hangercheck") StartHangerCheck();
+            else if (a == "--beltcheck") StartBeltCheck();
             else if (a == "--driftcheck") StartDriftCheck();
             else if (a == "--errorcheck") ErrorCheck();
             else if (a.StartsWith("--dailycheck")) StartDailyCheck(a);

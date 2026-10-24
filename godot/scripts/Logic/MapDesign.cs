@@ -14,7 +14,7 @@ public sealed class MapDesign
 {
     public const int MaxName = 24;
     public const int MaxSpawns = 8;
-    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24, MaxHangers = 8;
+    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24, MaxHangers = 8, MaxConveyors = 8;
     private const int Wall = MapGenerator.Wall, FloorY = MapGenerator.FloorY, Width = MapLayout.Width, Height = MapLayout.Height;
 
     public string Name = "";
@@ -35,6 +35,8 @@ public sealed class MapDesign
     public List<Drift> Drifts = new();
     /// <summary>Hanging platforms (see <see cref="Hanger"/>), where they hang.</summary>
     public List<Hanger> Hangers = new();
+    /// <summary>Conveyor belts (see <see cref="Conveyor"/>).</summary>
+    public List<Conveyor> Conveyors = new();
 
     public ThemeId Theme => ThemeRules.ForSeed(Seed);
 
@@ -78,6 +80,7 @@ public sealed class MapDesign
         d.Movers.AddRange(map.Movers);
         d.Drifts.AddRange(map.Drifts);
         d.Hangers.AddRange(map.Hangers);
+        d.Conveyors.AddRange(map.Conveyors);
         return d;
     }
 
@@ -137,6 +140,7 @@ public sealed class MapDesign
         map.Saws.AddRange(Saws);
         map.Movers.AddRange(Movers);
         map.Hangers.AddRange(Hangers);
+        map.Conveyors.AddRange(Conveyors);
         return map;
     }
 
@@ -235,6 +239,10 @@ public sealed class MapDesign
         foreach (var h in Hangers)
             if (!HangerMath.AnchorsHidden(map, h)) edge++;
         if (edge > 0) list.Add(edge == 1 ? "A hanging platform's chain hangs off the end of a block." : $"{edge} hanging platforms have chains hanging off the end of a block.");
+        int loose = 0;
+        foreach (var c in Conveyors)
+            if (!Conveyor.OnBlock(map, c)) loose++;
+        if (loose > 0) list.Add(loose == 1 ? "A conveyor belt isn't along the top of a block." : $"{loose} conveyor belts aren't along the top of a block.");
         return list;
     }
 
@@ -260,6 +268,7 @@ public sealed class MapDesign
         d.Movers.AddRange(Movers);
         d.Drifts.AddRange(Drifts);
         d.Hangers.AddRange(Hangers);
+        d.Conveyors.AddRange(Conveyors);
         return d;
     }
 

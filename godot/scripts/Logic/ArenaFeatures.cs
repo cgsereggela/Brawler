@@ -76,6 +76,35 @@ public readonly record struct Hanger(int X, int Y, int W, int H)
     public static float Drop(float t) => t <= 0 ? 0 : 0.5f * Gravity * t * t;
 }
 
+/// <summary>
+/// A conveyor belt: the stretch X to X + W of a block's top (at height Y) that carries whatever stands on it, players,
+/// crates and barrels and a dropped flag, at <see cref="Speed"/> px/s: rightward for Dir 1, leftward for -1. It's part
+/// of the ground, not a solid of its own, and slower than a run, so walking against it is slow but always possible.
+/// </summary>
+public readonly record struct Conveyor(int X, int Y, int W, int Dir)
+{
+    public const float Speed = 60;
+    /// <summary>How deep into the block's top the belt is drawn.</summary>
+    public const int Thick = 6;
+    public RectI Rect => new(X, Y, W, Thick);
+    public float Vel => Dir * Speed;
+
+    /// <summary>
+    /// The speed (px/s, + is rightward) of the belt under a body whose feet are at <paramref name="feetY"/> and
+    /// centre at <paramref name="x"/>: the one its middle stands on, or 0 if none.
+    /// </summary>
+    public static float Under(IReadOnlyList<Conveyor> belts, float x, float feetY)
+    {
+        if (belts == null) return 0;
+        foreach (var b in belts)
+            if (MathF.Abs(feetY - b.Y) <= 2 && x >= b.X && x <= b.X + b.W) return b.Vel;
+        return 0;
+    }
+
+    /// <summary>True if the belt lies along the top of one block of <paramref name="map"/>, end to end.</summary>
+    public static bool OnBlock(MapLayout map, Conveyor c) => map.Solids.Exists(r => r.Y == c.Y && r.X <= c.X && r.Right >= c.X + c.W);
+}
+
 /// <summary>Where a <see cref="Hanger"/>'s chains are anchored and where it lands, from the arena's static parts.</summary>
 public static class HangerMath
 {
@@ -214,6 +243,33 @@ public static class ArenaFeatures
         Crates(map, rng, keep, rules);
         Hangers(map, rng, keep);
         Drifts(map, rng, keep);
+        Conveyors(map, keep);
+    }
+
+    // ---------- conveyor belts ----------
+
+    /// <summary>
+    /// Sometimes one or two conveyor belts along the top of a block, running either way, clear of spawns, pads, pools,
+    /// ramps and the other extras. They draw on a generator of their own, so the rest of each arena is as it was.
+    /// </summary>
+    private static void Conveyors(MapLayout map, List<RectI> keep)
+    {
+        var rng = new Rng(((ulong)(uint)map.Seed << 1) ^ 0xBE17C0DEUL);
+        int want = rng.Chance(0.35f) ? rng.Range(1, 2) : 0;
+        for (int i = 0; i < 80 && want > 0 && map.Surfaces.Count > 0; i++)
+        {
+            var s = map.Surfaces[rng.Range(0, map.Surfaces.Count - 1)];
+            int w = rng.Range(5, 12) * 8;
+            int lo = (s.X1 + 15) / 8, hi = (s.X2 - 8 - w) / 8;
+            if (map.DriftIndex(s) >= 0 || hi < lo) continue;
+            int x = rng.Range(lo, hi) * 8;
+            var belt = new Conveyor(x, s.Y, w, rng.Chance(0.5f) ? 1 : -1);
+            var zone = new RectI(x - 8, s.Y - 30, w + 16, 34);
+            if (!Conveyor.OnBlock(map, belt) || !ClearOfKeep(keep, zone) || map.Slopes.Exists(sl => sl.Intersects(zone.Grow(14, 2)))) continue;
+            map.Conveyors.Add(belt);
+            keep.Add(zone);
+            want--;
+        }
     }
 
     private static bool Clear(MapLayout map, List<RectI> keep, RectI r)

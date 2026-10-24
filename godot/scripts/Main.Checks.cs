@@ -328,6 +328,22 @@ public partial class Main
         if (ed.Design.Drifts.Count != 0) { Fail("right-click didn't delete the drifting platform"); return; }
         Log.Info("EDITORCHECK drift: place, move, share and delete a drifting platform");
 
+        // A conveyor belt: drag right to left along the floor, click it to turn it round, slide it along, share it.
+        ed.SetTool(EditTool.Belt);
+        Drag(520, 500, 440, 500);
+        if (ed.Design.Conveyors.Count != 1 || ed.Design.Conveyors[0] is not { W: 80, Dir: -1 } belt) { Fail($"dragging with Belt made {string.Join(", ", ed.Design.Conveyors)}"); return; }
+        if (!Conveyor.OnBlock(ed.Design.Build(2), belt)) { Fail($"the belt {belt} isn't on the ground"); return; }
+        if (_shotDir != null) { await Wait(0.3); SaveShot("editor_belt"); }
+        Click(480, belt.Y - 1);
+        if (ed.Design.Conveyors.Count != 1 || ed.Design.Conveyors[0].Dir != 1) { Fail("clicking the belt didn't turn it around"); return; }
+        ed.SetTool(EditTool.Select);
+        Drag(belt.X + 20, belt.Y - 1, belt.X + 60, belt.Y - 1);
+        if (ed.Design.Conveyors[0] != belt with { X = belt.X + 40, Dir = 1 }) { Fail($"dragging the belt left it at {ed.Design.Conveyors[0]}, from {belt}"); return; }
+        if (MapCode.Decode(MapCode.Encode(ed.Design)) is not { } beltBack || !beltBack.Conveyors.SequenceEqual(ed.Design.Conveyors)) { Fail("the belt didn't survive the map code"); return; }
+        Click(belt.X + 60, belt.Y - 1, MouseButton.Right);
+        if (ed.Design.Conveyors.Count != 0) { Fail("right-click didn't delete the belt"); return; }
+        Log.Info("EDITORCHECK belt: lay, turn around, move, share and delete a conveyor belt");
+
         // A hanging platform: drag one out under the ceiling; it hangs on two chains and lands on the floor.
         ed.SetTool(EditTool.Hang);
         Drag(640, 200, 720, 200);
@@ -597,6 +613,7 @@ public partial class Main
         if (_autoMode == "hazardcheck") PollHazards();
         if (_autoMode == "vantagecheck") PollVantage();
         if (_autoMode == "hangercheck") PollHanger();
+        if (_autoMode == "beltcheck") PollBelts();
         if (_autoMode == "driftcheck") PollDrift();
         if (_autoMode == "trainingcheck") PollTraining();
         if (_autoMode == "cardcheck") PollCards();
@@ -1200,6 +1217,75 @@ public partial class Main
         Log.Info($"HANGERCHECK {line}");
         if (!dropped) Finish(1, $"hangercheck: the bot never shoots the chains ({line})");
         else if (!_hcCrushed) Finish(1, $"hangercheck: the bot dropped the platform but it missed ({line})");
+        else Finish(0, line);
+    }
+
+    // ---------- --beltcheck: a player and a crate standing on conveyor belts ----------
+
+    private const float BeltCheckSeconds = 2;
+    private float _bcFight;
+    private bool _bcPlaced, _bcMoved;
+    private Vector2 _bcPlayerFrom, _bcCrateFrom;
+
+    // One belt runs right under the player, the other left under a crate; the bot stands off both.
+    private static readonly Conveyor BcPlayerBelt = new(200, MapGenerator.FloorY, 240, 1), BcCrateBelt = new(560, MapGenerator.FloorY, 240, -1);
+
+    /// <summary>
+    /// A player and a bot both standing still (lava off), the player on a belt running right and a crate on one running
+    /// left. Fails unless after <see cref="BeltCheckSeconds"/> both have been carried about the belt's speed times that,
+    /// the way their belt runs.
+    /// </summary>
+    private void StartBeltCheck()
+    {
+        _autoMode = "beltcheck";
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var d = MapDesign.Empty(ThemeId.DungeonDepths, 1);
+        d.Conveyors.Add(BcPlayerBelt);
+        d.Conveyors.Add(BcCrateBelt);
+        d.Props.Add(new PropSpawn(PropKind.Crate, BcCrateBelt.X + 180, MapGenerator.FloorY - 16, 16, 16));
+        d.Spawns.Add(new SpawnPoint(BcPlayerBelt.X + 20, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(940, MapGenerator.FloorY));
+        _net.LocalName = "Rider";
+        _net.StartOffline();
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { KillCam = false, Maps = { MapCode.Pack(d) } });
+        _game.HostStartMatch();
+    }
+
+    private void PollBelts()
+    {
+        foreach (var p in _game.LiveAvatars().Select(a => a.Player))
+            if (p.Input is not StillInput) p.Input = new StillInput();
+        if (_game.Phase != Phase.Fighting) { _bcPlaced = _bcMoved = false; return; }
+        if (_game.LocalMatchPlayer?.Avatar is not { Alive: true } rider || _game.Arena.Props.FirstOrDefault() is not { } crate) return;
+        if (!_bcPlaced)
+        {
+            if (!_bcMoved)
+            {
+                // Either spawn can be the player's, so put the player on their belt and the bot off both.
+                foreach (var a in _game.LiveAvatars())
+                {
+                    a.GlobalPosition = new Vector2(a == rider ? BcPlayerBelt.X + 20 : 940, MapGenerator.FloorY - a.HalfSize.Y);
+                    a.Velocity = Vector2.Zero;
+                }
+                _bcMoved = true;
+                return;
+            }
+            if (!rider.IsOnFloor() || !crate.IsOnFloor()) return; // let both settle first
+            _bcPlayerFrom = rider.GlobalPosition;
+            _bcCrateFrom = crate.GlobalPosition;
+            _bcPlaced = true;
+        }
+        _bcFight += 1f / 60;
+        if (_bcFight < BeltCheckSeconds) return;
+        float want = Conveyor.Speed * BeltCheckSeconds, rode = rider.GlobalPosition.X - _bcPlayerFrom.X, pushed = crate.GlobalPosition.X - _bcCrateFrom.X;
+        string line = $"in {_bcFight:0.0}s the player rode {rode:0} px and the crate {pushed:0} px (belts run {want:0} px)";
+        Log.Info($"BELTCHECK {line}");
+        if (_shotDir != null) SaveShot("beltcheck");
+        if (Mathf.Abs(rode - want) > want * 0.15f) Finish(1, $"beltcheck: the belt didn't carry the player ({line})");
+        else if (Mathf.Abs(pushed + want) > want * 0.15f) Finish(1, $"beltcheck: the belt didn't carry the crate ({line})");
         else Finish(0, line);
     }
 
