@@ -447,14 +447,18 @@ public static class AvatarArt
         c.Circle(new Vector2(0.4f, 0.55f), 0.55f, c.H(Gold.Darkened(0.2f))); // clasp
         c.Circle(new Vector2(0.3f, 0.4f), 0.3f, c.H(PaleYellow));
 
-        // The mask: bone white, shaded toward the jaw and the back, with a soft sheen on the brow.
-        c.Fill(MaskOutline, c.H(c.Mask), Ink, 1.0f);
-        c.Gradient(MaskOutline, c.H(Lit(c.Mask, 0.15f)), c.H(Shade(c.MaskShade, 0.2f)));
-        c.Poly(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(Shade(c.MaskShade, 0.3f)) with { A = 0.3f });
-        c.Poly(Shapes.Ellipse(new Vector2(0f, 0.3f), 3.4f, 0.7f, 14), c.H(Shade(c.MaskShade, 0.35f)) with { A = 0.3f }); // under the lip
-        c.Poly(Shapes.Ellipse(new Vector2(3.2f, -1.2f), 1.5f, 0.8f, 12), c.H(Lit(p.Body, 0.3f)) with { A = 0.14f });    // a flush of the player's color on the cheek
-        c.Line(new Vector2(-4.6f, -6f), new Vector2(-4.1f, -4.8f), c.H(Shade(c.MaskShade, 0.4f)) with { A = 0.35f }, 0.35f); // hairline crack
-        c.Poly(Shapes.Ellipse(new Vector2(-1.2f, -7.8f), 3.4f, 1f, 16), new Color(1, 1, 1, 0.3f));
+        // The mask: bone white lit from the upper front. A copy of the outline pulled toward the lit corner sits on top
+        // of a shadow-colored base, so the shadow runs along the back and the jaw like the mask's own curve.
+        c.Fill(MaskOutline, c.H(Shade(c.MaskShade, 0.2f)), Ink, 1.0f);
+        c.Gradient(LitCopy(MaskOutline, 0.1f), c.H(Lit(c.Mask, 0.15f)), c.H(c.Mask.Lerp(c.MaskShade, 0.45f)));
+        // A brow sheen that follows the top-front contour.
+        var sheen = new List<Vector2>();
+        for (int i = 22; i <= 29; i++) sheen.Add(new Vector2(0, -3.3f) + (MaskOutline[i] - new Vector2(0, -3.3f)) * 0.86f);
+        for (int i = 0; i + 1 < sheen.Count; i++)
+        {
+            float k = Mathf.Sin((i + 0.5f) / (sheen.Count - 1) * Mathf.Pi);
+            c.Line(sheen[i], sheen[i + 1], c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.12f + 0.3f * k), 0.5f + 0.5f * k);
+        }
     }
 
     // ---------- eyes ----------
@@ -579,6 +583,12 @@ public static class AvatarArt
         return pts;
     }
 
+    private static readonly Vector2[] TongueShape = Smooth(new[]
+    {
+        new Vector2(1.55f, 0.85f), new Vector2(3.15f, 0.85f), new Vector2(3.45f, 1.95f), new Vector2(2.9f, 2.85f),
+        new Vector2(1.8f, 2.85f), new Vector2(1.25f, 1.95f),
+    }, 2);
+
     private static readonly Vector2[] SmileShape = Crescent(1.4f, 0.2f, 2.3f, 0.9f, 0.85f);
     private static readonly Vector2[] FrownShape = Crescent(1.4f, 1.6f, 2.1f, -0.85f, 0.8f);
     private static readonly Vector2[] FangSmileShape = Crescent(1.4f, 0.3f, 2.4f, 0.7f, 0.75f);
@@ -622,14 +632,24 @@ public static class AvatarArt
                 c.Poly(Shapes.Ellipse(new Vector2(1.6f, 1.6f), 0.4f, 0.18f, 8), c.H(tongue.Lightened(0.3f)));
                 c.Line(new Vector2(0.4f, -0.4f), new Vector2(0.9f, -0.5f), new Color(1, 1, 1, 0.3f), 0.3f); // lip highlight
                 break;
-            case 3: // Grin: a wide D with a row of bone teeth along the top.
+            case 3: // Grin: a wide D with a row of separate bone teeth hanging from the top and a few small ones below.
+            {
                 c.Poly(GrinShape, hole);
-                var teeth = Shapes.RoundRect(new Rect2(-0.8f, -0.2f, 4.4f, 0.95f), 0.25f);
-                c.Poly(teeth, c.H(c.Mask));
-                c.Gradient(teeth, c.H(c.Mask.Lightened(0.1f)), c.H(c.MaskShade));
-                foreach (float x in new[] { -0.3f, 0.5f, 1.4f, 2.3f, 3.1f })
-                    c.Line(new Vector2(x, -0.2f), new Vector2(x, 0.75f), hole with { A = 0.9f }, 0.28f);
+                for (int i = 0; i < 6; i++)
+                {
+                    float x = -0.9f + i * 0.84f;
+                    float h = (i == 0 || i == 5) ? 0.7f : 1.0f; // the corner teeth are shorter, following the curve
+                    var tooth = Shapes.RoundRect(new Rect2(x, -0.25f, 0.74f, h + 0.25f), 0.3f);
+                    c.Poly(tooth, c.H(c.MaskShade));
+                    c.Gradient(Shapes.RoundRect(new Rect2(x + 0.04f, -0.25f, 0.6f, h + 0.1f), 0.28f), c.H(Lit(c.Mask, 0.2f)), c.H(c.Mask));
+                }
+                foreach (float x in new[] { 0.7f, 1.4f, 2.1f }) // lower teeth rising from the jaw
+                {
+                    float by = -0.2f + 2f * Mathf.Sqrt(Mathf.Max(0, 1 - Mathf.Pow((x - 1.4f) / 2.6f, 2))) - 0.2f;
+                    c.Poly(new[] { new Vector2(x - 0.3f, by), new Vector2(x + 0.3f, by), new Vector2(x + 0.18f, by - 0.5f), new Vector2(x - 0.18f, by - 0.5f) }, c.H(c.Mask));
+                }
                 break;
+            }
             case 4: // Frown
                 c.Poly(FrownShape, hole);
                 break;
@@ -646,14 +666,17 @@ public static class AvatarArt
                 }
                 }
                 break;
-            case 6: // Tongue: an open smile with the tongue poking out over the lip.
+            case 6: // Tongue: an open smile with a rounded, grooved tongue lolling out over the lip.
+            {
                 c.Poly(TongueSmileShape, hole);
-                var tip = Shapes.Capsule(new Vector2(2.1f, 1.1f), new Vector2(2.3f, 2.3f), 0.85f);
-                c.Fill(tip, c.H(new Color("#8e4455")), Ink, 0.3f);
-                c.Gradient(tip, tongue.Lightened(0.15f), tongue);
-                c.Line(new Vector2(2.2f, 1.3f), new Vector2(2.25f, 2.3f), c.H(new Color("#7d3a48")), 0.25f);
-                c.Circle(new Vector2(2.4f, 1.55f), 0.2f, new Color(1, 1, 1, 0.5f));
+                c.Poly(Shapes.Ellipse(new Vector2(2.35f, 1.05f), 1.0f, 0.35f, 10), Ink with { A = 0.45f }); // shadow it casts on the mask
+                c.Fill(TongueShape, c.H(new Color("#8e4455")), Ink, 0.35f);
+                c.Gradient(Inset(TongueShape, 0.15f), c.H(Lit(new Color("#c9707f"), 0.2f)), c.H(new Color("#a85565")));
+                c.Line(new Vector2(2.35f, 1.15f), new Vector2(2.35f, 2.4f), c.H(new Color("#7d3a48")), 0.28f); // centre groove
+                c.Line(new Vector2(1.95f, 1.5f), new Vector2(1.95f, 1.9f), c.H(Lit(new Color("#c9707f"), 0.4f)) with { A = 0.6f }, 0.25f);
+                c.Poly(Shapes.Ellipse(new Vector2(2.8f, 1.55f), 0.22f, 0.4f, 8), c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.45f));
                 break;
+            }
             case 7: // Mustache (hair dye) over a small smile.
                 c.Poly(Crescent(1.4f, 1.6f, 1.2f, 0.35f, 0.55f), hole);
                 var stache = Shapes.Offset(MustacheShape, new Vector2(0, 0.4f));
@@ -823,8 +846,12 @@ public static class AvatarArt
                 foreach (var (pc, r) in puffs) c.Circle(pc, r + 0.8f, line);
                 foreach (var (pc, r) in puffs) c.Circle(pc, r, c.H(Shade(c.Hair, 0.3f)));
                 // Lit copies, nudged up and forward, so each puff keeps shadow on its lower back edge.
-                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.4f, -0.55f) * (r / 4f), r * 0.82f, main);
-                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.7f, -1f) * (r / 4f), r * 0.5f, c.H(Lit(c.Hair, 0.3f)));
+                foreach (var (pc, r) in puffs) // tangent to each puff's lit edge
+                {
+                    var n = new Vector2(0.4f, -0.55f) * (r / 4f);
+                    c.Circle(pc + n, r - n.Length(), main);
+                }
+                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.7f, -1f) * (r / 4f), r * 0.45f, c.H(Lit(c.Hair, 0.3f)));
                 foreach (var (pc, r) in puffs) c.Arc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.5f }, 0.5f);
                 if (!underHat)
                     foreach (var (pc, r) in puffs) // curl hints on the shadow side
@@ -871,26 +898,48 @@ public static class AvatarArt
     }
 
     /// <summary>
-    /// A shape lit from the upper front: the whole shape in the shadow color with an outline, then a slightly smaller,
-    /// up-and-forward copy in a vertical light-to-mid gradient on top, so the far (back and lower) edge keeps the shadow.
-    /// Works on roughly convex shapes; nothing is clipped, so the lit copy stays inside the base.
+    /// The shape pulled toward its upper-front vertex: points near that vertex stay put, the rest slide toward it, so
+    /// the copy sits flush against the lit edges and leaves a shadow sliver along the back and bottom.
     /// </summary>
-    private static void Form(Ctx c, Vector2[] pts, Color col, float ow, float lit = 0.12f)
+    private static Vector2[] LitCopy(Vector2[] pts, float pull)
     {
-        var sum = Vector2.Zero;
-        float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+        var light = pts[0];
+        float best = float.MinValue;
         foreach (var q in pts)
         {
-            sum += q;
-            minX = Mathf.Min(minX, q.X); maxX = Mathf.Max(maxX, q.X);
-            minY = Mathf.Min(minY, q.Y); maxY = Mathf.Max(maxY, q.Y);
+            float s = q.X * 0.6f - q.Y;
+            if (s > best) { best = s; light = q; }
         }
-        var mid = sum / pts.Length;
-        var shift = new Vector2((maxX - minX) * 0.045f, -(maxY - minY) * 0.06f);
-        var inner = new Vector2[pts.Length];
-        for (int i = 0; i < pts.Length; i++) inner[i] = mid + (pts[i] - mid) * (1 - lit) + shift;
+        var r = new Vector2[pts.Length];
+        for (int i = 0; i < pts.Length; i++) r[i] = pts[i].Lerp(light, pull);
+        return r;
+    }
+
+    /// <summary>The outline moved <paramref name="w"/> units inward along each vertex's normal (for borders that follow a curve).</summary>
+    private static Vector2[] Inset(Vector2[] pts, float w)
+    {
+        float area = 0;
+        for (int i = 0; i < pts.Length; i++) { var a = pts[i]; var b = pts[(i + 1) % pts.Length]; area += a.X * b.Y - b.X * a.Y; }
+        float sign = area > 0 ? 1 : -1;
+        var r = new Vector2[pts.Length];
+        for (int i = 0; i < pts.Length; i++)
+        {
+            var t = (pts[(i + 1) % pts.Length] - pts[(i + pts.Length - 1) % pts.Length]).Normalized();
+            var inward = new Vector2(-t.Y, t.X) * sign;
+            r[i] = pts[i] + inward * w;
+        }
+        return r;
+    }
+
+    /// <summary>
+    /// A shape lit from the upper front: the whole shape in the shadow color with an outline, then a copy pulled toward
+    /// the lit corner in a light-to-mid gradient, so the far (back and lower) edge keeps the shadow and the lit edges
+    /// line up with the outline. Works on roughly convex shapes.
+    /// </summary>
+    private static void Form(Ctx c, Vector2[] pts, Color col, float ow, float pull = 0.14f)
+    {
         c.Fill(pts, c.H(Shade(col)), col.Darkened(0.5f), ow);
-        c.Gradient(inner, c.H(Lit(col)), c.H(col));
+        c.Gradient(LitCopy(pts, pull), c.H(Lit(col)), c.H(col));
     }
 
     /// <summary>A soft white highlight on the top front of a part.</summary>
@@ -959,10 +1008,10 @@ public static class AvatarArt
                 c.Line(new Vector2(-6f, -11.5f), new Vector2(5f, -11.5f), dyeLight with { A = 0.6f }, 0.4f);
                 for (float x = -4.4f; x < 5; x += 2.2f)
                     c.Line(new Vector2(x, -16f + Mathf.Abs(x) * 0.25f), new Vector2(x * 0.9f, -11.6f), seam with { A = 0.3f }, 0.35f);
-                c.Circle(new Vector2(0, -16.4f), 2.4f, dyeLine);
+                c.Circle(new Vector2(0, -16.4f), 2.3f, dyeLine);
                 c.Circle(new Vector2(0, -16.4f), 1.9f, c.H(Shade(c.Hat.Lightened(0.4f), 0.2f)));
-                c.Circle(new Vector2(0.2f, -16.7f), 1.45f, c.H(Lit(c.Hat, 0.5f)));
-                Spec(c, new Vector2(-0.4f, -17.3f), 0.8f, 0.45f, 0.5f);
+                c.Circle(new Vector2(0.4f, -16.8f), 1.9f - 0.57f, c.H(Lit(c.Hat, 0.5f))); // tangent to the pom's lit edge
+                Spec(c, new Vector2(-0.1f, -17.3f), 0.8f, 0.45f, 0.5f);
                 break;
             }
             case 4: // Crown
@@ -973,8 +1022,7 @@ public static class AvatarArt
                     new Vector2(3.3f, -12.7f), new Vector2(6.8f, -15.8f), new Vector2(6f, -9.8f),
                 };
                 c.Fill(crown, c.H(DarkGold), DarkGold.Darkened(0.55f), 0.6f);
-                c.Gradient(crown, c.H(PaleYellow), c.H(Gold));
-                c.Poly(new[] { new Vector2(2.4f, -10.6f), new Vector2(3.3f, -12.7f), new Vector2(6.6f, -15f), new Vector2(6f, -9.8f), new Vector2(3.4f, -9.8f) }, c.H(DarkGold) with { A = 0.35f });
+                c.Gradient(LitCopy(crown, 0.08f), c.H(PaleYellow), c.H(Gold));
                 var band = Shapes.RoundRect(new Rect2(-6f, -11.6f, 12f, 1.8f), 0.4f);
                 c.Poly(band, c.H(Gold));
                 c.Gradient(band, c.H(Gold.Lightened(0.15f)), c.H(DarkGold));
@@ -1031,7 +1079,7 @@ public static class AvatarArt
                 for (int i = 0; i < hornL.Length; i++) hornR[i] = new Vector2(-hornL[i].X, hornL[i].Y);
                 foreach (var horn in new[] { hornL, hornR })
                 {
-                    c.Fill(horn, c.H(Shade(Bone, 0.3f)), Bone.Darkened(0.55f), 0.6f);
+                    c.Fill(horn, c.H(Shade(Bone, 0.25f)), Bone.Darkened(0.55f), 0.6f);
                     c.Gradient(horn, c.H(Bone.Lightened(0.15f)), c.H(Shade(Bone, 0.25f)));
                 }
                 foreach (float sx in new[] { -1f, 1f })
@@ -1090,8 +1138,9 @@ public static class AvatarArt
                 c.Poly(band, shadeW);
                 // Lit copies, nudged up and forward, leave the shadow on the lower back edge.
                 var litW = c.H(White);
-                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.45f, -0.5f), r * 0.86f, litW);
-                c.Poly(Shapes.RoundRect(new Rect2(-4.9f, -16.4f, 10.2f, 5.2f), 0.6f), litW);
+                var nudge = new Vector2(0.5f, -0.55f);
+                foreach (var (pc, r) in puffs) c.Circle(pc + nudge * 0.8f, r - nudge.Length() * 0.8f, litW); // tangent to each puff's lit edge
+                c.Poly(Shapes.RoundRect(new Rect2(-4.8f, -16.6f, 10.3f, 5.6f), 0.6f), litW);
                 // Pleats.
                 c.Line(new Vector2(-2.4f, -15.4f), new Vector2(-2.1f, -12.6f), line with { A = 0.55f }, 0.4f);
                 c.Line(new Vector2(0.4f, -15.9f), new Vector2(0.5f, -12.6f), line with { A = 0.45f }, 0.4f);
@@ -1171,22 +1220,20 @@ public static class AvatarArt
                 c.Line(new Vector2(5.8f, -16.4f), new Vector2(6.5f, -14.8f), c.H(Red.Lightened(0.5f)) with { A = 0.6f }, 0.4f);
                 break;
             }
-            case 14: // Pirate: a black tricorn with a dyed trim and a little skull.
+            case 14: // Pirate: a black tricorn edged all round with a dyed trim, and a little skull.
             {
                 var hat = Smooth(new[]
                 {
                     new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.8f), new Vector2(-3.6f, -16.8f), new Vector2(0, -15.2f),
                     new Vector2(3.6f, -16.8f), new Vector2(7.4f, -14.8f), new Vector2(9.2f, -10.4f), new Vector2(0, -11.8f),
                 }, 1);
-                var trim = new[]
-                {
-                    new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.8f), new Vector2(-3.6f, -16.8f), new Vector2(0, -15.2f),
-                    new Vector2(3.6f, -16.8f), new Vector2(7.4f, -14.8f), new Vector2(9.2f, -10.4f),
-                };
-                c.Fill(hat, c.H(HatBlack), HatGrey.Lightened(0.25f), 0.6f);
-                c.Gradient(hat, c.H(HatGrey.Lerp(HatBlack, 0.3f)), c.H(HatBlack));
-                for (int i = 0; i < trim.Length - 1; i++) c.Line(trim[i] + new Vector2(0, 0.75f), trim[i + 1] + new Vector2(0, 0.75f), dye, 0.6f);
-                c.Line(new Vector2(-5.2f, -15.6f), new Vector2(-1.2f, -15.4f), c.H(HatGrey.Lightened(0.2f)) with { A = 0.6f }, 0.4f);
+                // The trim is the outer rim of the hat itself; the black crown is the same outline moved in, so they always line up.
+                var crownPts = Inset(hat, 0.75f);
+                c.Fill(hat, c.H(Shade(c.Hat, 0.1f)), dyeLine, 0.6f);
+                c.Gradient(hat, dyeLight, dyeShade);
+                c.Fill(crownPts, c.H(HatBlack), HatBlack, 0.1f);
+                c.Gradient(crownPts, c.H(HatGrey.Lerp(HatBlack, 0.3f)), c.H(HatBlack));
+                c.Line(new Vector2(-5.2f, -15.2f), new Vector2(-1.4f, -14.9f), c.H(HatGrey.Lightened(0.2f)) with { A = 0.6f }, 0.4f);
                 c.Line(new Vector2(-1.9f, -11.9f), new Vector2(1.9f, -13.1f), c.H(Bone), 0.5f);
                 c.Line(new Vector2(-1.9f, -13.1f), new Vector2(1.9f, -11.9f), c.H(Bone), 0.5f);
                 c.Circle(new Vector2(0, -13.6f), 1.3f, c.H(Bone));
