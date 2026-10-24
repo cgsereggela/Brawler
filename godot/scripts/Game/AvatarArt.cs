@@ -426,20 +426,32 @@ public static class AvatarArt
         var cl = new Vector2[CloakOutline.Length];
         for (int i = 0; i < cl.Length; i++) cl[i] = CloakOutline[i] * new Vector2(1 + breathe * 0.06f, 1);
         c.Fill(cl, c.H(cloak), Ink, 0.9f);
-        c.Gradient(cl, c.H(cloak.Lightened(0.14f)), c.H(cloak.Darkened(0.3f)));
-        // A couple of folds.
+        c.Gradient(cl, c.H(Lit(cloak, 0.2f)), c.H(Shade(cloak, 0.5f)));
+        // The back (away from the light) falls into shadow, the front edge catches a little light.
+        c.Poly(new[] { new Vector2(-4.6f, -1.2f), new Vector2(-2.6f, -1.2f), new Vector2(-3.4f, 3.2f), new Vector2(-5.4f, 4.1f), new Vector2(-7f, 3.5f), new Vector2(-6.4f, 1.4f) }, c.H(Shade(cloak, 0.6f)) with { A = 0.45f });
+        c.Line(new Vector2(6.1f, 1.6f), new Vector2(6.8f, 3.6f), c.H(Lit(cloak, 0.45f)) with { A = 0.6f }, 0.4f);
+        // A few folds, curved by the cloth's weight.
         var fold = Ink with { A = 0.35f };
         c.Line(new Vector2(-2.4f, 0.6f), new Vector2(-3.1f, 3.6f), fold, 0.4f);
         c.Line(new Vector2(2.6f, 0.8f), new Vector2(3.3f, 3.9f), fold, 0.4f);
+        c.Line(new Vector2(0.2f, 1.2f), new Vector2(0.1f, 3.4f), fold with { A = 0.22f }, 0.35f);
+        c.Line(new Vector2(-1.7f, 0.9f), new Vector2(-1.5f, 3.2f), c.H(Lit(cloak, 0.4f)) with { A = 0.3f }, 0.35f);
         // The collar in the player's own color.
         var collar = Shapes.RoundRect(new Rect2(-6.2f, -1.2f, 12.6f, 2.4f), 1.2f);
-        c.Fill(collar, c.H(p.Body.Lerp(c.MaskShade, 0.12f)), Ink, 0.55f);
-        c.Line(new Vector2(-5f, -0.6f), new Vector2(5.2f, -0.6f), c.H(p.Body.Lightened(0.35f)) with { A = 0.55f }, 0.35f);
+        var collarCol = p.Body.Lerp(c.MaskShade, 0.12f);
+        c.Fill(collar, c.H(Shade(collarCol, 0.25f)), Ink, 0.55f);
+        c.Gradient(collar, c.H(Lit(collarCol, 0.3f)), c.H(Shade(collarCol, 0.35f)));
+        c.Line(new Vector2(-5f, -0.6f), new Vector2(5.2f, -0.6f), c.H(Lit(p.Body, 0.5f)) with { A = 0.55f }, 0.35f);
+        c.Circle(new Vector2(0.4f, 0.55f), 0.55f, c.H(Gold.Darkened(0.2f))); // clasp
+        c.Circle(new Vector2(0.3f, 0.4f), 0.3f, c.H(PaleYellow));
 
         // The mask: bone white, shaded toward the jaw and the back, with a soft sheen on the brow.
         c.Fill(MaskOutline, c.H(c.Mask), Ink, 1.0f);
-        c.Gradient(MaskOutline, c.H(c.Mask.Lightened(0.06f)), c.H(c.MaskShade));
-        c.Poly(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(c.MaskShade) with { A = 0.3f });
+        c.Gradient(MaskOutline, c.H(Lit(c.Mask, 0.15f)), c.H(Shade(c.MaskShade, 0.2f)));
+        c.Poly(Shapes.Ellipse(new Vector2(-5.1f, -3.2f), 1.2f, 4f, 16), c.H(Shade(c.MaskShade, 0.3f)) with { A = 0.3f });
+        c.Poly(Shapes.Ellipse(new Vector2(0f, 0.3f), 3.4f, 0.7f, 14), c.H(Shade(c.MaskShade, 0.35f)) with { A = 0.3f }); // under the lip
+        c.Poly(Shapes.Ellipse(new Vector2(3.2f, -1.2f), 1.5f, 0.8f, 12), c.H(Lit(p.Body, 0.3f)) with { A = 0.14f });    // a flush of the player's color on the cheek
+        c.Line(new Vector2(-4.6f, -6f), new Vector2(-4.1f, -4.8f), c.H(Shade(c.MaskShade, 0.4f)) with { A = 0.35f }, 0.35f); // hairline crack
         c.Poly(Shapes.Ellipse(new Vector2(-1.2f, -7.8f), 3.4f, 1f, 16), new Color(1, 1, 1, 0.3f));
     }
 
