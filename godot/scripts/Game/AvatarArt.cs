@@ -638,14 +638,16 @@ public static class AvatarArt
                 c.Poly(Shapes.Ellipse(new Vector2(1.6f, 1.6f), 0.4f, 0.18f, 8), c.H(tongue.Lightened(0.3f)));
                 c.Line(new Vector2(0.4f, -0.4f), new Vector2(0.9f, -0.5f), new Color(1, 1, 1, 0.3f), 0.3f); // lip highlight
                 break;
-            case 3: // Grin: a wide D with two white buck teeth hanging from the top.
+            case 3: // Grin: a wide D with two white buck teeth hanging from the top edge, side by side.
             {
                 c.Poly(GrinShape, hole);
-                foreach (float x in new[] { 0.5f, 1.42f })
+                foreach (float x in new[] { 0.55f, 1.45f })
                 {
-                    var tooth = Shapes.RoundRect(new Rect2(x, -0.3f, 0.88f, 1.65f), 0.32f);
-                    c.Fill(tooth, c.H(OffWhite), Ink, 0.25f);
-                    c.Gradient(Shapes.RoundRect(new Rect2(x + 0.04f, -0.3f, 0.8f, 1.55f), 0.3f), c.H(White.Lightened(0.25f)), c.H(White));
+                    var tooth = Shapes.RoundRect(new Rect2(x, -0.2f, 0.7f, 1.3f), 0.28f);
+                    c.Poly(tooth, c.H(OffWhite));
+                    c.Poly(new[] { new Vector2(x, -0.2f), new Vector2(x + 0.7f, -0.2f), new Vector2(x + 0.7f, 0.3f), new Vector2(x, 0.3f) }, c.H(OffWhite)); // flat top, flush with the mouth
+                    c.Gradient(Shapes.RoundRect(new Rect2(x + 0.05f, -0.2f, 0.6f, 1.15f), 0.24f), c.H(White.Lightened(0.25f)), c.H(White));
+                    c.Gradient(new[] { new Vector2(x + 0.05f, -0.2f), new Vector2(x + 0.65f, -0.2f), new Vector2(x + 0.65f, 0.3f), new Vector2(x + 0.05f, 0.3f) }, c.H(White.Lightened(0.25f)), c.H(White.Lightened(0.15f)));
                 }
                 break;
             }
@@ -957,23 +959,23 @@ public static class AvatarArt
         {
             case 1: // Cap
             {
-                // The beak's top edge runs along the bottom of the dome, so the two read as one hat.
-                var visorPts = new[]
-                {
-                    new Vector2(2f, -9.4f), new Vector2(11.4f, -9.4f), new Vector2(12.5f, -8.8f), new Vector2(11.7f, -8f),
-                    new Vector2(7f, -8.3f), new Vector2(2f, -8.2f),
-                };
-                c.Fill(visorPts, c.H(Shade(c.Hat, 0.5f)), dyeLine, 0.5f);
-                c.Gradient(visorPts, c.H(c.Hat.Darkened(0.12f)), c.H(Shade(c.Hat, 0.55f)));
                 var dome = Dome(new Vector2(0, -9.4f), 7.7f, 4.8f);
                 Form(c, dome, c.Hat, 0.7f, 0.1f);
                 c.Line(new Vector2(0.6f, -14.1f), new Vector2(1.8f, -9.6f), seam, 0.4f);
                 c.Line(new Vector2(-3.4f, -13.1f), new Vector2(-4.2f, -9.8f), seam, 0.4f);
                 c.Line(new Vector2(4.4f, -13.0f), new Vector2(5.8f, -9.8f), seam, 0.4f);
-                c.Line(new Vector2(2f, -9.4f), new Vector2(11.4f, -9.4f), dyeLine, 0.5f); // where the beak meets the crown
                 c.Circle(new Vector2(0.4f, -14.2f), 0.75f, dyeLine);
                 c.Circle(new Vector2(0.3f, -14.35f), 0.45f, dyeLight);
                 Spec(c, new Vector2(-1.5f, -12.9f), 2.2f, 0.65f);
+                // The beak sticks out of the front of the crown, its bottom edge on the crown's bottom edge (y -9.4).
+                var beak = Smooth(new[]
+                {
+                    new Vector2(2f, -10.6f), new Vector2(7f, -11f), new Vector2(11f, -10.4f), new Vector2(12.6f, -9.4f),
+                    new Vector2(2f, -9.4f),
+                }, 1);
+                c.Fill(beak, c.H(Shade(c.Hat, 0.45f)), dyeLine, 0.5f);
+                c.Gradient(beak, c.H(c.Hat.Darkened(0.05f)), c.H(Shade(c.Hat, 0.5f)));
+                c.Line(new Vector2(3f, -10.3f), new Vector2(10f, -10.2f), dyeLight with { A = 0.45f }, 0.4f);
                 break;
             }
             case 2: // Top hat
