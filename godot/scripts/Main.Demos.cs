@@ -43,6 +43,7 @@ public partial class Main
             case "driftstyle": await DemoDrift(MapDesign.Generate(MapStyle.Drift, ThemeId.CandyClouds, 1)); break;
             case "sky": await DemoDrift(MapDesign.Generate(MapStyle.Sky, ThemeId.SunsetPeaks, 1)); break;
             case "customcards": await DemoCustomCards(); break;
+            case "editor": await DemoEditor(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -600,6 +601,159 @@ public partial class Main
         await DemoWait(20.0);
         DemoMark("end");
         _game.StartingCards = null;
+    }
+
+    // The map editor: an arena built from empty with a drawn pointer (blocks, a gap, spawns, pads, conveyor belts with
+    // crates on them, a sawblade), named, saved, and played against bots.
+    private async Task DemoEditor()
+    {
+        var ed = _editor;
+        var layer = new CanvasLayer { Name = "DemoPointer", Layer = 25 };
+        AddChild(layer);
+        var pointer = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(500, 300), Scale = Vector2.One * 1.3f };
+        bool pressed = false;
+        pointer.Draw += () =>
+        {
+            var arrow = new[] { Vector2.Zero, new Vector2(0, 17), new Vector2(4.5f, 13), new Vector2(8, 20), new Vector2(10.5f, 19), new Vector2(7, 12), new Vector2(12.5f, 12) };
+            pointer.DrawColoredPolygon(arrow, pressed ? new Color("#f2d58a") : Colors.White);
+            var loop = new Vector2[arrow.Length + 1];
+            arrow.CopyTo(loop, 0);
+            loop[^1] = arrow[0];
+            pointer.DrawPolyline(loop, new Color("#150a24"), 1.4f, true);
+        };
+        layer.AddChild(pointer);
+
+        var canvas = new Rect2(MapEditorUI.Corner, new Vector2(MapLayout.Width, MapLayout.Height) * MapEditorUI.Zoom);
+        async Task Frame() => await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        void Feed(InputEvent e) { if (e is InputEventMouse m && ed.IsVisibleInTree() && canvas.HasPoint(pointer.Position)) { m.Position = pointer.Position - MapEditorUI.Corner; ed.Feed(e); } }
+        async Task GlideTo(Vector2 to, double s)
+        {
+            var from = pointer.Position;
+            int n = Mathf.Max(1, (int)(s * 60));
+            for (int i = 1; i <= n; i++)
+            {
+                float k = i / (float)n;
+                pointer.Position = from.Lerp(to, k * k * (3 - 2 * k));
+                Feed(new InputEventMouseMotion());
+                await Frame();
+            }
+        }
+        Task Glide(float x, float y, double s = 0.35) => GlideTo(MapEditorUI.Corner + new Vector2(x, y) * MapEditorUI.Zoom, s);
+        void Button(bool down, MouseButton b = MouseButton.Left)
+        {
+            pressed = down;
+            pointer.QueueRedraw();
+            Feed(new InputEventMouseButton { ButtonIndex = b, Pressed = down });
+        }
+        async Task Click(float x, float y)
+        {
+            await Glide(x, y);
+            Button(true);
+            for (int i = 0; i < 5; i++) await Frame();
+            Button(false);
+            await DemoWait(0.2);
+        }
+        async Task Drag(float x1, float y1, float x2, float y2, double s = 0.5)
+        {
+            await Glide(x1, y1);
+            Button(true);
+            await Glide(x2, y2, s);
+            Button(false);
+            await DemoWait(0.2);
+        }
+        async Task PressButton(Node root, string text)
+        {
+            var b = FindButton(root, text);
+            await GlideTo(b.GlobalPosition + b.Size / 2, 0.4);
+            pressed = true;
+            pointer.QueueRedraw();
+            for (int i = 0; i < 5; i++) await Frame();
+            pressed = false;
+            pointer.QueueRedraw();
+            b.EmitSignal(BaseButton.SignalName.Pressed);
+            await DemoWait(0.15);
+        }
+        async Task Tool(string label, EditTool tool)
+        {
+            await PressButton(ed, label);
+            ed.SetTool(tool);
+        }
+
+        DemoMark("menu");
+        await DemoWait(0.6);
+        await PressButton(_menu, "Map Editor");
+        DemoMark("editor");
+        await DemoWait(1.6);
+        await PressButton(ed, "Empty");
+        ed.Load(MapDesign.Empty(ThemeId.SunsetPeaks, 1));
+        await DemoWait(0.5);
+
+        DemoMark("blocks");
+        await Tool("Block", EditTool.Block);
+        await Drag(112, 472, 272, 480);
+        await Drag(728, 472, 888, 480);
+        await Drag(424, 350, 576, 358);
+        await Tool("Gap", EditTool.Gap);
+        await Drag(464, 545, 536, 545);
+
+        DemoMark("pieces");
+        await Tool("Spawn", EditTool.Spawn);
+        await Click(192, 400);
+        await Click(808, 400);
+        await Click(56, 500);
+        await Click(944, 500);
+        await Tool("Pad", EditTool.Pad);
+        await Click(368, 500);
+        await Click(632, 500);
+        await Tool("Saw", EditTool.Saw);
+        await Drag(392, 260, 608, 260);
+
+        DemoMark("belts");
+        await Tool("Belt", EditTool.Belt);
+        await Drag(112, 505, 296, 505, 0.7);
+        await Drag(888, 505, 704, 505, 0.7);
+        await DemoWait(0.4);
+        await Click(800, 528); // turned around…
+        await DemoWait(0.5);
+        await Click(800, 528); // …and back
+        await DemoWait(0.3);
+        await Tool("Crate", EditTool.Crate);
+        await Click(152, 480);
+        await Click(848, 480);
+        await Glide(500, 470, 0.5);
+        await DemoWait(0.8);
+
+        DemoMark("name");
+        var name = FindChild<LineEdit>(ed, l => l.PlaceholderText.Contains("Name"));
+        await GlideTo(name.GlobalPosition + new Vector2(60, name.Size.Y / 2), 0.4);
+        const string arena = "Belt Factory";
+        for (int i = 1; i <= arena.Length; i++)
+        {
+            name.Text = arena[..i];
+            name.EmitSignal(LineEdit.SignalName.TextChanged, name.Text);
+            await DemoWait(0.06);
+        }
+        await PressButton(ed, "Save");
+        await DemoWait(0.4);
+        var code = FindChild<LineEdit>(ed, l => l.Editable == false && l.Text.Length > 20) ?? FindChild<LineEdit>(ed, l => l != name && l.Text.Length > 20);
+        if (code != null) await GlideTo(code.GlobalPosition + new Vector2(code.Size.X * 0.4f, code.Size.Y / 2), 0.5);
+        await PressButton(ed, "Copy");
+        DemoMark("code");
+        await DemoWait(1.4);
+        if (ed.Design.Problems() is { Count: > 0 } problems) { Finish(1, $"demo editor: the arena has problems: {string.Join(" | ", problems)}"); return; }
+
+        await PressButton(ed, "PLAYTEST");
+        layer.QueueFree();
+        await DemoWait(0.4);
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        _net.Lobby.Settings.BattlesPerRound = 3;
+        await DemoWait(0.3);
+        DemoMark("play");
+        _game.HostStartMatch();
+        await DemoWait(16.0);
+        DemoMark("end");
     }
 
     /// <summary>JSON with editor colors: keys, strings and numbers.</summary>
