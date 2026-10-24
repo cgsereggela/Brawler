@@ -488,7 +488,13 @@ public static class AvatarArt
         // Covers the top of a hollow with mask (a lid, a scowl), and carves its edge.
         void Lid(Vector2 a, Vector2 b, float above)
         {
-            c.Poly(new[] { a, b, b + new Vector2(0, -above), a + new Vector2(0, -above) }, c.H(c.Mask.Darkened(0.04f)));
+            // Keep the top corners inside the mask, so a scowl never pokes past a bald head.
+            Vector2 Top(Vector2 q)
+            {
+                float edge = -3.3f - 6.2f * Mathf.Sqrt(Mathf.Max(0, 1 - Mathf.Pow(q.X / 6.7f, 2)));
+                return new Vector2(q.X, Mathf.Max(q.Y - above, edge + 0.7f));
+            }
+            c.Poly(new[] { a, b, Top(b), Top(a) }, c.H(c.Mask.Darkened(0.04f)));
             c.Line(a, b, Ink, 0.6f);
         }
 
@@ -585,8 +591,8 @@ public static class AvatarArt
 
     private static readonly Vector2[] TongueShape = Smooth(new[]
     {
-        new Vector2(1.55f, 0.85f), new Vector2(3.15f, 0.85f), new Vector2(3.45f, 1.95f), new Vector2(2.9f, 2.85f),
-        new Vector2(1.8f, 2.85f), new Vector2(1.25f, 1.95f),
+        new Vector2(0.6f, 0.85f), new Vector2(2.2f, 0.85f), new Vector2(2.5f, 1.95f), new Vector2(1.95f, 2.85f),
+        new Vector2(0.85f, 2.85f), new Vector2(0.3f, 1.95f),
     }, 2);
 
     private static readonly Vector2[] SmileShape = Crescent(1.4f, 0.2f, 2.3f, 0.9f, 0.85f);
@@ -632,21 +638,14 @@ public static class AvatarArt
                 c.Poly(Shapes.Ellipse(new Vector2(1.6f, 1.6f), 0.4f, 0.18f, 8), c.H(tongue.Lightened(0.3f)));
                 c.Line(new Vector2(0.4f, -0.4f), new Vector2(0.9f, -0.5f), new Color(1, 1, 1, 0.3f), 0.3f); // lip highlight
                 break;
-            case 3: // Grin: a wide D with a row of separate bone teeth hanging from the top and a few small ones below.
+            case 3: // Grin: a wide D with two white buck teeth hanging from the top.
             {
                 c.Poly(GrinShape, hole);
-                for (int i = 0; i < 6; i++)
+                foreach (float x in new[] { 0.5f, 1.42f })
                 {
-                    float x = -0.9f + i * 0.84f;
-                    float h = (i == 0 || i == 5) ? 0.7f : 1.0f; // the corner teeth are shorter, following the curve
-                    var tooth = Shapes.RoundRect(new Rect2(x, -0.25f, 0.74f, h + 0.25f), 0.3f);
-                    c.Poly(tooth, c.H(c.MaskShade));
-                    c.Gradient(Shapes.RoundRect(new Rect2(x + 0.04f, -0.25f, 0.6f, h + 0.1f), 0.28f), c.H(Lit(c.Mask, 0.2f)), c.H(c.Mask));
-                }
-                foreach (float x in new[] { 0.7f, 1.4f, 2.1f }) // lower teeth rising from the jaw
-                {
-                    float by = -0.2f + 2f * Mathf.Sqrt(Mathf.Max(0, 1 - Mathf.Pow((x - 1.4f) / 2.6f, 2))) - 0.2f;
-                    c.Poly(new[] { new Vector2(x - 0.3f, by), new Vector2(x + 0.3f, by), new Vector2(x + 0.18f, by - 0.5f), new Vector2(x - 0.18f, by - 0.5f) }, c.H(c.Mask));
+                    var tooth = Shapes.RoundRect(new Rect2(x, -0.3f, 0.88f, 1.65f), 0.32f);
+                    c.Fill(tooth, c.H(OffWhite), Ink, 0.25f);
+                    c.Gradient(Shapes.RoundRect(new Rect2(x + 0.04f, -0.3f, 0.8f, 1.55f), 0.3f), c.H(White.Lightened(0.25f)), c.H(White));
                 }
                 break;
             }
@@ -666,15 +665,15 @@ public static class AvatarArt
                 }
                 }
                 break;
-            case 6: // Tongue: an open smile with a rounded, grooved tongue lolling out over the lip.
+            case 6: // Tongue: an open smile with a rounded, grooved tongue lolling out over the lip, in the middle.
             {
                 c.Poly(TongueSmileShape, hole);
-                c.Poly(Shapes.Ellipse(new Vector2(2.35f, 1.05f), 1.0f, 0.35f, 10), Ink with { A = 0.45f }); // shadow it casts on the mask
+                c.Poly(Shapes.Ellipse(new Vector2(1.4f, 1.05f), 1.1f, 0.35f, 10), Ink with { A = 0.45f }); // shadow it casts on the mask
                 c.Fill(TongueShape, c.H(new Color("#8e4455")), Ink, 0.35f);
                 c.Gradient(Inset(TongueShape, 0.15f), c.H(Lit(new Color("#c9707f"), 0.2f)), c.H(new Color("#a85565")));
-                c.Line(new Vector2(2.35f, 1.15f), new Vector2(2.35f, 2.4f), c.H(new Color("#7d3a48")), 0.28f); // centre groove
-                c.Line(new Vector2(1.95f, 1.5f), new Vector2(1.95f, 1.9f), c.H(Lit(new Color("#c9707f"), 0.4f)) with { A = 0.6f }, 0.25f);
-                c.Poly(Shapes.Ellipse(new Vector2(2.8f, 1.55f), 0.22f, 0.4f, 8), c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.45f));
+                c.Line(new Vector2(1.4f, 1.15f), new Vector2(1.4f, 2.4f), c.H(new Color("#7d3a48")), 0.28f); // centre groove
+                c.Line(new Vector2(0.95f, 1.5f), new Vector2(0.95f, 1.9f), c.H(Lit(new Color("#c9707f"), 0.4f)) with { A = 0.6f }, 0.25f);
+                c.Poly(Shapes.Ellipse(new Vector2(1.85f, 1.55f), 0.22f, 0.4f, 8), c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.45f));
                 break;
             }
             case 7: // Mustache (hair dye) over a small smile.
@@ -958,20 +957,20 @@ public static class AvatarArt
         {
             case 1: // Cap
             {
+                // The beak's top edge runs along the bottom of the dome, so the two read as one hat.
                 var visorPts = new[]
                 {
-                    new Vector2(1.5f, -10.9f), new Vector2(6f, -11.1f), new Vector2(10.4f, -10.6f), new Vector2(12.2f, -9.5f),
-                    new Vector2(11.4f, -8.4f), new Vector2(6f, -8.9f), new Vector2(1.5f, -8.6f),
+                    new Vector2(2f, -9.4f), new Vector2(11.4f, -9.4f), new Vector2(12.5f, -8.8f), new Vector2(11.7f, -8f),
+                    new Vector2(7f, -8.3f), new Vector2(2f, -8.2f),
                 };
                 c.Fill(visorPts, c.H(Shade(c.Hat, 0.5f)), dyeLine, 0.5f);
                 c.Gradient(visorPts, c.H(c.Hat.Darkened(0.12f)), c.H(Shade(c.Hat, 0.55f)));
-                c.Line(new Vector2(2.4f, -10.4f), new Vector2(10.6f, -10f), dyeLight with { A = 0.4f }, 0.4f);
                 var dome = Dome(new Vector2(0, -9.4f), 7.7f, 4.8f);
-                c.Fill(dome, dyeShade, dyeLine, 0.7f);
-                c.Gradient(Dome(new Vector2(0.7f, -9.2f), 6.7f, 4.4f), dyeLight, dye);
+                Form(c, dome, c.Hat, 0.7f, 0.1f);
                 c.Line(new Vector2(0.6f, -14.1f), new Vector2(1.8f, -9.6f), seam, 0.4f);
                 c.Line(new Vector2(-3.4f, -13.1f), new Vector2(-4.2f, -9.8f), seam, 0.4f);
                 c.Line(new Vector2(4.4f, -13.0f), new Vector2(5.8f, -9.8f), seam, 0.4f);
+                c.Line(new Vector2(2f, -9.4f), new Vector2(11.4f, -9.4f), dyeLine, 0.5f); // where the beak meets the crown
                 c.Circle(new Vector2(0.4f, -14.2f), 0.75f, dyeLine);
                 c.Circle(new Vector2(0.3f, -14.35f), 0.45f, dyeLight);
                 Spec(c, new Vector2(-1.5f, -12.9f), 2.2f, 0.65f);
@@ -998,20 +997,21 @@ public static class AvatarArt
             }
             case 3: // Beanie
             {
-                var dome = Dome(new Vector2(0, -9.6f), 7.8f, 6.2f);
+                // The crown's widest point sits inside the cuff, so the cuff overhangs it by a hair and the two join cleanly.
+                var dome = Dome(new Vector2(0, -9f), 7.9f, 6.6f);
                 Form(c, dome, c.Hat, 0.7f, 0.14f);
-                var cuff = Shapes.RoundRect(new Rect2(-8.3f, -11.2f, 16.6f, 3.2f), 1.4f);
-                c.Fill(cuff, c.H(c.Hat.Darkened(0.12f)), dyeLine, 0.6f);
+                var cuff = Shapes.RoundRect(new Rect2(-8.1f, -10.6f, 16.2f, 2.6f), 1.1f);
+                c.Fill(cuff, c.H(Shade(c.Hat, 0.15f)), dyeLine, 0.6f);
                 c.Gradient(cuff, dyeLight, c.H(Shade(c.Hat, 0.3f)));
                 for (float x = -6.8f; x < 7.5f; x += 1.7f)
-                    c.Line(new Vector2(x, -10.7f), new Vector2(x + 0.15f, -8.5f), seam, 0.4f);
-                c.Line(new Vector2(-6f, -11.5f), new Vector2(5f, -11.5f), dyeLight with { A = 0.6f }, 0.4f);
+                    c.Line(new Vector2(x, -10.1f), new Vector2(x + 0.1f, -8.5f), seam, 0.4f);
+                c.Line(new Vector2(-6f, -10.2f), new Vector2(5f, -10.2f), dyeLight with { A = 0.6f }, 0.4f);
                 for (float x = -4.4f; x < 5; x += 2.2f)
-                    c.Line(new Vector2(x, -16f + Mathf.Abs(x) * 0.25f), new Vector2(x * 0.9f, -11.6f), seam with { A = 0.3f }, 0.35f);
-                c.Circle(new Vector2(0, -16.4f), 2.3f, dyeLine);
-                c.Circle(new Vector2(0, -16.4f), 1.9f, c.H(Shade(c.Hat.Lightened(0.4f), 0.2f)));
-                c.Circle(new Vector2(0.4f, -16.8f), 1.9f - 0.57f, c.H(Lit(c.Hat, 0.5f))); // tangent to the pom's lit edge
-                Spec(c, new Vector2(-0.1f, -17.3f), 0.8f, 0.45f, 0.5f);
+                    c.Line(new Vector2(x, -15.4f + Mathf.Abs(x) * 0.25f), new Vector2(x * 0.9f, -11f), seam with { A = 0.3f }, 0.35f);
+                c.Circle(new Vector2(0, -15.9f), 2.3f, dyeLine);
+                c.Circle(new Vector2(0, -15.9f), 1.9f, c.H(Shade(c.Hat.Lightened(0.4f), 0.2f)));
+                c.Circle(new Vector2(0.4f, -16.3f), 1.9f - 0.57f, c.H(Lit(c.Hat, 0.5f))); // tangent to the pom's lit edge
+                Spec(c, new Vector2(-0.1f, -16.8f), 0.8f, 0.45f, 0.5f);
                 break;
             }
             case 4: // Crown
