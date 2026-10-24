@@ -1,4 +1,6 @@
 issues to fix:
+- sawblades sometimes extend past platforms that aren't large enough to hold the width of the obstacle, ensure the platform is wide enough for the whole path the sawblade can travel
+- all of the graphics need to be approved according to the AVATAR_ART.md guide
 
 features to add:
 - portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
