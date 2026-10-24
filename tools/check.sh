@@ -47,6 +47,7 @@ CHECKS=(
   "errorcheck|0|60|--errorcheck"
   "dailycheck|0|900|--dailycheck=20261023 --seed=1"
   "trainingcheck|0|300|--trainingcheck --seed=1"
+  "cardcheck|0|900|--cardcheck --seed=1"
   "autotest|0|900|--autotest"
   "autotest-8|0|900|--autotest --players=8"
   "teams-3v3|0|900|--autotest --players=6 --teams=3"

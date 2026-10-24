@@ -85,6 +85,8 @@ namespace Brawler;
 //                         checks the arena, mode, starting hand and Hard bots, and that the best result is kept
 //   --trainingcheck       the autopilot on the training range: card browser, hand-set cards, dummies dying and coming
 //                         back, a sparring bot that never fires, Reset keeping the cards
+//   --cardcheck[=NAME]    every built-in card (or those whose name contains NAME) held by everyone on the training range,
+//                         one at a time, until each effect it adds has happened (a bounce, a split, a heal...)
 //   --artbench            the C# time and memory to draw one character (AvatarArt), over 32 looks in many poses; needs a
 //                         window
 //   --seed=N              seeds everything random that steers the run (arenas, card offers, bots, autopilot picks); every
@@ -227,6 +229,7 @@ public partial class Main
             else if (a == "--errorcheck") ErrorCheck();
             else if (a.StartsWith("--dailycheck")) StartDailyCheck(a);
             else if (a == "--trainingcheck") StartTrainingCheck();
+            else if (a == "--cardcheck" || a.StartsWith("--cardcheck=")) StartCardCheck();
             else if (a == "--themebench") ThemeBench();
             else if (a == "--fxbench") FxBench();
             else if (a == "--artbench") ArtBench();

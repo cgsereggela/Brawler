@@ -35,6 +35,7 @@ public sealed class BlinkEffect : ICardEffect
         // Several Blink cards stack distance (via the stat) but only the first one teleports.
         if (self.Player.Effects.Find(e => e is BlinkEffect) != this) return;
 
+        EffectTally.Hit(Stat.TeleportOnBlock);
         float dist = DistancePerStack * self.S[Stat.TeleportOnBlock];
         var from = self.GlobalPosition;
         var delta = self.AimDir * dist;
@@ -59,6 +60,7 @@ public sealed class DashEffect : ICardEffect
     public void OnBlock(Avatar self, GameManager game)
     {
         if (self.Player.Effects.Find(e => e is DashEffect) != this) return;
+        EffectTally.Hit(Stat.Dash);
         var dir = self.AimDir;
         self.Launch(dir * self.S[Stat.Dash] + new Vector2(0, -40), 0.2f);
         game.HostFx(FxKind.Blink, self.GlobalPosition, 0, self.Player.Slot, self.GlobalPosition + dir * 20);

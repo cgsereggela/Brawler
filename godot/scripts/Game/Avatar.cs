@@ -217,7 +217,11 @@ public partial class Avatar : CharacterBody2D
     private void Passives(float dt)
     {
         float regen = S[Stat.Regen];
-        if (regen > 0 && Hp < S[Stat.MaxHp]) Heal(regen * dt);
+        if (regen > 0 && Hp < S[Stat.MaxHp])
+        {
+            EffectTally.Hit(Stat.Regen);
+            Heal(regen * dt);
+        }
         float leech = S[Stat.Leech];
         if (leech > 0)
         {
@@ -226,6 +230,7 @@ public partial class Avatar : CharacterBody2D
             {
                 const float Pulse = 0.33f;
                 _leechT = Pulse;
+                EffectTally.Hit(Stat.Leech);
                 Game.HostLeech(this, leech * Pulse);
             }
         }
@@ -239,6 +244,7 @@ public partial class Avatar : CharacterBody2D
     {
         if (_livesUsed >= S.Int(Stat.ExtraLives)) return false;
         _livesUsed++;
+        EffectTally.Hit(Stat.ExtraLives);
         Hp = S[Stat.MaxHp] * 0.5f;
         return true;
     }
@@ -248,6 +254,7 @@ public partial class Avatar : CharacterBody2D
     {
         float recoil = S[Stat.Recoil];
         if (recoil <= 0 || Frozen) return;
+        EffectTally.Hit(Stat.Recoil);
         var v = Velocity - shotDir * recoil / Mathf.Max(1, S[Stat.Projectiles]);
         Velocity = v.LimitLength(620);
     }
@@ -297,7 +304,11 @@ public partial class Avatar : CharacterBody2D
         bool pushingWall = onWall && f.MoveX * _wallNormalX < -0.1f;
         float slide = WallSlideSpeed / S[Stat.WallJump];
         if (pushingWall && !onFloor && v.Y > slide) v.Y = slide;
-        if (S[Stat.Glide] > 0 && !onFloor && f.JumpHeld && v.Y > 50) v.Y = 50; // Glider
+        if (S[Stat.Glide] > 0 && !onFloor && f.JumpHeld && v.Y > 50) // Glider
+        {
+            v.Y = 50;
+            EffectTally.Hit(Stat.Glide);
+        }
         v.Y = Mathf.Min(v.Y, MaxFall);
 
         // Jetpack: once armed by a mid-air jump press, holding jump thrusts upward until the fuel runs out.
@@ -305,6 +316,7 @@ public partial class Avatar : CharacterBody2D
         if (_jetting)
         {
             _fuel -= dt;
+            EffectTally.Hit(Stat.Jetpack);
             v.Y = Mathf.MoveToward(v.Y, -JetClimb, 2200 * dt);
         }
 
@@ -334,12 +346,14 @@ public partial class Avatar : CharacterBody2D
                 _wallCoyote = 0;
                 _jumpBuffer = 0;
                 _wallJumpLock = WallJumpLock;
+                EffectTally.Hit(Stat.WallJump);
                 Game.OnJump(this);
             }
             else if (kind is JumpKind.Ledge or JumpKind.Air)
             {
                 // The kept ground jump (walked or knocked off a ledge) is a full jump; card air jumps are a bit weaker.
                 v.Y = kind == JumpKind.Ledge ? -jv : -jv * 0.9f;
+                if (kind == JumpKind.Air) EffectTally.Hit(Stat.AirJumps);
                 _jumpBuffer = 0;
                 Game.OnJump(this, air: true);
             }
@@ -379,6 +393,7 @@ public partial class Avatar : CharacterBody2D
                 float into = v.Dot(n);
                 if (into > -130) continue;
                 v -= n * into * 1.85f; // reflect with 85% restitution on the normal component
+                EffectTally.Hit(Stat.Pinball);
                 Velocity = v;
                 _wallJumpLock = 0.12f;
                 break;
@@ -444,6 +459,9 @@ public partial class Avatar : CharacterBody2D
         // Berserk: more damage the lower your HP.
         float rage = 1 + S[Stat.Berserk] * (1 - Mathf.Clamp(Hp / S[Stat.MaxHp], 0, 1));
         bool wild = S[Stat.Wild] > 0;
+        if (rage > 1) EffectTally.Hit(Stat.Berserk);
+        if (wild) EffectTally.Hit(Stat.Wild);
+        if (Rage > 0) EffectTally.Hit(Stat.Adrenaline);
         for (int i = 0; i < n; i++)
         {
             float t = n == 1 ? 0.5f : i / (float)(n - 1);

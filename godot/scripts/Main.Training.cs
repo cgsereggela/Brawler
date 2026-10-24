@@ -57,7 +57,7 @@ public partial class Main
     /// <summary>Each battle (the start and every Reset): the dummies stand still and the sparring bot holds its fire.</summary>
     private void TrainingBattleStarted()
     {
-        if (!_game.Training) return;
+        if (!_game.Training || _autoMode == "cardcheck") return; // --cardcheck fights two ordinary bots
         var bots = _game.Slots.Where(p => p != null && p.Info.IsBot).OrderBy(p => p.Slot).ToList();
         for (int i = 0; i < bots.Count; i++)
         {

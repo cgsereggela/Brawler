@@ -141,6 +141,7 @@ public partial class BulletSystem : Node2D
             bool returning = b.Boomerang && b.Age > BoomerangTurn;
             if (returning)
             {
+                EffectTally.Hit(Stat.Boomerang);
                 if (ReturnHome(b, dt, host)) continue;
             }
             else
@@ -151,6 +152,8 @@ public partial class BulletSystem : Node2D
             }
 
             var start = b.Pos;
+            if (EffectTally.On && b.Phase && Sweep.Cast(ToN(b.Pos), ToN(b.Vel * dt), b.Radius, solids, Game.Map?.Slopes) != null)
+                EffectTally.Hit(Stat.Phase); // a ghost going through a wall
             if (b.Phase || returning) b.Pos += b.Vel * dt; // ghosts and returning boomerangs ignore walls
             else MoveWithBounces(b, dt, host, solids);
             if (host && !b.Dead) HostCheckPlayers(b, start);
@@ -173,6 +176,7 @@ public partial class BulletSystem : Node2D
             if (d < bestD) { bestD = d; best = a; }
         }
         if (best == null) return;
+        EffectTally.Hit(Stat.Homing);
         float speed = b.Vel.Length();
         float want = (best.GlobalPosition - b.Pos).Angle();
         float cur = b.Vel.Angle();
@@ -186,6 +190,7 @@ public partial class BulletSystem : Node2D
     {
         var owner = Game.AvatarOf(b.Owner);
         if (owner == null) return;
+        EffectTally.Hit(Stat.Guided);
         var target = owner.GlobalPosition + owner.AimDir * (owner.GlobalPosition.DistanceTo(b.Pos) + 50);
         float speed = b.Vel.Length();
         float cur = b.Vel.Angle();
@@ -237,6 +242,7 @@ public partial class BulletSystem : Node2D
             {
                 b.Bounces--;
                 b.Bounced = true;
+                EffectTally.Hit(Stat.Bounces);
                 b.Vel = ToG(Sweep.Reflect(ToN(b.Vel), h.Normal)) * 0.92f;
                 var remaining = delta * (1 - h.T);
                 delta = ToG(Sweep.Reflect(ToN(remaining), h.Normal));
@@ -247,12 +253,14 @@ public partial class BulletSystem : Node2D
                 if (host && b.BounceBlast && b.Explosion > 0)
                 {
                     BounceBlasts++;
+                    EffectTally.Hit(Stat.BounceBlast);
                     Game.HostExplode(b.Pos, b.Explosion * 0.7f, b.Damage * 0.5f, b.Owner, b.Knockback);
                 }
             }
             else if (b.Sticky > 0)
             {
                 // Sticky Mines: park on the surface and arm.
+                EffectTally.Hit(Stat.Sticky);
                 b.Stuck = true;
                 b.Vel = Vector2.Zero;
                 b.Life = b.Age + b.Sticky;
@@ -299,6 +307,7 @@ public partial class BulletSystem : Node2D
             if (b.Pierce > 0)
             {
                 b.Pierce--;
+                EffectTally.Hit(Stat.Pierce);
                 continue;
             }
             HostImpact(b, b.Pos);
@@ -308,9 +317,14 @@ public partial class BulletSystem : Node2D
 
     private void HostImpact(Bullet b, Vector2 at)
     {
-        if (b.Explosion > 0) Game.HostExplode(at, b.Explosion, b.Damage * 0.8f, b.Owner, b.Knockback * 1.5f);
+        if (b.Explosion > 0)
+        {
+            EffectTally.Hit(Stat.ExplosionRadius);
+            Game.HostExplode(at, b.Explosion, b.Damage * 0.8f, b.Owner, b.Knockback * 1.5f);
+        }
         if (b.Split > 0)
         {
+            EffectTally.Hit(Stat.SplitCount);
             float baseA = (-b.Vel).Angle();
             for (int i = 0; i < b.Split; i++)
             {
@@ -343,6 +357,7 @@ public partial class BulletSystem : Node2D
     /// </summary>
     private void HostReflect(Bullet b, Avatar blocker)
     {
+        EffectTally.Hit(Stat.Reflect);
         var shooter = b.Owner >= 0 && b.Owner < Game.Slots.Length ? Game.Slots[b.Owner]?.Avatar : null;
         var dir = shooter is { Alive: true } && shooter != blocker ? (shooter.GlobalPosition - b.Pos).Normalized() : -b.Vel.Normalized();
         if (dir == Vector2.Zero) dir = Vector2.Up;

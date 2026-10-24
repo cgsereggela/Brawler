@@ -387,6 +387,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot --fixed-fps 60 -- --errorcheck      # throws an exception in a frame callback and checks it is counted (every check fails if the game logged an error)
 "$GODOT" --headless --path godot --fixed-fps 60 -- --dailycheck      # the autopilot plays today's daily challenge (--dailycheck=20261023 for a given day) on a scratch profile: arena, mode, starting cards, Hard bots, best result kept
 "$GODOT" --headless --path godot --fixed-fps 60 -- --trainingcheck   # the autopilot on the training range: card browser and Tab, hand-set cards, dummies dying and coming back, a sparring bot that never fires, Reset (with --shots=DIR saves the browser)
+"$GODOT" --headless --path godot --fixed-fps 60 -- --cardcheck      # every built-in card in play, one at a time: each effect it adds (a bounce, a split, a lifesteal heal, a revive...) must be seen to happen within 90 s, and every number it touches must change; --cardcheck=NAME plays only cards whose name contains NAME
 # add --arena=CODE to --autotest or --autohost: every battle is played on that map code (the log names the custom arena)
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part

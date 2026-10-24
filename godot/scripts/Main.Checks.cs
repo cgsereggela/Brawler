@@ -599,6 +599,7 @@ public partial class Main
         if (_autoMode == "hangercheck") PollHanger();
         if (_autoMode == "driftcheck") PollDrift();
         if (_autoMode == "trainingcheck") PollTraining();
+        if (_autoMode == "cardcheck") PollCards();
         if (_autoMode == "sim" && _game.Phase == Phase.Fighting)
         {
             _battleFrames++;

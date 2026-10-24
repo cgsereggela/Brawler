@@ -42,6 +42,7 @@ public partial class GameManager
         if (victim.Guarded) return; // just respawned
         if (Spared(attackerSlot, victim.Player.Slot)) return; // teammates, friendly fire off: blasts, bashes and arcs pass harmlessly
         float hpBefore = victim.Hp;
+        if (victim.S[Stat.Armor] > 0 && damage > 0) EffectTally.Hit(Stat.Armor);
         damage *= 1f - victim.S[Stat.Armor];
         knockback *= victim.S[Stat.KnockbackTaken];
         if (!victim.TakeHit(damage, knockback))
@@ -72,6 +73,7 @@ public partial class GameManager
             float steal = attacker.S[Stat.Lifesteal];
             if (steal > 0)
             {
+                EffectTally.Hit(Stat.Lifesteal);
                 float before = attacker.Hp;
                 attacker.Heal(damage * steal);
                 HostHealed(attacker.Player.Slot, attacker.Hp - before);
@@ -83,7 +85,10 @@ public partial class GameManager
 
         float thorns = victim.S[Stat.Thorns];
         if (!reflected && thorns > 0 && attacker != null && attacker != victim && attacker.Alive)
+        {
+            EffectTally.Hit(Stat.Thorns);
             HostDamage(attacker, damage * thorns, Vector2.Zero, victim.Player.Slot, attacker.GlobalPosition, reflected: true);
+        }
     }
 
     /// <summary>Chain Lightning: a hit arcs to the nearest other enemy.</summary>
@@ -101,6 +106,7 @@ public partial class GameManager
             if (d < best) { best = d; next = a; }
         }
         if (next == null) return;
+        EffectTally.Hit(Stat.Chain);
         HostFx(FxKind.Zap, victim.GlobalPosition, 0, ownerSlot, next.GlobalPosition);
         var kb = (next.GlobalPosition - victim.GlobalPosition).Normalized() * 60;
         HostDamage(next, damage * chain, kb, ownerSlot, next.GlobalPosition);
@@ -128,6 +134,7 @@ public partial class GameManager
             var from = a.GlobalPosition;
             a.GlobalPosition = p;
             a.Velocity = Vector2.Zero;
+            EffectTally.Hit(Stat.Warp);
             HostFx(FxKind.Blink, from, 0, ownerSlot, p);
             return;
         }
@@ -252,6 +259,7 @@ public partial class GameManager
         }
         // Kamikaze: go out with a bang (not when leaving the game or falling into the void).
         float boom = a.S[Stat.Kamikaze];
+        if (boom > 0 && cause is KillCause.Shot or KillCause.Hazard) EffectTally.Hit(Stat.Kamikaze);
         if (boom > 0 && cause is KillCause.Shot or KillCause.Hazard) HostExplode(a.GlobalPosition, boom, 70, a.Player.Slot, 480);
     }
 
@@ -288,6 +296,7 @@ public partial class GameManager
         float wave = a.S[Stat.Shockwave];
         if (wave > 0)
         {
+            EffectTally.Hit(Stat.Shockwave);
             Bullets.HostErase(pos, body + wave, slot);
             HostFx(FxKind.Shockwave, pos, body + wave, slot, pos);
         }
@@ -305,6 +314,7 @@ public partial class GameManager
                 if (closest.DistanceTo(pos) > reach) continue;
                 var dir = (e.GlobalPosition - pos).Normalized();
                 if (dir == Vector2.Zero) dir = Vector2.Up;
+                EffectTally.Hit(Stat.ShieldBash);
                 HostDamage(e, bash, dir * 330 + new Vector2(0, -90), slot, closest);
             }
             HostFx(FxKind.Bash, pos, reach, slot, pos);
@@ -325,19 +335,23 @@ public partial class GameManager
         var attacker = attackerSlot >= 0 && attackerSlot < Slots.Length ? Slots[attackerSlot]?.Avatar : null;
         if (!reflected && s[Stat.BlockSpikes] > 0 && damage > 0 && attacker != null && attacker != a && attacker.Alive)
         {
+            EffectTally.Hit(Stat.BlockSpikes);
             HostFx(FxKind.Zap, a.GlobalPosition, 0, a.Player.Slot, attacker.GlobalPosition);
             HostDamage(attacker, damage * s[Stat.BlockSpikes], Vector2.Zero, a.Player.Slot, attacker.GlobalPosition, reflected: true);
         }
         if (s[Stat.BlockHeal] > 0 && damage > 0)
         {
+            EffectTally.Hit(Stat.BlockHeal);
             float before = a.Hp;
             a.Heal(damage * s[Stat.BlockHeal]);
             HostHealed(a.Player.Slot, a.Hp - before);
         }
-        if (s[Stat.BlockReload] > 0) a.RefillAmmo();
+        if (s[Stat.BlockReload] > 0) { EffectTally.Hit(Stat.BlockReload); a.RefillAmmo(); }
+        if (s[Stat.BlockRefund] > 0) EffectTally.Hit(Stat.BlockRefund);
         if (s[Stat.BlockRefund] > 0) a.BlockCd = Mathf.Max(0, a.BlockCd - s[Stat.BlockCooldown] * s[Stat.BlockRefund]);
         if (s[Stat.Counter] > 0)
         {
+            EffectTally.Hit(Stat.Counter);
             if (a.CounterT <= 0) HostFx(FxKind.Counter, a.GlobalPosition, 0, a.Player.Slot, a.GlobalPosition);
             a.CounterT = CounterTime;
         }
