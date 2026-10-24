@@ -41,6 +41,9 @@ image files.
   `HidesMohawk`, `HatLift` (sitting on tall hair).
 - Hair: `HairTop`. Tucked variants (`SpikyTucked`, `AfroTucked`) are used under covering hats.
 - Gun: geometry must match `Logic/GunRig.cs`, which places the muzzle (bullet origin) on the host.
+- Arm: cosmetic only. `GunRig.ShoulderPath` slides the shoulder from the chest (aiming up) to the front of the cloak
+  (aiming level or down), and `GunRig.ArmLengths` sizes the arm to the reach, so the part showing past the body is about
+  the same length at every aim. Keep the shoulder inside the body (the unit tests check it); it never moves the muzzle.
 
 ### Hard limits
 

@@ -985,19 +985,19 @@ public static class AvatarArt
     }
 
     // ---------- arm ----------
-    // A two-part arm in the cloak color, from the shoulder (GunRig.Shoulder, sprite space) through a bending elbow
-    // (GunRig.Elbow) to the hand on the grip. The elbow straightens as the gun reaches out, folds as it comes in or
-    // kicks back, and trails a little behind fast moves (AvatarPose.ArmSway). Drawn before the body, so the body hides
-    // its root and it can never cover the face; only the part reaching out past the body shows (over the head when
-    // aiming up).
+    // A two-part arm in the cloak color, from the shoulder through a bending elbow (GunRig.Arm, sprite space) to the
+    // hand on the grip. The shoulder slides from the chest (aiming up) to the front of the cloak (aiming level or down)
+    // and the arm's length follows the reach, so the part showing past the body looks about the same at every aim. The
+    // elbow folds as the gun kicks back and trails a little behind fast moves (AvatarPose.ArmSway). Drawn before the
+    // body, so the body hides its root and it can never cover the face.
 
     private const float UpperArmRadius = 1.15f, ForearmRadius = 1.0f, ArmOutline = 0.55f, MaxSway = 2.6f;
 
     private static void DrawArm(Ctx c, int facing)
     {
         var p = c.P;
-        var (grip, elbow) = GunRig.Arm(SpriteGunAim(p, facing), p.Kick);
-        var shoulder = G(GunRig.Shoulder);
+        var (grip, elbow, sh) = GunRig.Arm(SpriteGunAim(p, facing), p.Kick);
+        var shoulder = G(sh);
         var e = G(elbow) + p.ArmSway.LimitLength(MaxSway);
         var upper = Shapes.Capsule(shoulder, e, UpperArmRadius);
         var fore = Shapes.Capsule(e, G(grip), ForearmRadius);

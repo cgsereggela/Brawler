@@ -28,11 +28,32 @@ public readonly record struct GunLook(int Receiver = 5, int Barrel = 6, int Barr
 /// the aim from the hand) never crosses the eyes, nose or mouth of any face option (<see cref="Face"/>) at any aim
 /// the facing rules allow (sprite-space aim x &gt;= -0.15), recoil included. The unit tests sweep every angle.
 /// One arm holds the gun. It is drawn behind the body, so only the gun and hand can ever overlap the face.
+/// The arm is purely visual: its shoulder and length follow the aim (<see cref="ShoulderPath"/>, <see cref="ArmLengths"/>)
+/// so the part showing past the body looks about the same length at every angle; the hand, gun and muzzle don't depend on it.
 /// </summary>
 public static class GunRig
 {
-    /// <summary>The shoulder in sprite space. The arm runs from here to the hand, drawn behind the body.</summary>
-    public static readonly Vector2 Shoulder = new(1.0f, -1.0f);
+    /// <summary>
+    /// Where the arm starts (sprite space) for each sprite-space aim angle in degrees, interpolated in between. The arm
+    /// is drawn behind the body, so the shoulder only decides where it comes out: aiming up it starts high on the chest
+    /// and the head hides most of it; aiming level or down it slides to the front of the cloak (which spans y -1.6..3.5,
+    /// see Game/AvatarArt.CloakOutline), so the arm leaves the body near the hand instead of running along under it.
+    /// </summary>
+    public static readonly (float Deg, Vector2 Shoulder)[] ShoulderPath =
+    {
+        (-100, new(1.0f, -1.0f)),
+        (-30, new(1.0f, -1.0f)),
+        (-10, new(3.4f, 0.2f)),
+        (15, new(4.6f, 1.2f)),
+        (45, new(4.8f, 1.6f)),
+        (100, new(4.0f, 1.6f)),
+    };
+
+    /// <summary>How much longer than the rest reach the arm is, so the elbow keeps the same slight bend at every aim.</summary>
+    public const float ArmSlack = 1.06f;
+
+    /// <summary>The upper arm's share of the arm's length (the forearm gets the rest).</summary>
+    public const float UpperShare = 0.48f;
 
     /// <summary>
     /// Where the shooting hand sits (sprite space) for each sprite-space aim angle in degrees (-90 up, 0 ahead,
@@ -50,15 +71,14 @@ public static class GunRig
         (-45, new(11.6f, -8.8f)),
         (-30, new(14.0f, -5.0f)),
         (-15, new(15.2f, -0.4f)),
-        (0, new(14.0f, 4.0f)),
-        (30, new(11.2f, 6.4f)),
-        (60, new(9.5f, 7.5f)),
+        (-6, new(14.2f, 3.0f)),
+        (0, new(12.0f, 4.2f)),
+        (15, new(10.6f, 5.6f)),
+        (30, new(9.2f, 6.6f)),
+        (60, new(7.8f, 7.6f)),
         (90, new(5.5f, 8.0f)),
         (100, new(4.0f, 8.0f)),
     };
-
-    /// <summary>Upper arm and forearm lengths (sprite space): nearly straight at the farthest reach, bent when the hand comes in.</summary>
-    public const float UpperArm = 7.4f, Forearm = 8.0f;
 
     /// <summary>Where the gun hand grips, in gun space (the arm ends here).</summary>
     public static readonly Vector2 Grip = new(0.6f, 0.2f);
@@ -68,7 +88,7 @@ public static class GunRig
     /// It bends to the clockwise side of the shoulder→hand line (below it when reaching ahead, in front when reaching
     /// up), so the elbow hangs as gravity would have it. Out of reach, the arm goes straight toward the hand.
     /// </summary>
-    public static Vector2 Elbow(Vector2 shoulder, Vector2 hand, float upper = UpperArm, float fore = Forearm)
+    public static Vector2 Elbow(Vector2 shoulder, Vector2 hand, float upper, float fore)
     {
         var d = hand - shoulder;
         float len = d.Length();
@@ -81,12 +101,28 @@ public static class GunRig
         return shoulder + dir * along + new Vector2(-dir.Y, dir.X) * side;
     }
 
-    /// <summary>The hand's grip point and the elbow in sprite space for a sprite-space aim and recoil.</summary>
-    public static (Vector2 Grip, Vector2 Elbow) Arm(Vector2 spriteAim, float kick = 0)
+    /// <summary>The shoulder (sprite space) for a sprite-space aim, from <see cref="ShoulderPath"/>.</summary>
+    public static Vector2 Shoulder(Vector2 spriteAim) => Along(ShoulderPath, spriteAim);
+
+    /// <summary>
+    /// Upper arm and forearm lengths for a sprite-space aim: <see cref="ArmSlack"/> times the shoulder-to-grip distance
+    /// with no recoil, so the elbow has the same slight bend at every aim and folds further as recoil pulls the hand in.
+    /// </summary>
+    public static (float Upper, float Fore) ArmLengths(Vector2 spriteAim)
+    {
+        var (hand, angle) = Pose(spriteAim);
+        float len = Vector2.Distance(Shoulder(spriteAim), ToSprite(Grip, hand, angle)) * ArmSlack;
+        return (len * UpperShare, len * (1 - UpperShare));
+    }
+
+    /// <summary>The hand's grip point, the elbow and the shoulder in sprite space for a sprite-space aim and recoil.</summary>
+    public static (Vector2 Grip, Vector2 Elbow, Vector2 Shoulder) Arm(Vector2 spriteAim, float kick = 0)
     {
         var (hand, angle) = Pose(spriteAim, kick);
         var grip = ToSprite(Grip, hand, angle);
-        return (grip, Elbow(Shoulder, grip));
+        var shoulder = Shoulder(spriteAim);
+        var (upper, fore) = ArmLengths(spriteAim);
+        return (grip, Elbow(shoulder, grip, upper, fore), shoulder);
     }
 
     /// <summary>Recoil: how far the hand is pushed back and how much the muzzle climbs (radians) at kick 1.</summary>
@@ -103,17 +139,20 @@ public static class GunRig
     }
 
     /// <summary>The shooting hand (gun-space origin) in sprite space for a sprite-space aim, with no recoil.</summary>
-    public static Vector2 Hand(Vector2 spriteAim)
+    public static Vector2 Hand(Vector2 spriteAim) => Along(HandPath, spriteAim);
+
+    /// <summary>A point from a table keyed by sprite-space aim angle (degrees), interpolated between entries.</summary>
+    private static Vector2 Along((float Deg, Vector2 At)[] path, Vector2 spriteAim)
     {
-        float deg = Math.Clamp(MathF.Atan2(spriteAim.Y, spriteAim.X) * 180 / MathF.PI, HandPath[0].Deg, HandPath[^1].Deg);
-        for (int i = 1; i < HandPath.Length; i++)
-            if (deg <= HandPath[i].Deg)
+        float deg = Math.Clamp(MathF.Atan2(spriteAim.Y, spriteAim.X) * 180 / MathF.PI, path[0].Deg, path[^1].Deg);
+        for (int i = 1; i < path.Length; i++)
+            if (deg <= path[i].Deg)
             {
-                var (d0, h0) = HandPath[i - 1];
-                var (d1, h1) = HandPath[i];
+                var (d0, h0) = path[i - 1];
+                var (d1, h1) = path[i];
                 return Vector2.Lerp(h0, h1, (deg - d0) / (d1 - d0));
             }
-        return HandPath[^1].Hand;
+        return path[^1].At;
     }
 
     /// <summary>Gun angle (radians, sprite space) and hand position for a sprite-space aim and recoil 0..1.</summary>
