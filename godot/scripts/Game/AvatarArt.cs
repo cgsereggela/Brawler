@@ -463,6 +463,8 @@ public static class AvatarArt
             for (int i = 0; i < pts.Length; i++)
                 pts[i] = at + look + new Vector2(pts[i].X * rot.X - pts[i].Y * rot.Y, pts[i].X * rot.Y + pts[i].Y * rot.X);
             c.Poly(pts, hole);
+            if (!p.Blink && !p.Hurt && Mathf.Min(rx, ry) > 1f) // a small glint, so the hollow looks wet rather than flat
+                c.Circle(at + look + new Vector2(rx * 0.38f, -ry * 0.42f), Mathf.Min(rx, ry) * 0.24f, new Color(1, 1, 1, 0.5f));
         }
 
         // Covers the top of a hollow with mask (a lid, a scowl), and carves its edge.
@@ -522,7 +524,10 @@ public static class AvatarArt
             {
                 var band = Shapes.RoundRect(new Rect2(-5.4f, -6.0f, 11.6f, 3.2f), 1f);
                 c.Poly(band, hole);
-                c.Line(new Vector2(-4.4f, -5.2f), new Vector2(-1.8f, -5.2f), new Color(1, 1, 1, 0.25f), 0.5f);
+                c.Gradient(band, c.H(Hollow.Lerp(new Color("#2f3a5c"), 0.45f)), hole);
+                c.Poly(new[] { new Vector2(-4.6f, -5.7f), new Vector2(-2.2f, -5.7f), new Vector2(-3.4f, -3.4f), new Vector2(-5.4f, -3.4f) }, new Color(1, 1, 1, 0.1f));
+                c.Line(new Vector2(-4.4f, -5.2f), new Vector2(-1.8f, -5.2f), new Color(1, 1, 1, 0.3f), 0.5f);
+                c.Line(new Vector2(0.9f, -4.4f), new Vector2(2.1f, -5.5f), new Color(1, 1, 1, 0.18f), 0.4f);
                 c.Line(new Vector2(-7.3f, -5.6f), new Vector2(-5.3f, -5.2f), Ink, 0.7f);
                 break;
             }
@@ -600,12 +605,16 @@ public static class AvatarArt
             case 2: // Open: a round "oh" with the tongue showing at the bottom.
                 c.Poly(Shapes.Ellipse(new Vector2(1.4f, 0.9f), 1.3f, 1.5f, 18), hole);
                 c.Poly(Shapes.Ellipse(new Vector2(1.4f, 1.75f), 0.85f, 0.5f, 14), tongue);
+                c.Poly(Shapes.Ellipse(new Vector2(1.6f, 1.6f), 0.4f, 0.18f, 8), c.H(tongue.Lightened(0.3f)));
+                c.Line(new Vector2(0.4f, -0.4f), new Vector2(0.9f, -0.5f), new Color(1, 1, 1, 0.3f), 0.3f); // lip highlight
                 break;
             case 3: // Grin: a wide D with a row of bone teeth along the top.
                 c.Poly(GrinShape, hole);
-                c.Poly(Shapes.RoundRect(new Rect2(-0.8f, -0.2f, 4.4f, 0.95f), 0.25f), c.H(c.Mask));
-                foreach (float x in new[] { 0.5f, 1.4f, 2.3f })
-                    c.Line(new Vector2(x, -0.2f), new Vector2(x, 0.75f), hole, 0.28f);
+                var teeth = Shapes.RoundRect(new Rect2(-0.8f, -0.2f, 4.4f, 0.95f), 0.25f);
+                c.Poly(teeth, c.H(c.Mask));
+                c.Gradient(teeth, c.H(c.Mask.Lightened(0.1f)), c.H(c.MaskShade));
+                foreach (float x in new[] { -0.3f, 0.5f, 1.4f, 2.3f, 3.1f })
+                    c.Line(new Vector2(x, -0.2f), new Vector2(x, 0.75f), hole with { A = 0.9f }, 0.28f);
                 break;
             case 4: // Frown
                 c.Poly(FrownShape, hole);
@@ -615,18 +624,30 @@ public static class AvatarArt
                 foreach (float fx in new[] { 0.3f, 2.5f })
                 {
                     float top = 0.3f + 0.7f * (1 - Mathf.Pow((fx - 1.4f) / 2.4f, 2)) - 0.2f;
-                    c.Fill(new[] { new Vector2(fx - 0.48f, top), new Vector2(fx + 0.48f, top), new Vector2(fx, top + 1.35f) }, c.H(c.Mask), Ink, 0.3f);
+                {
+                    var fang = new[] { new Vector2(fx - 0.5f, top), new Vector2(fx + 0.5f, top), new Vector2(fx + 0.05f, top + 1.5f) };
+                    c.Fill(fang, c.H(c.MaskShade), Ink, 0.3f);
+                    c.Gradient(fang, c.H(Bone.Lightened(0.2f)), c.H(c.Mask));
+                    c.Line(new Vector2(fx + 0.15f, top + 0.1f), new Vector2(fx + 0.1f, top + 0.8f), new Color(1, 1, 1, 0.6f), 0.22f);
+                }
                 }
                 break;
             case 6: // Tongue: an open smile with the tongue poking out over the lip.
                 c.Poly(TongueSmileShape, hole);
                 var tip = Shapes.Capsule(new Vector2(2.1f, 1.1f), new Vector2(2.3f, 2.3f), 0.85f);
-                c.Fill(tip, tongue, Ink, 0.3f);
+                c.Fill(tip, c.H(new Color("#8e4455")), Ink, 0.3f);
+                c.Gradient(tip, tongue.Lightened(0.15f), tongue);
                 c.Line(new Vector2(2.2f, 1.3f), new Vector2(2.25f, 2.3f), c.H(new Color("#7d3a48")), 0.25f);
+                c.Circle(new Vector2(2.4f, 1.55f), 0.2f, new Color(1, 1, 1, 0.5f));
                 break;
             case 7: // Mustache (hair dye) over a small smile.
                 c.Poly(Crescent(1.4f, 1.6f, 1.2f, 0.35f, 0.55f), hole);
-                c.Fill(Shapes.Offset(MustacheShape, new Vector2(0, 0.4f)), c.H(c.Hair), Ink, 0.45f);
+                var stache = Shapes.Offset(MustacheShape, new Vector2(0, 0.4f));
+                c.Fill(stache, c.H(Shade(c.Hair, 0.25f)), c.Hair.Darkened(0.55f), 0.45f);
+                c.Gradient(stache, c.H(Lit(c.Hair, 0.3f)), c.H(Shade(c.Hair, 0.25f)));
+                c.Line(new Vector2(3.4f, -0.5f), new Vector2(5.2f, 0.2f), c.Hair.Darkened(0.5f) with { A = 0.5f }, 0.3f);
+                c.Line(new Vector2(-0.6f, -0.5f), new Vector2(-2.2f, 0.2f), c.Hair.Darkened(0.5f) with { A = 0.5f }, 0.3f);
+                c.Line(new Vector2(0.4f, -0.9f), new Vector2(3f, -0.9f), c.H(Lit(c.Hair, 0.5f)) with { A = 0.7f }, 0.35f);
                 break;
             case 8: // Cat: a little nose over a "w".
                 c.Poly(new[] { new Vector2(0.9f, -0.5f), new Vector2(1.9f, -0.5f), new Vector2(1.4f, 0.15f) }, hole);
