@@ -702,13 +702,24 @@ public static class AvatarArt
         if (style != 6) return;
         // Ponytail swings a little behind the head.
         float sw = Mathf.Sin(c.P.Time * 3f) * 0.6f;
-        var tail = new[]
+        var tail = Smooth(new[]
         {
-            new Vector2(-6f, -8.4f), new Vector2(-9.8f, -10f), new Vector2(-12.6f, -8f + sw * 0.3f), new Vector2(-13.2f + sw, -4.2f),
-            new Vector2(-12f + sw, -0.4f), new Vector2(-10.8f + sw * 0.6f, -3.6f), new Vector2(-9.8f, -6.2f), new Vector2(-7.2f, -5.6f),
-        };
-        c.Fill(tail, c.H(c.Hair), c.Hair.Darkened(0.5f), 0.8f);
-        c.Line(new Vector2(-10.6f, -8.6f), new Vector2(-12.2f + sw, -4f), c.H(c.Hair.Lightened(0.3f)) with { A = 0.7f }, 0.5f);
+            new Vector2(-6f, -8.4f), new Vector2(-9.8f, -10.2f), new Vector2(-12.8f, -8f + sw * 0.3f), new Vector2(-13.6f + sw, -4.2f),
+            new Vector2(-12.4f + sw, -0.2f), new Vector2(-10.8f + sw * 0.6f, -3.6f), new Vector2(-9.8f, -6.2f), new Vector2(-7.2f, -5.6f),
+        }, 1);
+        c.Fill(tail, c.H(Shade(c.Hair, 0.3f)), c.Hair.Darkened(0.5f), 0.8f);
+        c.Gradient(tail, c.H(Lit(c.Hair, 0.2f)), c.H(Shade(c.Hair, 0.25f)));
+        var strand = c.Hair.Darkened(0.5f) with { A = 0.5f };
+        c.Line(new Vector2(-9.6f, -8.6f), new Vector2(-12f + sw, -2.2f), strand, 0.4f);
+        c.Line(new Vector2(-8.4f, -7f), new Vector2(-10.6f + sw * 0.6f, -3.4f), strand, 0.35f);
+        c.Line(new Vector2(-10.8f, -8.8f), new Vector2(-12.6f + sw, -4.6f), c.H(Lit(c.Hair, 0.5f)) with { A = 0.7f }, 0.5f);
+    }
+
+    /// <summary>A hair mass: shadow-tinted base with the dark rim, then a light-to-shadow gradient over it.</summary>
+    private static void HairMass(Ctx c, Vector2[] pts, float top = 0.3f, float bottom = 0.2f)
+    {
+        c.Fill(pts, c.H(Shade(c.Hair, 0.3f)), c.Hair.Darkened(0.5f), 0.8f);
+        c.Gradient(pts, c.H(Lit(c.Hair, top)), c.H(Shade(c.Hair, bottom)));
     }
 
     private static void DrawHair(Ctx c, int style, int hat)
@@ -716,49 +727,73 @@ public static class AvatarArt
         bool underHat = Covers(hat);
         var main = c.H(c.Hair);
         var line = c.Hair.Darkened(0.5f);
-        var shine = c.H(c.Hair.Lightened(0.35f)) with { A = 0.75f };
+        var shine = c.H(Lit(c.Hair, 0.55f)) with { A = 0.75f };
+        var strand = line with { A = 0.45f };
         switch (style)
         {
             case 1:
-                c.Fill(ShortHair, main, line, 0.8f);
-                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.7f), 2.8f, 0.75f, 12), shine);
+                HairMass(c, ShortHair);
+                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.7f), 3f, 0.75f, 12), shine);
+                c.Line(new Vector2(0.4f, -11f), new Vector2(1.6f, -8.2f), strand, 0.4f);
+                c.Line(new Vector2(-4.4f, -10.2f), new Vector2(-3.4f, -7.6f), strand, 0.4f);
+                c.Line(new Vector2(4.4f, -10.1f), new Vector2(4.2f, -7.4f), strand, 0.4f);
                 break;
             case 2 when underHat:
-                c.Fill(SpikyTucked, main, line, 0.8f);
+                HairMass(c, SpikyTucked);
+                c.Line(new Vector2(-9.2f, -7.6f), new Vector2(-7.4f, -7.6f), strand, 0.4f);
+                c.Line(new Vector2(9.4f, -8.6f), new Vector2(7.8f, -8.4f), strand, 0.4f);
                 break;
             case 2:
-                c.Fill(SpikyHair, main, line, 0.8f);
-                c.Line(new Vector2(-1f, -14.6f), new Vector2(-1.4f, -11f), shine, 0.6f);
-                c.Line(new Vector2(3.6f, -13.8f), new Vector2(3f, -11f), shine, 0.5f);
+                HairMass(c, SpikyHair);
+                c.Line(new Vector2(-1f, -14.8f), new Vector2(-1.4f, -11f), shine, 0.6f);
+                c.Line(new Vector2(3.8f, -13.8f), new Vector2(3.2f, -11f), shine, 0.5f);
+                c.Line(new Vector2(-5.4f, -12.2f), new Vector2(-5.2f, -10.4f), shine, 0.45f);
+                c.Line(new Vector2(-3.2f, -11.2f), new Vector2(-2.6f, -9.2f), strand, 0.4f);
+                c.Line(new Vector2(1.6f, -11.4f), new Vector2(1.8f, -9.2f), strand, 0.4f);
                 break;
             case 3 when HidesMohawk(hat): // shaved sides: nothing shows under the hat
                 break;
             case 3:
-                c.Fill(Mohawk, main, line, 0.8f);
-                c.Line(new Vector2(-1.8f, -14.6f), new Vector2(-3.2f, -11f), shine, 0.6f);
+                HairMass(c, Mohawk);
+                c.Line(new Vector2(-1.8f, -14.8f), new Vector2(-3.2f, -11f), shine, 0.6f);
+                c.Line(new Vector2(1.6f, -14.6f), new Vector2(1.9f, -10.8f), strand, 0.4f);
+                c.Line(new Vector2(-0.2f, -15.6f), new Vector2(-0.3f, -11f), strand, 0.35f);
                 break;
             case 4:
-                c.Fill(LongHair, main, line, 0.8f);
-                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.9f), 2.8f, 0.75f, 12), shine);
+                HairMass(c, LongHair, 0.3f, 0.3f);
+                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.9f), 3f, 0.75f, 12), shine);
                 c.Line(new Vector2(-7.4f, -4f), new Vector2(-7.2f, 1.4f), shine, 0.5f);
+                c.Line(new Vector2(-6.4f, -5.4f), new Vector2(-6.4f, 1.8f), strand, 0.4f);
+                c.Line(new Vector2(0.4f, -11f), new Vector2(1.6f, -8.2f), strand, 0.4f);
+                c.Line(new Vector2(-4.4f, -10.2f), new Vector2(-3.4f, -7.6f), strand, 0.4f);
                 break;
             case 5:
-                c.Fill(BowlHair, main, line, 0.8f);
-                c.Poly(Shapes.Ellipse(new Vector2(-1.5f, -10.1f), 3.4f, 0.8f, 12), shine);
+                HairMass(c, BowlHair);
+                c.Poly(Shapes.Ellipse(new Vector2(-1.5f, -10.1f), 3.6f, 0.8f, 12), shine);
                 for (float x = -3.6f; x < 8f; x += 2.4f)
-                    c.Line(new Vector2(x, -7.8f), new Vector2(x + 0.2f, -6.3f), line with { A = 0.5f }, 0.35f);
+                    c.Line(new Vector2(x, -7.8f), new Vector2(x + 0.2f, -6.3f), strand, 0.4f);
+                c.Line(new Vector2(-5.6f, -6.1f), new Vector2(8.4f, -6.1f), line with { A = 0.7f }, 0.5f);
                 break;
             case 6:
-                c.Fill(ShortHair, main, line, 0.8f);
-                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.7f), 2.8f, 0.75f, 12), shine);
-                c.Fill(Shapes.Ellipse(new Vector2(-7.4f, -7.4f), 1.1f, 1.4f, 12), c.H(Red), DarkRed, 0.4f);
+                HairMass(c, ShortHair);
+                c.Poly(Shapes.Ellipse(new Vector2(-2f, -9.7f), 3f, 0.75f, 12), shine);
+                c.Line(new Vector2(0.4f, -11f), new Vector2(1.6f, -8.2f), strand, 0.4f);
+                c.Line(new Vector2(-4.6f, -10.2f), new Vector2(-6.2f, -8.4f), strand, 0.4f);
+                c.Fill(Shapes.Ellipse(new Vector2(-7.4f, -7.4f), 1.15f, 1.45f, 12), c.H(Shade(Red, 0.2f)), DarkRed, 0.45f); // the tie
+                c.Poly(Shapes.Ellipse(new Vector2(-7.6f, -7.9f), 0.5f, 0.6f, 8), c.H(Lit(Red, 0.4f)));
                 break;
             case 7:
             {
                 var puffs = underHat ? AfroTucked : AfroPuffs;
                 foreach (var (pc, r) in puffs) c.Circle(pc, r + 0.8f, line);
-                foreach (var (pc, r) in puffs) c.Circle(pc, r, main);
-                foreach (var (pc, r) in puffs) c.Arc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.45f }, 0.5f);
+                foreach (var (pc, r) in puffs) c.Circle(pc, r, c.H(Shade(c.Hair, 0.3f)));
+                // Lit copies, nudged up and forward, so each puff keeps shadow on its lower back edge.
+                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.4f, -0.55f) * (r / 4f), r * 0.82f, main);
+                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.7f, -1f) * (r / 4f), r * 0.5f, c.H(Lit(c.Hair, 0.3f)));
+                foreach (var (pc, r) in puffs) c.Arc(pc, r * 0.7f, Mathf.Pi * 1.1f, Mathf.Pi * 1.45f, 6, shine with { A = 0.5f }, 0.5f);
+                if (!underHat)
+                    foreach (var (pc, r) in puffs) // curl hints on the shadow side
+                        c.Arc(pc, r * 0.55f, Mathf.Pi * 0.15f, Mathf.Pi * 0.6f, 6, strand with { A = 0.3f }, 0.35f);
                 break;
             }
         }
