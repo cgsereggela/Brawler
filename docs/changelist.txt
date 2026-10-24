@@ -1,5 +1,4 @@
 issues to fix:
-- pure maths inside Game/ has no unit tests. BotBrain's LobAim/ArcClear, JumpLands and the ballistic and drop formulas, and GameManager.Sync's snapshot packing don't touch the scene tree but sit outside Logic/, so the test project can't compile them. Move the engine-free parts into Logic/ and test them directly (a lob lands where aimed, a packed snapshot round-trips)
 - the unit test runner is one 2,000-line Program.cs with no way to run one area. Split it into files by section and take an optional name filter (dotnet run -- MapCode), so a failure can be rerun on its own
 
 features to add:
