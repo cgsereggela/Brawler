@@ -777,131 +777,259 @@ public static class AvatarArt
         return pts;
     }
 
+    // ---------- shading helpers (see docs/AVATAR_ART.md) ----------
+
+    private static readonly Color ShadeTint = new("#2a2340"), LightTint = new("#fff1d0");
+    private static Color Shade(Color c, float k = 0.35f) => c.Lerp(ShadeTint, k);
+    private static Color Lit(Color c, float k = 0.25f) => c.Lerp(LightTint, k);
+
+    /// <summary>Chaikin corner cutting: each pass rounds every corner (point count doubles). Call once, into a static array.</summary>
+    private static Vector2[] Smooth(Vector2[] pts, int passes = 2)
+    {
+        for (int p = 0; p < passes; p++)
+        {
+            var r = new Vector2[pts.Length * 2];
+            for (int i = 0; i < pts.Length; i++)
+            {
+                Vector2 a = pts[i], b = pts[(i + 1) % pts.Length];
+                r[2 * i] = a.Lerp(b, 0.25f);
+                r[2 * i + 1] = a.Lerp(b, 0.75f);
+            }
+            pts = r;
+        }
+        return pts;
+    }
+
+    /// <summary>
+    /// A shape lit from the upper front: the whole shape in the shadow color with an outline, then a slightly smaller,
+    /// up-and-forward copy in a vertical light-to-mid gradient on top, so the far (back and lower) edge keeps the shadow.
+    /// Works on roughly convex shapes; nothing is clipped, so the lit copy stays inside the base.
+    /// </summary>
+    private static void Form(Ctx c, Vector2[] pts, Color col, float ow, float lit = 0.12f)
+    {
+        var sum = Vector2.Zero;
+        float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+        foreach (var q in pts)
+        {
+            sum += q;
+            minX = Mathf.Min(minX, q.X); maxX = Mathf.Max(maxX, q.X);
+            minY = Mathf.Min(minY, q.Y); maxY = Mathf.Max(maxY, q.Y);
+        }
+        var mid = sum / pts.Length;
+        var shift = new Vector2((maxX - minX) * 0.045f, -(maxY - minY) * 0.06f);
+        var inner = new Vector2[pts.Length];
+        for (int i = 0; i < pts.Length; i++) inner[i] = mid + (pts[i] - mid) * (1 - lit) + shift;
+        c.Fill(pts, c.H(Shade(col)), col.Darkened(0.5f), ow);
+        c.Gradient(inner, c.H(Lit(col)), c.H(col));
+    }
+
+    /// <summary>A soft white highlight on the top front of a part.</summary>
+    private static void Spec(Ctx c, Vector2 at, float rx, float ry, float a = 0.35f) =>
+        c.Poly(Shapes.Ellipse(at, rx, ry, 12), c.P.Hurt ? Colors.White : new Color(1, 1, 1, a));
+
     private static void DrawHat(Ctx c, int style)
     {
         float t = c.P.Time;
         var dye = c.H(c.Hat);
         var dyeLine = c.Hat.Darkened(0.5f);
-        var dyeLight = c.H(c.Hat.Lightened(0.3f));
+        var dyeShade = c.H(Shade(c.Hat));
+        var dyeLight = c.H(Lit(c.Hat));
+        var seam = dyeLine with { A = 0.5f };
         switch (style)
         {
             case 1: // Cap
             {
-                c.Fill(Shapes.Capsule(new Vector2(2.5f, -9.7f), new Vector2(11.8f, -9.3f), 1.15f), c.H(c.Hat.Darkened(0.25f)), dyeLine, 0.5f);
+                var visorPts = new[]
+                {
+                    new Vector2(1.5f, -10.9f), new Vector2(6f, -11.1f), new Vector2(10.4f, -10.6f), new Vector2(12.2f, -9.5f),
+                    new Vector2(11.4f, -8.4f), new Vector2(6f, -8.9f), new Vector2(1.5f, -8.6f),
+                };
+                c.Fill(visorPts, c.H(Shade(c.Hat, 0.5f)), dyeLine, 0.5f);
+                c.Gradient(visorPts, c.H(c.Hat.Darkened(0.12f)), c.H(Shade(c.Hat, 0.55f)));
+                c.Line(new Vector2(2.4f, -10.4f), new Vector2(10.6f, -10f), dyeLight with { A = 0.4f }, 0.4f);
                 var dome = Dome(new Vector2(0, -9.4f), 7.7f, 4.8f);
-                c.Fill(dome, dye, dyeLine, 0.7f);
-                c.Gradient(dome, dyeLight, c.H(c.Hat.Darkened(0.15f)));
-                c.Line(new Vector2(0.6f, -14.1f), new Vector2(1.8f, -9.6f), dyeLine with { A = 0.5f }, 0.4f);
+                c.Fill(dome, dyeShade, dyeLine, 0.7f);
+                c.Gradient(Dome(new Vector2(0.7f, -9.2f), 6.7f, 4.4f), dyeLight, dye);
+                c.Line(new Vector2(0.6f, -14.1f), new Vector2(1.8f, -9.6f), seam, 0.4f);
+                c.Line(new Vector2(-3.4f, -13.1f), new Vector2(-4.2f, -9.8f), seam, 0.4f);
+                c.Line(new Vector2(4.4f, -13.0f), new Vector2(5.8f, -9.8f), seam, 0.4f);
                 c.Circle(new Vector2(0.4f, -14.2f), 0.75f, dyeLine);
+                c.Circle(new Vector2(0.3f, -14.35f), 0.45f, dyeLight);
+                Spec(c, new Vector2(-1.5f, -12.9f), 2.2f, 0.65f);
                 break;
             }
             case 2: // Top hat
             {
                 var rim = HatGrey.Lightened(0.25f);
-                c.Fill(Shapes.RoundRect(new Rect2(-5f, -21.4f, 10f, 11.6f), 1.2f), c.H(HatBlack), rim, 0.6f);
-                c.Poly(Shapes.RoundRect(new Rect2(-5f, -13.6f, 10f, 2.4f), 0.4f), dye);
-                c.Line(new Vector2(-3.6f, -20f), new Vector2(-3.6f, -14.2f), c.H(HatGrey), 0.8f);
-                c.Fill(Shapes.Capsule(new Vector2(-8.4f, -10.3f), new Vector2(8.4f, -10.3f), 1.2f), c.H(HatBlack), rim, 0.6f);
+                var crown = Shapes.RoundRect(new Rect2(-5f, -21.4f, 10f, 11.6f), 1.2f);
+                c.Fill(crown, c.H(HatBlack), rim, 0.6f);
+                c.Gradient(crown, c.H(HatGrey.Lerp(HatBlack, 0.35f)), c.H(HatBlack));
+                c.Poly(Shapes.RoundRect(new Rect2(1.6f, -20.6f, 3f, 10f), 0.8f), c.H(HatBlack) with { A = 0.6f });
+                var band = Shapes.RoundRect(new Rect2(-5f, -13.8f, 10f, 2.6f), 0.4f);
+                c.Poly(band, dye);
+                c.Gradient(band, dyeLight, dyeShade);
+                c.Line(new Vector2(-5f, -13.8f), new Vector2(5f, -13.8f), dyeLine with { A = 0.6f }, 0.35f);
+                c.Fill(Shapes.RoundRect(new Rect2(0.8f, -13.9f, 2.4f, 2.8f), 0.4f), c.H(Gold), DarkGold, 0.35f);
+                c.Poly(Shapes.RoundRect(new Rect2(1.5f, -13.3f, 1.2f, 1.6f), 0.2f), c.H(HatBlack));
+                c.Line(new Vector2(-3.6f, -20f), new Vector2(-3.6f, -14.4f), c.H(HatGrey.Lightened(0.15f)) with { A = 0.7f }, 0.8f);
+                var brim = Shapes.Capsule(new Vector2(-8.4f, -10.3f), new Vector2(8.4f, -10.3f), 1.2f);
+                c.Fill(brim, c.H(HatBlack), rim, 0.6f);
+                c.Line(new Vector2(-7.6f, -11f), new Vector2(7.2f, -11f), c.H(HatGrey.Lightened(0.1f)) with { A = 0.6f }, 0.4f);
                 break;
             }
             case 3: // Beanie
             {
                 var dome = Dome(new Vector2(0, -9.6f), 7.8f, 6.2f);
-                c.Fill(dome, dye, dyeLine, 0.7f);
-                c.Gradient(dome, dyeLight, dye);
-                c.Fill(Shapes.RoundRect(new Rect2(-8.3f, -11.2f, 16.6f, 3.2f), 1.4f), c.H(c.Hat.Darkened(0.15f)), dyeLine, 0.6f);
-                for (float x = -6.6f; x < 7.5f; x += 1.7f)
-                    c.Line(new Vector2(x, -10.6f), new Vector2(x, -8.6f), dyeLine with { A = 0.45f }, 0.35f);
-                c.Circle(new Vector2(0, -16.2f), 2.3f, dyeLine);
-                c.Circle(new Vector2(0, -16.2f), 1.8f, c.H(c.Hat.Lightened(0.55f)));
+                Form(c, dome, c.Hat, 0.7f, 0.14f);
+                var cuff = Shapes.RoundRect(new Rect2(-8.3f, -11.2f, 16.6f, 3.2f), 1.4f);
+                c.Fill(cuff, c.H(c.Hat.Darkened(0.12f)), dyeLine, 0.6f);
+                c.Gradient(cuff, dyeLight, c.H(Shade(c.Hat, 0.3f)));
+                for (float x = -6.8f; x < 7.5f; x += 1.7f)
+                    c.Line(new Vector2(x, -10.7f), new Vector2(x + 0.15f, -8.5f), seam, 0.4f);
+                c.Line(new Vector2(-6f, -11.5f), new Vector2(5f, -11.5f), dyeLight with { A = 0.6f }, 0.4f);
+                for (float x = -4.4f; x < 5; x += 2.2f)
+                    c.Line(new Vector2(x, -16f + Mathf.Abs(x) * 0.25f), new Vector2(x * 0.9f, -11.6f), seam with { A = 0.3f }, 0.35f);
+                c.Circle(new Vector2(0, -16.4f), 2.4f, dyeLine);
+                c.Circle(new Vector2(0, -16.4f), 1.9f, c.H(Shade(c.Hat.Lightened(0.4f), 0.2f)));
+                c.Circle(new Vector2(0.2f, -16.7f), 1.45f, c.H(Lit(c.Hat, 0.5f)));
+                Spec(c, new Vector2(-0.4f, -17.3f), 0.8f, 0.45f, 0.5f);
                 break;
             }
             case 4: // Crown
             {
                 var crown = new[]
                 {
-                    new Vector2(-6f, -9.8f), new Vector2(-6.6f, -15.6f), new Vector2(-3.3f, -12.7f), new Vector2(0f, -16.9f),
-                    new Vector2(3.3f, -12.7f), new Vector2(6.6f, -15.6f), new Vector2(6f, -9.8f),
+                    new Vector2(-6f, -9.8f), new Vector2(-6.8f, -15.8f), new Vector2(-3.3f, -12.7f), new Vector2(0f, -17.2f),
+                    new Vector2(3.3f, -12.7f), new Vector2(6.8f, -15.8f), new Vector2(6f, -9.8f),
                 };
-                c.Fill(crown, c.H(Gold), DarkGold.Darkened(0.3f), 0.6f);
+                c.Fill(crown, c.H(DarkGold), DarkGold.Darkened(0.55f), 0.6f);
                 c.Gradient(crown, c.H(PaleYellow), c.H(Gold));
-                c.Poly(Shapes.RoundRect(new Rect2(-6f, -11.6f, 12f, 1.8f), 0.4f), c.H(DarkGold));
-                foreach (var tip in new[] { new Vector2(-6.6f, -15.6f), new Vector2(0, -16.9f), new Vector2(6.6f, -15.6f) })
-                    c.Circle(tip, 0.8f, c.H(PaleYellow));
-                c.Fill(Shapes.Ellipse(new Vector2(0, -12.9f), 1.2f, 1.4f, 12), dye, dyeLine, 0.35f);
-                c.Circle(new Vector2(-0.4f, -13.4f), 0.35f, new Color(1, 1, 1, 0.8f));
+                c.Poly(new[] { new Vector2(2.4f, -10.6f), new Vector2(3.3f, -12.7f), new Vector2(6.6f, -15f), new Vector2(6f, -9.8f), new Vector2(3.4f, -9.8f) }, c.H(DarkGold) with { A = 0.35f });
+                var band = Shapes.RoundRect(new Rect2(-6f, -11.6f, 12f, 1.8f), 0.4f);
+                c.Poly(band, c.H(Gold));
+                c.Gradient(band, c.H(Gold.Lightened(0.15f)), c.H(DarkGold));
+                foreach (var tip in new[] { new Vector2(-6.8f, -15.8f), new Vector2(0, -17.2f), new Vector2(6.8f, -15.8f) })
+                {
+                    c.Circle(tip, 0.95f, c.H(DarkGold));
+                    c.Circle(tip, 0.75f, c.H(PaleYellow));
+                }
+                foreach (float gx in new[] { -3.6f, 3.6f }) c.Circle(new Vector2(gx, -10.7f), 0.38f, c.H(Red.Lightened(0.15f)));
+                c.Fill(Shapes.Ellipse(new Vector2(0, -12.6f), 1.3f, 1.5f, 12), dyeShade, dyeLine, 0.35f);
+                c.Poly(Shapes.Ellipse(new Vector2(0.1f, -12.9f), 0.85f, 1f, 10), dye);
+                c.Circle(new Vector2(-0.4f, -13.3f), 0.35f, c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.85f));
                 break;
             }
             case 5: // Party
             {
                 var tip = new Vector2(1f, -20.4f);
                 Vector2 bl = new(-5f, -10.2f), br = new(5f, -10.2f);
-                c.Fill(new[] { bl, tip, br }, dye, dyeLine, 0.6f);
-                foreach (var (a0, a1) in new[] { (0.22f, 0.36f), (0.55f, 0.69f) })
-                    c.Poly(new[] { bl.Lerp(tip, a0), bl.Lerp(tip, a1), br.Lerp(tip, a1), br.Lerp(tip, a0) }, c.H(White));
-                c.Circle(tip, 1.6f, c.H(PaleYellow));
-                c.Circle(tip + new Vector2(-0.4f, -0.4f), 0.5f, Colors.White);
+                var cone = new[] { bl, tip, br };
+                c.Fill(cone, dyeShade, dyeLine, 0.6f);
+                c.Gradient(new[] { bl + new Vector2(0.9f, -0.2f), tip + new Vector2(-0.1f, 0.9f), br.Lerp(tip, 0.55f) + new Vector2(-0.5f, 0), br.Lerp(bl, 0.5f) + new Vector2(0, -0.2f) }, dyeLight, dye);
+                foreach (var (a0, a1) in new[] { (0.2f, 0.34f), (0.5f, 0.64f) })
+                    c.Poly(new[] { bl.Lerp(tip, a0), bl.Lerp(tip, a1), br.Lerp(tip, a1), br.Lerp(tip, a0) }, c.H(White.Lerp(c.Hat, 0.12f)));
+                c.Line(bl, br, dyeLine with { A = 0.7f }, 0.5f);
+                c.Circle(tip, 1.75f, c.H(Gold.Darkened(0.2f)));
+                c.Circle(tip, 1.5f, c.H(PaleYellow));
+                c.Circle(tip + new Vector2(-0.45f, -0.45f), 0.5f, Colors.White);
                 break;
             }
             case 6: // Headband
             {
                 float w1 = Mathf.Sin(t * 6f) * 0.9f, w2 = Mathf.Sin(t * 6f + 1.3f) * 0.9f;
-                c.Fill(Shapes.Capsule(new Vector2(-7.4f, -8.2f), new Vector2(-12.2f, -6.6f + w1), 0.85f), c.H(c.Hat.Darkened(0.15f)), dyeLine, 0.4f);
-                c.Fill(Shapes.Capsule(new Vector2(-7.4f, -7.8f), new Vector2(-11.4f, -4.4f + w2), 0.85f), c.H(c.Hat.Darkened(0.25f)), dyeLine, 0.4f);
-                c.Fill(Shapes.RoundRect(new Rect2(-7.7f, -9.4f, 15.4f, 2.5f), 1f), dye, dyeLine, 0.5f);
-                c.Line(new Vector2(-6.5f, -8.9f), new Vector2(6.5f, -8.9f), dyeLight with { A = 0.6f }, 0.4f);
+                var tailA = Shapes.Capsule(new Vector2(-7.4f, -8.2f), new Vector2(-12.4f, -6.6f + w1), 0.85f);
+                var tailB = Shapes.Capsule(new Vector2(-7.4f, -7.8f), new Vector2(-11.6f, -4.2f + w2), 0.85f);
+                c.Fill(tailB, c.H(Shade(c.Hat, 0.45f)), dyeLine, 0.4f);
+                c.Fill(tailA, c.H(Shade(c.Hat, 0.2f)), dyeLine, 0.4f);
+                var band = Shapes.RoundRect(new Rect2(-7.7f, -9.4f, 15.4f, 2.5f), 1f);
+                c.Fill(band, dyeShade, dyeLine, 0.55f);
+                c.Gradient(band, dyeLight, dye);
+                c.Line(new Vector2(-6.5f, -8.95f), new Vector2(6.5f, -8.95f), dyeLight with { A = 0.6f }, 0.4f);
+                c.Line(new Vector2(-6f, -7.6f), new Vector2(6f, -7.6f), dyeLine with { A = 0.4f }, 0.35f);
+                c.Fill(Shapes.Ellipse(new Vector2(-7.6f, -8.1f), 1.3f, 1.5f, 12), dyeShade, dyeLine, 0.4f); // the knot
+                c.Poly(Shapes.Ellipse(new Vector2(-7.8f, -8.5f), 0.55f, 0.6f, 8), dyeLight);
                 break;
             }
             case 7: // Viking
             {
-                var hornL = new[]
+                var hornL = Smooth(new[]
                 {
-                    new Vector2(-6.2f, -10.8f), new Vector2(-9.6f, -12.2f), new Vector2(-11.6f, -15.4f), new Vector2(-11.6f, -18.8f),
-                    new Vector2(-10.1f, -16f), new Vector2(-7.7f, -14.2f), new Vector2(-5.4f, -13.2f),
-                };
+                    new Vector2(-6.2f, -10.8f), new Vector2(-9.8f, -12f), new Vector2(-11.8f, -15.4f), new Vector2(-11.9f, -19.2f),
+                    new Vector2(-10.0f, -16.2f), new Vector2(-7.7f, -14.2f), new Vector2(-5.4f, -13.2f),
+                }, 1);
                 var hornR = new Vector2[hornL.Length];
                 for (int i = 0; i < hornL.Length; i++) hornR[i] = new Vector2(-hornL[i].X, hornL[i].Y);
-                c.Fill(hornL, c.H(Bone), Bone.Darkened(0.5f), 0.55f);
-                c.Fill(hornR, c.H(Bone), Bone.Darkened(0.5f), 0.55f);
+                foreach (var horn in new[] { hornL, hornR })
+                {
+                    c.Fill(horn, c.H(Shade(Bone, 0.3f)), Bone.Darkened(0.55f), 0.6f);
+                    c.Gradient(horn, c.H(Bone.Lightened(0.15f)), c.H(Shade(Bone, 0.25f)));
+                }
+                foreach (float sx in new[] { -1f, 1f })
+                {
+                    c.Line(new Vector2(sx * 9.4f, -12.6f), new Vector2(sx * 8.4f, -13.6f), Bone.Darkened(0.45f) with { A = 0.6f }, 0.4f);
+                    c.Line(new Vector2(sx * 10.8f, -15f), new Vector2(sx * 9.4f, -15.7f), Bone.Darkened(0.45f) with { A = 0.6f }, 0.4f);
+                }
                 var dome = Dome(new Vector2(0, -9.6f), 7.8f, 5.6f);
-                c.Fill(dome, dye, dyeLine, 0.7f);
-                c.Gradient(dome, dyeLight, dye);
-                c.Fill(Shapes.RoundRect(new Rect2(-8.2f, -11.2f, 16.4f, 2.3f), 0.9f), c.H(Metal), DarkMetal.Darkened(0.3f), 0.5f);
-                for (float x = -6f; x <= 6f; x += 3f) c.Circle(new Vector2(x, -10.05f), 0.4f, c.H(DarkMetal));
+                Form(c, dome, c.Hat, 0.7f);
+                var bandPts = Shapes.RoundRect(new Rect2(-8.2f, -11.2f, 16.4f, 2.3f), 0.9f);
+                c.Fill(bandPts, c.H(DarkMetal), DarkMetal.Darkened(0.4f), 0.5f);
+                c.Gradient(bandPts, c.H(Metal.Lightened(0.2f)), c.H(DarkMetal));
+                for (float x = -6f; x <= 6f; x += 3f)
+                {
+                    c.Circle(new Vector2(x, -10.05f), 0.45f, c.H(DarkMetal.Darkened(0.3f)));
+                    c.Circle(new Vector2(x - 0.1f, -10.2f), 0.25f, c.H(Metal.Lightened(0.3f)));
+                }
+                Spec(c, new Vector2(-1.8f, -13.7f), 2.4f, 0.55f);
                 break;
             }
             case 8: // Halo
             {
                 float lift = Mathf.Sin(t * 2.6f) * 0.6f;
                 var ring = Shapes.Ellipse(new Vector2(0, -14.8f + lift), 5.6f, 1.7f, 28);
-                c.Closed(ring, c.P.Hurt ? Colors.White : Shapes.Hdr(Gold, 1.7f), 1.1f);
-                c.Closed(ring, c.H(PaleYellow) with { A = 0.8f }, 0.4f);
+                c.Closed(ring, c.P.Hurt ? Colors.White : Shapes.Hdr(DarkGold, 1.3f), 1.5f);
+                c.Closed(ring, c.P.Hurt ? Colors.White : Shapes.Hdr(Gold, 1.7f), 1.0f);
+                c.Closed(ring, c.H(PaleYellow) with { A = 0.85f }, 0.4f);
                 break;
             }
             case 9: // Propeller
             {
                 var dome = Dome(new Vector2(0, -9.6f), 7f, 4.4f);
-                c.Fill(dome, dye, dyeLine, 0.7f);
-                c.Gradient(dome, dyeLight, dye);
+                Form(c, dome, c.Hat, 0.7f);
+                foreach (float sx in new[] { -2.9f, 0f, 2.9f }) // panel seams
+                    c.Line(new Vector2(sx * 0.4f, -14f), new Vector2(sx * 1.9f, -9.8f), seam, 0.4f);
+                c.Line(new Vector2(-6.8f, -10.4f), new Vector2(6.8f, -10.4f), dyeLine with { A = 0.45f }, 0.4f);
+                Spec(c, new Vector2(-2.2f, -12.7f), 2f, 0.55f);
                 c.Line(new Vector2(0, -13.8f), new Vector2(0, -15.4f), Ink, 0.8f);
                 float spin = Mathf.Cos(t * 22f);
                 float bw = Mathf.Max(0.4f, 2.8f * Mathf.Abs(spin));
-                c.Fill(Shapes.Ellipse(new Vector2(-2.8f * spin, -15.6f), bw, 0.7f, 12), c.H(Red), DarkRed, 0.35f);
-                c.Fill(Shapes.Ellipse(new Vector2(2.8f * spin, -15.6f), bw, 0.7f, 12), c.H(Blue), Blue.Darkened(0.4f), 0.35f);
-                c.Circle(new Vector2(0, -15.6f), 0.6f, c.H(Gold));
+                c.Fill(Shapes.Ellipse(new Vector2(-2.8f * spin, -15.6f), bw, 0.75f, 12), c.H(Red.Lightened(0.08f)), DarkRed, 0.4f);
+                c.Fill(Shapes.Ellipse(new Vector2(2.8f * spin, -15.6f), bw, 0.75f, 12), c.H(Blue.Lightened(0.1f)), Blue.Darkened(0.5f), 0.4f);
+                c.Circle(new Vector2(0, -15.6f), 0.7f, c.H(DarkGold));
+                c.Circle(new Vector2(-0.1f, -15.7f), 0.5f, c.H(Gold.Lightened(0.2f)));
                 break;
             }
             case 10: // Chef
             {
-                var line = OffWhite.Darkened(0.45f);
+                var line = OffWhite.Darkened(0.5f);
                 var puffs = new[] { (new Vector2(-3.8f, -16.4f), 3.6f), (new Vector2(3.8f, -16.4f), 3.6f), (new Vector2(0, -18f), 4f) };
+                var band = Shapes.RoundRect(new Rect2(-5.5f, -16.6f, 11f, 6.4f), 0.6f);
                 foreach (var (pc, r) in puffs) c.Circle(pc, r + 0.6f, line);
                 c.Poly(Shapes.RoundRect(new Rect2(-6.1f, -16.6f, 12.2f, 6.4f), 0.8f), line);
-                foreach (var (pc, r) in puffs) c.Circle(pc, r, c.H(White));
-                c.Poly(Shapes.RoundRect(new Rect2(-5.5f, -16.6f, 11f, 5.8f), 0.6f), c.H(White));
-                c.Poly(Shapes.RoundRect(new Rect2(-5.6f, -12.2f, 11.2f, 1.6f), 0.4f), dye);
-                c.Line(new Vector2(-1.8f, -16f), new Vector2(-1.6f, -13f), line with { A = 0.5f }, 0.35f);
-                c.Line(new Vector2(1.8f, -16f), new Vector2(1.6f, -13f), line with { A = 0.5f }, 0.35f);
+                var shadeW = c.H(Shade(White, 0.3f));
+                foreach (var (pc, r) in puffs) c.Circle(pc, r, shadeW);
+                c.Poly(band, shadeW);
+                // Lit copies, nudged up and forward, leave the shadow on the lower back edge.
+                var litW = c.H(White);
+                foreach (var (pc, r) in puffs) c.Circle(pc + new Vector2(0.45f, -0.5f), r * 0.86f, litW);
+                c.Poly(Shapes.RoundRect(new Rect2(-4.9f, -16.4f, 10.2f, 5.2f), 0.6f), litW);
+                // Pleats.
+                c.Line(new Vector2(-2.4f, -15.4f), new Vector2(-2.1f, -12.6f), line with { A = 0.55f }, 0.4f);
+                c.Line(new Vector2(0.4f, -15.9f), new Vector2(0.5f, -12.6f), line with { A = 0.45f }, 0.4f);
+                c.Line(new Vector2(2.9f, -15.4f), new Vector2(2.7f, -12.6f), line with { A = 0.55f }, 0.4f);
+                var cuff = Shapes.RoundRect(new Rect2(-5.6f, -12.4f, 11.2f, 1.8f), 0.4f);
+                c.Poly(cuff, dye);
+                c.Gradient(cuff, dyeLight, dyeShade);
+                Spec(c, new Vector2(-2.6f, -19.6f), 1.5f, 0.6f, 0.6f);
                 break;
             }
             case 11: // Wizard: a tall dyed cone flopping over at the tip, a wide brim and two gold stars.
@@ -909,14 +1037,21 @@ public static class AvatarArt
                 float sway = Mathf.Sin(t * 2.2f) * 0.5f;
                 var cone = new[]
                 {
-                    new Vector2(-5.4f, -10.6f), new Vector2(-2.6f, -17.5f), new Vector2(0.6f, -23.2f), new Vector2(3.8f + sway, -26.2f),
-                    new Vector2(2.4f, -21.6f), new Vector2(3.4f, -16.6f), new Vector2(5.4f, -10.6f),
+                    new Vector2(-5.4f, -10.6f), new Vector2(-2.6f, -17.5f), new Vector2(0.6f, -23.2f), new Vector2(3.8f + sway, -26.4f),
+                    new Vector2(2.2f, -21.6f), new Vector2(3.4f, -16.6f), new Vector2(5.4f, -10.6f),
                 };
-                c.Fill(cone, dye, dyeLine, 0.6f);
-                c.Gradient(cone, dyeLight, c.H(c.Hat.Darkened(0.2f)));
-                c.Fill(Shapes.Ellipse(new Vector2(0, -10.4f), 9.6f, 1.6f, 24), c.H(c.Hat.Darkened(0.2f)), dyeLine, 0.6f);
-                c.Poly(StarShape(new Vector2(-1.2f, -15.2f), 1.4f), c.H(PaleYellow));
-                c.Poly(StarShape(new Vector2(1.8f, -19.6f), 0.95f), c.H(PaleYellow));
+                c.Fill(cone, dyeShade, dyeLine, 0.6f);
+                c.Gradient(cone, dyeLight, c.H(Shade(c.Hat, 0.15f)));
+                c.Poly(new[] { new Vector2(2.2f, -21.6f), new Vector2(3.4f, -16.6f), new Vector2(5.2f, -10.8f), new Vector2(2.4f, -10.8f), new Vector2(1.6f, -17f) }, dyeShade with { A = 0.5f });
+                var brim = Shapes.Ellipse(new Vector2(0, -10.4f), 9.8f, 1.7f, 24);
+                c.Fill(brim, c.H(Shade(c.Hat, 0.5f)), dyeLine, 0.6f);
+                c.Gradient(brim, c.H(c.Hat.Darkened(0.05f)), c.H(Shade(c.Hat, 0.55f)));
+                var band = Shapes.RoundRect(new Rect2(-5.5f, -12.6f, 11f, 1.8f), 0.4f);
+                c.Poly(band, c.H(Shade(c.Hat, 0.5f)));
+                c.Fill(Shapes.RoundRect(new Rect2(-1.1f, -12.8f, 2.2f, 2.2f), 0.4f), c.H(Gold), DarkGold, 0.35f);
+                c.Poly(StarShape(new Vector2(-1.2f, -15.2f), 1.5f), c.H(PaleYellow));
+                c.Poly(StarShape(new Vector2(1.8f, -19.6f), 1.0f), c.H(PaleYellow));
+                c.Circle(new Vector2(-3f, -13.8f), 0.35f, c.H(PaleYellow) with { A = 0.8f });
                 break;
             }
             case 12: // Laurel: two sprigs of gold leaves around the head, meeting over the brow with a dyed berry.
@@ -928,45 +1063,66 @@ public static class AvatarArt
                     {
                         float a = Mathf.DegToRad(Mathf.Lerp(from, to, i / 4f));
                         var p = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
-                        var d = new Vector2(-Mathf.Sin(a), Mathf.Cos(a)) * 1.7f; // along the arc
-                        var n = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 0.85f;  // outward
-                        var leaf = new[] { p - d, p + n, p + d, p - n * 0.4f };
-                        c.Fill(leaf, c.H(i % 2 == 0 ? Gold : PaleYellow), DarkGold.Darkened(0.3f), 0.35f);
+                        var d = new Vector2(-Mathf.Sin(a), Mathf.Cos(a)) * 1.8f; // along the arc
+                        var n = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 0.95f;  // outward
+                        var leaf = new[] { p - d, p + n, p + d, p - n * 0.45f };
+                        var lc = i % 2 == 0 ? Gold : PaleYellow;
+                        c.Fill(leaf, c.H(Shade(lc, 0.25f)), DarkGold.Darkened(0.4f), 0.4f);
+                        c.Gradient(leaf, c.H(Lit(lc, 0.3f)), c.H(lc));
+                        c.Line(p - d * 0.7f, p + d * 0.8f, c.H(DarkGold) with { A = 0.5f }, 0.3f);
                     }
-                c.Circle(center + new Vector2(0, -r), 1.05f, dyeLine);
-                c.Circle(center + new Vector2(0, -r), 0.8f, dye);
+                c.Circle(center + new Vector2(0, -r), 1.15f, dyeLine);
+                c.Circle(center + new Vector2(0, -r), 0.88f, dyeShade);
+                c.Circle(center + new Vector2(0.1f, -r - 0.1f), 0.6f, dye);
+                c.Circle(center + new Vector2(-0.2f, -r - 0.35f), 0.25f, c.P.Hurt ? Colors.White : new Color(1, 1, 1, 0.8f));
                 break;
             }
             case 13: // Horns: two little red horns curling up out of the head.
             {
-                var hornL = new[]
+                var hornL = Smooth(new[]
                 {
-                    new Vector2(-6.4f, -10.2f), new Vector2(-7.6f, -12.8f), new Vector2(-7.3f, -15.2f), new Vector2(-6.1f, -16.8f),
-                    new Vector2(-5.6f, -14.6f), new Vector2(-4.4f, -12.6f), new Vector2(-2.8f, -11.1f),
-                };
+                    new Vector2(-6.4f, -10.2f), new Vector2(-7.8f, -12.8f), new Vector2(-7.5f, -15.4f), new Vector2(-6f, -17.2f),
+                    new Vector2(-5.5f, -14.6f), new Vector2(-4.4f, -12.6f), new Vector2(-2.8f, -11.1f),
+                }, 1);
                 var hornR = new Vector2[hornL.Length];
                 for (int i = 0; i < hornL.Length; i++) hornR[i] = new Vector2(-hornL[i].X, hornL[i].Y);
                 foreach (var horn in new[] { hornL, hornR })
                 {
-                    c.Fill(horn, c.H(Red), DarkRed.Darkened(0.3f), 0.55f);
-                    c.Gradient(horn, c.H(Red.Lightened(0.3f)), c.H(DarkRed));
+                    c.Fill(horn, c.H(DarkRed), DarkRed.Darkened(0.5f), 0.6f);
+                    c.Gradient(horn, c.H(Lit(Red, 0.35f)), c.H(Shade(DarkRed, 0.2f)));
                 }
+                foreach (float sx in new[] { -1f, 1f })
+                {
+                    c.Line(new Vector2(sx * 6.6f, -11.6f), new Vector2(sx * 5.1f, -12.1f), DarkRed.Darkened(0.4f) with { A = 0.6f }, 0.4f);
+                    c.Line(new Vector2(sx * 7f, -13.6f), new Vector2(sx * 5.4f, -13.7f), DarkRed.Darkened(0.4f) with { A = 0.6f }, 0.4f);
+                    c.Line(new Vector2(sx * 6.9f, -15.2f), new Vector2(sx * 5.9f, -15.2f), DarkRed.Darkened(0.4f) with { A = 0.5f }, 0.35f);
+                }
+                c.Line(new Vector2(-7.1f, -14.8f), new Vector2(-6.4f, -16.4f), c.H(Red.Lightened(0.5f)) with { A = 0.6f }, 0.4f);
+                c.Line(new Vector2(5.8f, -16.4f), new Vector2(6.5f, -14.8f), c.H(Red.Lightened(0.5f)) with { A = 0.6f }, 0.4f);
                 break;
             }
             case 14: // Pirate: a black tricorn with a dyed trim and a little skull.
             {
-                var hat = new[]
+                var hat = Smooth(new[]
                 {
-                    new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.6f), new Vector2(-3.6f, -16.6f), new Vector2(0, -15.2f),
-                    new Vector2(3.6f, -16.6f), new Vector2(7.4f, -14.6f), new Vector2(9.2f, -10.4f), new Vector2(0, -11.8f),
+                    new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.8f), new Vector2(-3.6f, -16.8f), new Vector2(0, -15.2f),
+                    new Vector2(3.6f, -16.8f), new Vector2(7.4f, -14.8f), new Vector2(9.2f, -10.4f), new Vector2(0, -11.8f),
+                }, 1);
+                var trim = new[]
+                {
+                    new Vector2(-9.2f, -10.4f), new Vector2(-7.4f, -14.8f), new Vector2(-3.6f, -16.8f), new Vector2(0, -15.2f),
+                    new Vector2(3.6f, -16.8f), new Vector2(7.4f, -14.8f), new Vector2(9.2f, -10.4f),
                 };
                 c.Fill(hat, c.H(HatBlack), HatGrey.Lightened(0.25f), 0.6f);
-                for (int i = 0; i < 6; i++) c.Line(hat[i] + new Vector2(0, 0.7f), hat[i + 1] + new Vector2(0, 0.7f), dye, 0.55f);
-                c.Line(new Vector2(-1.9f, -11.9f), new Vector2(1.9f, -13.1f), c.H(Bone), 0.45f);
-                c.Line(new Vector2(-1.9f, -13.1f), new Vector2(1.9f, -11.9f), c.H(Bone), 0.45f);
-                c.Circle(new Vector2(0, -13.6f), 1.25f, c.H(Bone));
-                c.Circle(new Vector2(-0.45f, -13.7f), 0.32f, Ink);
-                c.Circle(new Vector2(0.45f, -13.7f), 0.32f, Ink);
+                c.Gradient(hat, c.H(HatGrey.Lerp(HatBlack, 0.3f)), c.H(HatBlack));
+                for (int i = 0; i < trim.Length - 1; i++) c.Line(trim[i] + new Vector2(0, 0.75f), trim[i + 1] + new Vector2(0, 0.75f), dye, 0.6f);
+                c.Line(new Vector2(-5.2f, -15.6f), new Vector2(-1.2f, -15.4f), c.H(HatGrey.Lightened(0.2f)) with { A = 0.6f }, 0.4f);
+                c.Line(new Vector2(-1.9f, -11.9f), new Vector2(1.9f, -13.1f), c.H(Bone), 0.5f);
+                c.Line(new Vector2(-1.9f, -13.1f), new Vector2(1.9f, -11.9f), c.H(Bone), 0.5f);
+                c.Circle(new Vector2(0, -13.6f), 1.3f, c.H(Bone));
+                c.Poly(new[] { new Vector2(-0.6f, -12.5f), new Vector2(0.6f, -12.5f), new Vector2(0.5f, -11.8f), new Vector2(-0.5f, -11.8f) }, c.H(Bone));
+                c.Circle(new Vector2(-0.45f, -13.7f), 0.34f, Ink);
+                c.Circle(new Vector2(0.45f, -13.7f), 0.34f, Ink);
                 break;
             }
         }
