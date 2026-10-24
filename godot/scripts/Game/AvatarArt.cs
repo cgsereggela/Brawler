@@ -340,8 +340,8 @@ public static class AvatarArt
         // Thin dark legs under the cloak, and darker boots.
         var cloak = Cloak(c.P.Body);
         var boot = Hollow.Lerp(cloak, 0.3f);
-        Leg(c, rig, -HipX, rig.Back, rig.BackTilt, rig.BackToe, c.H(cloak.Darkened(0.45f)), c.H(boot), Ink);
-        Leg(c, rig, HipX, rig.Front, rig.FrontTilt, rig.FrontToe, c.H(cloak.Darkened(0.3f)), c.H(boot.Lightened(0.06f)), Ink);
+        Leg(c, rig, -HipX, rig.Back, rig.BackTilt, rig.BackToe, c.H(Shade(cloak.Darkened(0.3f), 0.35f)), c.H(boot), Ink);
+        Leg(c, rig, HipX, rig.Front, rig.FrontTilt, rig.FrontToe, c.H(Shade(cloak.Darkened(0.15f), 0.2f)), c.H(Lit(boot, 0.12f)), Ink);
     }
 
     private static void Leg(Ctx c, Rig rig, float hipX, Vector2 foot, float tilt, float toe, Color leg, Color shoe, Color line)
@@ -372,7 +372,9 @@ public static class AvatarArt
             pts[i] = foot + rot * q.X + up * -q.Y;
         }
         c.Fill(pts, shoe, line, 0.5f);
-        c.Line(foot + rot * (toe * -0.6f) + up * 0.75f, foot + rot * (toe * 1.6f) + up * 0.75f, new Color(1, 1, 1, 0.25f), 0.4f);
+        c.Line(foot + rot * (toe * -0.6f) + up * 0.75f, foot + rot * (toe * 1.6f) + up * 0.75f, new Color(1, 1, 1, 0.3f), 0.4f);
+        c.Line(hip.Lerp(knee, 0.35f) + new Vector2(0.45f, 0), hip.Lerp(knee, 0.8f) + new Vector2(0.45f, 0), c.H(Lit(leg, 0.35f)) with { A = 0.5f }, 0.35f); // thigh highlight
+        c.Line(foot + rot * (toe * 1.3f) + up * 0.1f, foot + rot * (toe * 1.3f) + up * 1.2f, line with { A = 0.4f }, 0.35f); // toe cap seam
     }
 
     // A pale bone mask over a dark cloak, in the manner of a hollow little bug knight. The cloak takes a dark shade of
@@ -1252,7 +1254,8 @@ public static class AvatarArt
         if (g.Mag > 0)
             c.Fill(Shapes.RoundRect(new Rect2(3f, -0.4f, 1.9f, g.Mag + 0.6f), 0.5f), c.H(GunMid), Ink, ow);
         c.Fill(Shapes.RoundRect(new Rect2(g.Receiver - 0.8f, -bt, muzzle - g.Receiver + 0.8f, bt), bt * 0.35f), c.H(GunMid), Ink, ow);
-        c.Line(new Vector2(g.Receiver, -bt + 0.35f), new Vector2(muzzle - 1f, -bt + 0.35f), c.H(GunLight), 0.4f);
+        c.Line(new Vector2(g.Receiver, -bt + 0.35f), new Vector2(muzzle - 1f, -bt + 0.35f), c.H(Lit(GunLight, 0.3f)), 0.4f);
+        c.Line(new Vector2(g.Receiver, -0.35f), new Vector2(muzzle - 1f, -0.35f), c.H(Shade(GunDark, 0.4f)) with { A = 0.6f }, 0.35f);
         c.Fill(Shapes.RoundRect(new Rect2(muzzle - 1.3f, -bt - 0.35f, 1.4f, bt + 0.7f), 0.4f), c.H(GunDark), Ink, ow);
         var receiver = Shapes.RoundRect(new Rect2(-1.2f, -3.3f, g.Receiver + 0.6f, 3.6f), 1.1f);
         c.Fill(receiver, c.H(GunMid), Ink, ow);
