@@ -24,6 +24,11 @@ public partial class Backdrop : Node2D
     private readonly List<Vector2[]>[] _layers = { new(), new(), new() };
     private readonly List<(Rect2 R, int Kind, float Phase, int Layer)> _windows = new();
     private readonly List<(Vector2 P, float R, float Speed, float Phase, int Kind)> _motes = new();
+    // The windows' rounded outlines, made once per backdrop (null until the first draw after a rebuild).
+    private List<Vector2[]> _windowPts;
+    // Windows and motes are hundreds of small shapes a frame: batched, they're a few draw calls instead of one each.
+    private readonly TriBatch _windowTris = new(), _moteTris = new(), _moteGlows = new(textured: true);
+    private readonly Vector2[] _leaf = new Vector2[4];
     private ImageTexture _skyTex, _fogTex;
     private ImageTexture[] _layerTex = new ImageTexture[3];
     // The previous painting, shown under the new one while it fades in.
@@ -61,6 +66,7 @@ public partial class Backdrop : Node2D
         _sun = new Vector2(rng.Range(0.15f, 0.85f) * Size.X, rng.Range(0.14f, 0.32f) * Size.Y);
         foreach (var l in _layers) l.Clear();
         _windows.Clear();
+        _windowPts = null;
         BuildLayer(rng, 0, Size.Y * 0.36f, Size.Y * 0.62f);
         BuildLayer(rng, 1, Size.Y * 0.5f, Size.Y * 0.74f);
         BuildLayer(rng, 2, Size.Y * 0.64f, Size.Y * 0.88f);
@@ -484,6 +490,7 @@ public partial class Backdrop : Node2D
     {
         var full = new Rect2(Vector2.Zero, Size);
         var fog = FogOf(Theme);
+        _windowTris.Begin(l);
         for (int layer = 0; layer < 3; layer++)
         {
             if (_fade < 1 && _oldLayers?[layer] != null) l.DrawTextureRect(_oldLayers[layer], full, false, new Color(1, 1, 1, 1 - _fade));
@@ -507,20 +514,34 @@ public partial class Backdrop : Node2D
         l.DrawTextureRect(_fogTex, new Rect2(new Vector2(x + Size.X, y - 70), size), false, c);
     }
 
+    /// <summary>One land layer's lit windows, in one batch drawn over that layer (before the fog in front of it).</summary>
     private void DrawWindows(DrawLayer l, int layer)
     {
-        foreach (var (r, kind, phase, at) in _windows)
+        if (_windowPts == null)
         {
+            _windowPts = new List<Vector2[]>(_windows.Count);
+            foreach (var w in _windows) _windowPts.Add(Shapes.RoundRect(w.R, w.R.Size.X * 0.5f, 3));
+        }
+        for (int i = 0; i < _windows.Count; i++)
+        {
+            var (_, kind, phase, at) = _windows[i];
             if (at != layer || Mathf.Sin(phase) < -0.85f) continue; // a few windows stay dark
             var c = kind == 0 ? Theme.MoteA : Theme.MoteB;
             float a = (0.25f + layer * 0.12f) * (0.85f + 0.15f * Mathf.Sin(_t * 0.7f + phase));
-            l.DrawColoredPolygon(Shapes.RoundRect(r, r.Size.X * 0.5f, 3), c with { A = a });
+            _windowTris.Polygon(_windowPts[i], c with { A = a });
         }
+        _windowTris.Flush();
     }
 
     private void DrawMotes(DrawLayer l)
     {
+        // The layer is additive, so order doesn't matter: every soft glow goes in one textured batch, the rest in another.
         var t = Theme;
+        var b = _moteTris;
+        var glow = _moteGlows;
+        b.Begin(l);
+        b.Feather = 1; // the soft rim Godot's antialiased circles had
+        glow.Begin(l, GlowTex.Tex);
         foreach (var (p0, r, speed, phase, kind) in _motes)
         {
             var c = kind == 0 ? t.MoteA : t.MoteB;
@@ -531,47 +552,53 @@ public partial class Backdrop : Node2D
                 case Motes.Embers:
                     p = Wrap(p0 + new Vector2(Mathf.Sin(_t * speed + phase) * 14, -_t * 30 * speed));
                     a = 0.6f + 0.4f * Mathf.Sin(_t * 5 * speed + phase);
-                    GlowTex.Draw(l, p, r * 5, c with { A = 0.3f * a });
-                    l.DrawCircle(p, r * 0.6f, Shapes.Hdr(c, 1.5f) with { A = a }, true, -1, true);
+                    glow.Sprite(p, r * 5, c with { A = 0.3f * a });
+                    b.Circle(p, r * 0.6f, Shapes.Hdr(c, 1.5f) with { A = a }, 10);
                     break;
                 case Motes.Bubbles:
                     p = Wrap(p0 + new Vector2(Mathf.Sin(_t * speed * 1.5f + phase) * 6, -_t * 22 * speed));
-                    l.DrawArc(p, r * 1.6f, 0, Mathf.Tau, 16, c with { A = 0.3f }, 0.8f, true);
-                    l.DrawCircle(p + new Vector2(-r * 0.5f, -r * 0.5f), r * 0.35f, c with { A = 0.45f }, true, -1, true);
+                    b.Ring(p, r * 1.6f, 0.8f, c with { A = 0.3f }, 16);
+                    b.Circle(p + new Vector2(-r * 0.5f, -r * 0.5f), r * 0.35f, c with { A = 0.45f }, 10);
                     break;
                 case Motes.Snow:
                     p = Wrap(p0 + new Vector2(Mathf.Sin(_t * speed + phase) * 18 + _t * 8, _t * 24 * speed));
-                    GlowTex.Draw(l, p, r * 1.6f, c with { A = 0.55f });
+                    glow.Sprite(p, r * 1.6f, c with { A = 0.55f });
                     break;
                 case Motes.Fireflies:
                     p = Wrap(p0 + new Vector2(Mathf.Sin(_t * 0.6f * speed + phase) * 30, Mathf.Cos(_t * 0.45f * speed + phase * 2) * 20));
                     a = Mathf.Max(0, Mathf.Sin(_t * 2 * speed + phase));
-                    GlowTex.Draw(l, p, r * 6, c with { A = 0.35f * a });
-                    l.DrawCircle(p, r * 0.6f, Shapes.Hdr(c, 1.4f) with { A = a }, true, -1, true);
+                    glow.Sprite(p, r * 6, c with { A = 0.35f * a });
+                    b.Circle(p, r * 0.6f, Shapes.Hdr(c, 1.4f) with { A = a }, 10);
                     break;
                 case Motes.Leaves:
                     // Leaves tumbling down on the breeze, turning as they fall.
                     p = Wrap(p0 + new Vector2(Mathf.Sin(_t * 0.9f * speed + phase) * 24 + _t * 12, _t * 16 * speed));
                     var along = Vector2.FromAngle(_t * 1.8f * speed + phase) * r * 1.4f;
                     var across = new Vector2(-along.Y, along.X) * (0.45f * Mathf.Abs(Mathf.Sin(_t * 2.2f * speed + phase)) + 0.1f);
-                    l.DrawColoredPolygon(new[] { p - along, p + across, p + along, p - across }, c with { A = 0.32f });
+                    _leaf[0] = p - along;
+                    _leaf[1] = p + across;
+                    _leaf[2] = p + along;
+                    _leaf[3] = p - across;
+                    b.Fan(_leaf, c with { A = 0.32f });
                     break;
                 case Motes.Bits:
                     // Bits of data streaming up the board: little squares that blink on and off.
                     p = Wrap(p0 + new Vector2(0, -_t * 26 * speed));
                     p = new Vector2(Mathf.Round(p.X / 6) * 6, p.Y);
                     a = Mathf.Sin(_t * 4 * speed + phase) > -0.3f ? 1 : 0.15f;
-                    GlowTex.Draw(l, p, r * 4, c with { A = 0.25f * a });
-                    l.DrawRect(new Rect2(p - new Vector2(r * 0.5f, r * 0.5f), new Vector2(r, r)), Shapes.Hdr(c, 1.3f) with { A = 0.8f * a });
+                    glow.Sprite(p, r * 4, c with { A = 0.25f * a });
+                    b.Quad(p, r, r, 0, Shapes.Hdr(c, 1.3f) with { A = 0.8f * a });
                     break;
                 default:
                     // Drifting dust: soft specks catching the light.
                     p = Wrap(p0 + new Vector2(_t * 6 * speed, Mathf.Sin(_t * 0.3f + phase) * 10));
                     a = 0.5f + 0.5f * Mathf.Sin(_t * 0.7f * speed + phase);
-                    GlowTex.Draw(l, p, r * 0.35f + 2, c with { A = 0.18f + 0.25f * a });
+                    glow.Sprite(p, r * 0.35f + 2, c with { A = 0.18f + 0.25f * a });
                     break;
             }
         }
+        glow.Flush();
+        b.Flush();
     }
 
     private Vector2 Wrap(Vector2 p) => new(Mathf.PosMod(p.X + 40, Size.X + 80) - 40, Mathf.PosMod(p.Y + 40, Size.Y + 80) - 40);
