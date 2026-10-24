@@ -24,29 +24,19 @@ public partial class GameManager
         int n = r.U8();
         for (int i = 0; i < n; i++)
         {
-            int slot = r.U8();
-            int flags = r.U8();
-            var pos = r.V2();
-            var vel = r.V2();
-            float hp = r.I16();
-            int ammo = r.U8();
-            float reload = r.U8() / 255f;
-            float blockCd = r.U8() / 20f;
-            float blockActive = r.U8() / 100f;
-            float aim = r.I16() / 1000f;
-
-            var a = Slots[slot]?.Avatar;
+            var s = r.Snap();
+            var a = Slots[s.Slot]?.Avatar;
             if (a == null || _clock - a.BornAt < 0.25f) continue; // just respawned: older snapshots still show the dead body
-            bool mine = IsLocalHuman(slot);
-            if (a.Alive && (flags & 1) == 0) a.Alive = false;
-            a.Hp = hp;
-            a.Ammo = ammo;
-            a.Reloading = (flags & 2) != 0;
-            a.ReloadFrac = reload;
-            a.BlockCd = blockCd;
-            a.BlockActive = blockActive;
-            if (!mine) a.AimDir = Vector2.FromAngle(aim);
-            a.SetNetTarget(pos, vel, predicted: mine);
+            bool mine = IsLocalHuman(s.Slot);
+            if (a.Alive && !s.Alive) a.Alive = false;
+            a.Hp = s.Hp;
+            a.Ammo = s.Ammo;
+            a.Reloading = s.Reloading;
+            a.ReloadFrac = s.ReloadFrac;
+            a.BlockCd = s.BlockCd;
+            a.BlockActive = s.BlockActive;
+            if (!mine) a.AimDir = Vector2.FromAngle(s.Aim);
+            a.SetNetTarget(new Vector2(s.Pos.X, s.Pos.Y), new Vector2(s.Vel.X, s.Vel.Y), predicted: mine);
             a.QueueRedraw();
         }
         if (r.More) Arena.Read(r);
@@ -184,11 +174,8 @@ public partial class GameManager
         foreach (var p in list)
         {
             var a = p.Avatar;
-            int flags = (a.Alive ? 1 : 0) | (a.Reloading ? 2 : 0);
-            w.U8(p.Slot).U8(flags).V2(a.GlobalPosition).V2(a.Velocity)
-             .I16(Mathf.CeilToInt(a.Hp)).U8(Mathf.Clamp(a.Ammo, 0, 255))
-             .U8((int)(a.ReloadFrac * 255)).U8(Mathf.Clamp((int)(a.BlockCd * 20), 0, 255))
-             .U8(Mathf.Clamp((int)(a.BlockActive * 100), 0, 255)).I16((int)(a.AimDir.Angle() * 1000));
+            w.Snap(new AvatarSnap(p.Slot, a.Alive, a.Reloading, new(a.GlobalPosition.X, a.GlobalPosition.Y), new(a.Velocity.X, a.Velocity.Y),
+                a.Hp, a.Ammo, a.ReloadFrac, a.BlockCd, a.BlockActive, a.AimDir.Angle()));
         }
         Arena.Write(w);
         WriteObjectives(w);

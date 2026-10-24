@@ -755,7 +755,7 @@ public sealed class BotBrain : IInputSource
         {
             h.Swing.At(now + ahead, out var c, out _, out var v, out _);
             float drop = Mathf.Max(0, (h.LandY ?? MapLayout.Height) - (c.Y - h.Spec.H * 0.5f));
-            float t = (-v.Y + Mathf.Sqrt(v.Y * v.Y + 2 * Hanger.Gravity * drop)) / Hanger.Gravity;
+            float t = Ballistics.FallTime(v.Y, drop, Hanger.Gravity);
             float x = Mathf.Clamp(c.X + v.X * t, h.Spec.W * 0.5f, MapLayout.Width - h.Spec.W * 0.5f);
             if (Mathf.Abs(x - mid) > half) return false;
         }
@@ -764,44 +764,13 @@ public sealed class BotBrain : IInputSource
 
     /// <summary>
     /// The way to fire (a unit vector) for a bullet of speed <paramref name="v"/> and gravity <paramref name="g"/> to
-    /// arc from <paramref name="from"/> to <paramref name="to"/> without touching a solid on the way: the flatter of the
-    /// two arcs that reach it if that one is clear, else the high lob. False if neither is clear or it's out of range. Clear of the
-    /// arena's fixed solids, or of <paramref name="solids"/> if given.
+    /// land on <paramref name="to"/> clear of the arena's fixed solids, or of <paramref name="solids"/> if given (<see cref="Ballistics.LobAim"/>).
     /// </summary>
     private bool LobAim(Vector2 from, Vector2 to, float v, float g, out Vector2 dir, IReadOnlyList<RectI> solids = null)
     {
-        dir = default;
-        float dx = to.X - from.X, ax = Mathf.Abs(dx), up = from.Y - to.Y;
-        if (g < 1 || ax < 4) return false;
-        float v2 = v * v, disc = v2 * v2 - g * (g * ax * ax + 2 * up * v2);
-        if (disc < 0) return false;
-        float root = Mathf.Sqrt(disc);
-        for (int k = 0; k < 2; k++)
-        {
-            float angle = Mathf.Atan((v2 + (k == 0 ? -root : root)) / (g * ax));
-            var vel = new Vector2(Mathf.Sign(dx) * v * Mathf.Cos(angle), -v * Mathf.Sin(angle));
-            if (!ArcClear(from, vel, g, ax / (v * Mathf.Cos(angle)), solids ?? _game.Map.Solids)) continue;
-            dir = vel / v;
-            return true;
-        }
-        return false;
-    }
-
-    /// <summary>True if a bullet fired at <paramref name="vel"/> under gravity <paramref name="g"/> meets none of <paramref name="solids"/> (nor a ramp) for most of <paramref name="time"/> seconds.</summary>
-    private bool ArcClear(Vector2 from, Vector2 vel, float g, float time, IReadOnlyList<RectI> solids)
-    {
-        const int Steps = 12;
-        var p = from;
-        for (int i = 1; i <= Steps; i++)
-        {
-            // Stop just short of the end: the target stands on something, which the arc's last bit may graze.
-            float t = time * 0.95f * i / Steps;
-            var q = from + vel * t + new Vector2(0, 0.5f * g * t * t);
-            var d = q - p;
-            if (Sweep.Cast(new NVec(p.X, p.Y), new NVec(d.X, d.Y), 1, solids, _game.Map.Slopes) != null) return false;
-            p = q;
-        }
-        return true;
+        bool ok = Ballistics.LobAim(N(from), N(to), v, g, solids ?? _game.Map.Solids, _game.Map.Slopes, out var d);
+        dir = new Vector2(d.X, d.Y);
+        return ok;
     }
 
     /// <summary>
@@ -809,30 +778,10 @@ public sealed class BotBrain : IInputSource
     /// surface ahead, or ground below the edge. False over a bottomless drop or a gap too wide to clear.
     /// </summary>
     private bool JumpLands(Avatar self, float dir)
-    {
-        var p = self.GlobalPosition + new Vector2(0, self.HalfSize.Y);
-        float vx = dir * self.S[Stat.MoveSpeed] * 0.9f, vy = -self.S[Stat.JumpVelocity], g = self.S[Stat.Gravity], hw = self.HalfSize.X * 0.6f;
-        const float dt = 1f / 30;
-        for (int i = 0; i < 90; i++)
-        {
-            var q = p + new Vector2(vx, vy) * dt;
-            vy += g * dt;
-            if (q.Y > MapLayout.KillY) return false;
-            if (q.Y > p.Y && TopBetween(q.X, hw, p.Y, q.Y)) return true;
-            p = q;
-        }
-        return false;
-    }
+        => Ballistics.JumpLands(N(self.GlobalPosition + new Vector2(0, self.HalfSize.Y)), dir * self.S[Stat.MoveSpeed] * 0.9f,
+            -self.S[Stat.JumpVelocity], self.S[Stat.Gravity], self.HalfSize.X * 0.6f, _game.Arena.Solids, _game.Map.Slopes);
 
-    /// <summary>True if the top of a live solid or a ramp lies under x (± <paramref name="hw"/>) between heights y1 and y2.</summary>
-    private bool TopBetween(float x, float hw, float y1, float y2)
-    {
-        foreach (var r in _game.Arena.Solids)
-            if (r.X < x + hw && r.Right > x - hw && r.Y >= y1 - 1 && r.Y <= y2 + 1) return true;
-        foreach (var s in _game.Map.Slopes)
-            if (x >= s.X1 && x < s.X2 && s.YAt(x) >= y1 - 1 && s.YAt(x) <= y2 + 1) return true;
-        return false;
-    }
+    private static NVec N(Vector2 v) => new(v.X, v.Y);
 
     private bool HasLineOfSight(Vector2 from, Vector2 to)
     {
