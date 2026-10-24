@@ -1,3 +1,23 @@
+## New in 1.7.0
+
+- **Conveyor belts:** strips along the tops of blocks and the floor, chevrons showing which way they run. They carry
+  whoever stands on them, along with crates, barrels and dropped flags, at well under running speed, so you can
+  always walk against one. About a third of arenas get one or two. The map editor has a **Belt** tool (T): drag
+  along a block top and the belt runs the way you dragged; click one to turn it around. Map codes with belts need 1.7.
+- **Match stats:** the match-over screen has a **Stats** tab next to the results: everyone's kills, damage dealt
+  and taken, accuracy and blocks, with the leader of each picked out.
+- **Blocking awards:** a bullet stopped by a shield now counts as a blocked hit, so the Brick Wall award goes to
+  whoever really blocked the most.
+- **Faster backdrops:** the drifting motes and lit windows behind the arena are drawn in a few batches instead of one
+  call each. The city themes are the biggest winners: Mainframe and Neon Night take less than half the frame time
+  they did.
+- **Hanging platforms:** their chains only hang from blocks wide enough to hide the brackets, so no chain dangles
+  past the end of a block.
+- **Bots:** a jump a bot was in the middle of when one arena ended no longer throws an error in the next.
+- **Testing:** `--cardcheck` plays every card and checks its effect happens, `--beltcheck` checks belts carry players
+  and crates, the unit tests are split into a file per area and take a name filter (`dotnet run -- MapCode`), and
+  the bots' aiming and jump maths and the snapshot format moved into the unit-tested code.
+
 ## New in 1.6.0
 
 - **Daily challenge:** **Daily Challenge** on the main menu starts today's match against three Hard bots. The arena,
