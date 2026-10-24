@@ -296,6 +296,7 @@ public partial class BulletSystem : Node2D
             var kb = b.Vel.Normalized() * b.Knockback;
             if (a.BlockActive > 0)
             {
+                Game.CountBlockedHit(a);
                 Game.HostBlocked(a, b.Pos);
                 Game.HostBlockedHit(a, b.Damage, b.Pos, b.Owner);
                 if (a.S[Stat.Reflect] > 0) HostReflect(b, a);

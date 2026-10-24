@@ -47,7 +47,7 @@ public partial class GameManager
         knockback *= victim.S[Stat.KnockbackTaken];
         if (!victim.TakeHit(damage, knockback))
         {
-            if (victim.Alive) { Stats.HitBlocked(victim.Player.Slot); Book.Add(victim.Player.Slot, AwardStat.HitsBlocked); }
+            CountBlockedHit(victim);
             HostBlocked(victim, at);
             HostBlockedHit(victim, damage, at, attackerSlot, reflected);
             return;
@@ -282,6 +282,14 @@ public partial class GameManager
     }
 
     public void HostBlocked(Avatar a, Vector2 at) => HostFx(FxKind.Blocked, at, 0, a.Player.Slot, at);
+
+    /// <summary>Host: a hit <paramref name="a"/> took on the shield, for the stats log and the awards.</summary>
+    public void CountBlockedHit(Avatar a)
+    {
+        if (!a.Alive) return;
+        Stats.HitBlocked(a.Player.Slot);
+        Book.Add(a.Player.Slot, AwardStat.HitsBlocked);
+    }
 
     public void HostOnBlock(Avatar a)
     {
