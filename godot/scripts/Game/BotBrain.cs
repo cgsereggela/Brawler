@@ -424,6 +424,10 @@ public sealed class BotBrain : IInputSource
             _surface = -1;
             _hop = -1;
             _vantage = -1;
+            // A jump still committed from the last arena points at one of its surfaces, maybe past the end of this one's list.
+            _airHop = -1;
+            _airMove = 0;
+            _commitT = 0;
         }
         return _navMap;
     }
