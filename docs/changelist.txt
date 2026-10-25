@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- add some more songs to the pool of music to play in the same theme as the existing ones
 - portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
 
 shorts to make:
