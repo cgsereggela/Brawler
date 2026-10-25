@@ -364,6 +364,7 @@ public partial class Avatar : CharacterBody2D
             }
         }
 
+        var before = GlobalPosition;
         // A conveyor belt underfoot carries us along (a move of its own, so a wall stops it and our speed stays ours).
         if (onFloor && Game.Map != null && Conveyor.Under(Game.Map.Conveyors, GlobalPosition.X, GlobalPosition.Y + HalfSize.Y) is var belt and not 0)
             MoveAndCollide(new Vector2(belt * dt, 0));
@@ -403,7 +404,33 @@ public partial class Avatar : CharacterBody2D
                 break;
             }
         }
+
+        // A portal: walking, jumping or falling into a ring from its front brings us out of the other one, at the same
+        // spot along it and the same speed, turned to face out (at least MinBodySpeed out, so we come clear of it).
+        // Every peer runs this for the bodies it moves; snapshots carry the jump to everyone else.
+        if (_portalCd > 0) _portalCd -= dt;
+        else if (Game.Map is { Portals.Count: > 0 } pm
+                 && PortalMath.Find(pm.Portals, new System.Numerics.Vector2(before.X, before.Y), new System.Numerics.Vector2(GlobalPosition.X, GlobalPosition.Y), out var pair, out bool fromA))
+        {
+            var entry = PortalMath.Entry(pair, fromA);
+            var exit = PortalMath.Other(pair, fromA);
+            var hs = HalfSize;
+            float clear = (exit.Side ? hs.X : hs.Y) + 1;
+            var at = new System.Numerics.Vector2(GlobalPosition.X, GlobalPosition.Y);
+            var (pos, vel) = PortalMath.Through(entry, exit, at, new System.Numerics.Vector2(Velocity.X, Velocity.Y), clear, PortalMath.MinBodySpeed);
+            var to = new Vector2(pos.X, pos.Y);
+            if (!OverlapsMap(pm, to, hs - new Vector2(0.01f, 0.01f)))
+            {
+                var from = GlobalPosition;
+                GlobalPosition = to;
+                Velocity = new Vector2(vel.X, vel.Y);
+                _portalCd = PortalMath.Cooldown;
+                if (_authority && Game.IsHost) Game.HostFx(FxKind.Blink, from, 0, Player.Slot, to);
+            }
+        }
     }
+
+    private float _portalCd;
 
     private void Weapon(InputFrame f, float dt)
     {

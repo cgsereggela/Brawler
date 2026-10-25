@@ -157,12 +157,26 @@ public partial class BulletSystem : Node2D
             if (b.Phase || returning) b.Pos += b.Vel * dt; // ghosts and returning boomerangs ignore walls
             else MoveWithBounces(b, dt, host, solids);
             if (host && !b.Dead) HostCheckPlayers(b, start);
+            if (!b.Dead && Game.Map is { Portals.Count: > 0 } pm) ThroughPortal(b, pm.Portals, start);
             if (!b.Dead) Shed(b);
         }
 
         Bullets.AddRange(_spawnQueue);
         _spawnQueue.Clear();
         Bullets.RemoveAll(b => b.Dead);
+    }
+
+    /// <summary>
+    /// A bullet that went into a portal this tick comes out of the other ring, at the same spot along it and the same
+    /// speed, turned to face out. Pure maths on what every peer simulates, so they all agree without a message.
+    /// </summary>
+    private static void ThroughPortal(Bullet b, List<PortalPair> portals, Vector2 start)
+    {
+        if (!PortalMath.Find(portals, ToN(start), ToN(b.Pos), out var pair, out bool fromA)) return;
+        var (pos, vel) = PortalMath.Through(PortalMath.Entry(pair, fromA), PortalMath.Other(pair, fromA), ToN(b.Pos), ToN(b.Vel), b.Radius + 1);
+        b.Pos = ToG(pos);
+        b.Vel = ToG(vel);
+        for (int i = 0; i < b.Trail.Length; i++) b.Trail[i] = b.Pos; // no streak across the arena
     }
 
     private void Steer(Bullet b, float dt)

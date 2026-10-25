@@ -204,7 +204,7 @@ public static class DriftMotion
 
 /// <summary>
 /// Seeded extras added to a validated arena: crates and explosive barrels to push around and shoot apart, glass
-/// bridges over pits, moving platforms, drifting platforms, magma and poison pools, and sawblades. None of them is
+/// bridges over pits, moving platforms, drifting platforms, magma and poison pools, sawblades, conveyor belts and portals. None of them is
 /// part of the jump graph the arena is checked with (it's fully playable without them), and each stays clear of
 /// spawns, jump pads and the others. Which
 /// hazards appear, and how often, follows the seed's theme (<see cref="ThemeRules"/>): no magma on Toxic Grove, etc.
@@ -244,7 +244,49 @@ public static class ArenaFeatures
         Hangers(map, rng, keep);
         Drifts(map, rng, keep);
         Conveyors(map, keep);
+        Portals(map, keep);
     }
+
+    // ---------- portal pairs ----------
+
+    /// <summary>
+    /// About one arena in four gets a pair of portals: two doorways standing on different surfaces well apart, each
+    /// facing the longer stretch of its surface, with room for a body through them and clear of spawns, pads, ramps
+    /// and the other extras. They draw on a generator of their own, so the rest of each arena is as it was.
+    /// </summary>
+    private static void Portals(MapLayout map, List<RectI> keep)
+    {
+        var rng = new Rng(((ulong)(uint)map.Seed << 1) ^ 0x9047A15EUL);
+        if (!rng.Chance(PortalChance) || map.Surfaces.Count < 2) return;
+        PortalRing? first = null;
+        var firstZone = default(RectI);
+        var firstSurface = default(Surface);
+        for (int i = 0; i < 160; i++)
+        {
+            var s = map.Surfaces[rng.Range(0, map.Surfaces.Count - 1)];
+            int lo = (s.X1 + 24 + 7) / 8, hi = (s.X2 - 24) / 8;
+            if (s.Width < 64 || hi < lo || map.DriftIndex(s) >= 0) continue;
+            int x = rng.Range(lo, hi) * 8;
+            var ring = new PortalRing(x, s.Y - PortalRing.Half, x - s.X1 < s.X2 - x ? 0 : 2);
+            var zone = new RectI(x - 30, s.Y - 40, 60, 44);
+            if (!Backed(map, s.Y, x - 24, x + 24) || map.Blocked(new RectI(x - 22, s.Y - 36, 44, 36)) || !ClearOfKeep(keep, zone)
+                || map.Slopes.Exists(sl => sl.Intersects(zone.Grow(14, 2))))
+                continue;
+            if (first is not { } a)
+            {
+                (first, firstZone, firstSurface) = (ring, zone, s);
+                continue;
+            }
+            if (s == firstSurface || Math.Abs(a.X - x) < 260 && Math.Abs(a.Y - ring.Y) < 80) continue;
+            map.Portals.Add(new PortalPair(a, ring));
+            keep.Add(firstZone);
+            keep.Add(zone);
+            return;
+        }
+    }
+
+    /// <summary>The share of arenas with a portal pair.</summary>
+    public const float PortalChance = 0.25f;
 
     // ---------- conveyor belts ----------
 

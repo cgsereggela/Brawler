@@ -198,7 +198,13 @@ public sealed class BotBrain : IInputSource
             var hop = Live(map, _hop);
             var cur = Live(map, _surface);
             float x = me.X, aimX;
-            if (MapGenerator.SlopeLinks(map, cur, hop)) aimX = Inside(x, hop, 10); // a ramp leads there: just run
+            if (onFloor && !MapGenerator.JumpsTo(map, cur, hop) && MapGenerator.PortalTo(map, cur, hop) is var (ring, _))
+            {
+                // Only a portal leads there: walk into it from the front, going round to the front first if behind it.
+                float n = ring.Normal.X;
+                aimX = (x - ring.X) * n > 4 ? ring.X - n * 12 : ring.X + n * 20;
+            }
+            else if (MapGenerator.SlopeLinks(map, cur, hop)) aimX = Inside(x, hop, 10); // a ramp leads there: just run
             else if (hop.Y < cur.Y - 4)
             {
                 // Climbing: get clear of the platform's underside, then jump toward it and steer onto it.

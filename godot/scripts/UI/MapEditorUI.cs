@@ -9,7 +9,7 @@ using Godot;
 
 namespace Brawler.UI;
 
-public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover, Drift, Hang, Belt }
+public enum EditTool { Select, Block, Gap, Hill, Spawn, Pad, Crate, Barrel, Glass, Magma, Poison, Saw, Mover, Drift, Hang, Belt, Portal }
 
 /// <summary>
 /// The level editor: the arena drawn by the game itself (themed ground, backdrop, extras) at a smaller scale, with
@@ -53,7 +53,7 @@ public partial class MapEditorUI : Control
     private string _armedDelete;
 
     // Pointer state, in world pixels.
-    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover, Drift, Hang, Belt }
+    private enum Kind { None, Block, Pit, Hill, Spawn, Pad, Prop, Hazard, Saw, Mover, Drift, Hang, Belt, Portal }
     private (Kind K, int I) _sel = (Kind.None, -1), _hover = (Kind.None, -1);
     private Vector2 _mouse, _down;
     private bool _pressed, _dragged, _shift;
@@ -81,6 +81,7 @@ public partial class MapEditorUI : Control
         (EditTool.Drift, "Drift", "F", "Drag to draw a drifting platform. Landing on it, walking into it, shooting or blasting it shoves it, and it eases back. Click for a short one."),
         (EditTool.Belt, "Belt", "T", "Drag along the top of a block for a conveyor belt: it runs the way you drag and carries players, crates and flags. Click a belt to turn it around."),
         (EditTool.Hang, "Hanger", "K", "Drag to draw a platform hanging on chains from whatever is above it. Shoot its chains and it drops, crushing whoever is under it. The dashed box shows where it lands."),
+        (EditTool.Portal, "Portal", "N", "Click to place a portal ring, then click again for the ring it leads to. A ring stands on the ground below, facing the longer way along it (Shift: exactly here, in mid-air). Click a ring to turn it a quarter. Whatever goes into a ring's bright front comes out of the other one."),
     };
 
     public override void _Ready()
@@ -286,6 +287,7 @@ public partial class MapEditorUI : Control
         _toolButtons[tool].ButtonPressed = true;
         _hint.Text = Tools.First(t => t.Tool == tool).Hint + (PadCursor ? " " + PadHint : tool == EditTool.Select ? "" : " Right-click any piece to delete it.");
         if (tool != EditTool.Select) _sel = (Kind.None, -1);
+        _portalStart = null;
         _canvas.QueueRedraw();
     }
 
@@ -668,6 +670,8 @@ public partial class MapEditorUI : Control
             var s = d.Saws[i];
             if (Geometry2D.GetClosestPointToSegment(p, new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2)).DistanceTo(p) < s.Radius + 3) return (Kind.Saw, i);
         }
+        for (int i = d.Portals.Count * 2 - 1; i >= 0; i--)
+            if (Grow(Ring(d, i).Box, 3).Contains((int)p.X, (int)p.Y)) return (Kind.Portal, i);
         for (int i = d.Conveyors.Count - 1; i >= 0; i--)
             if (BeltBox(d.Conveyors[i]).Contains((int)p.X, (int)p.Y)) return (Kind.Belt, i);
         for (int i = d.Hazards.Count - 1; i >= 0; i--)
@@ -771,6 +775,14 @@ public partial class MapEditorUI : Control
                 int x = Snap(b.X + (_mouse.X - _down.X));
                 var s = MapDesign.SurfaceBelow(_layout, x + b.W / 2, (int)(b.Y - 10 + (_mouse.Y - _down.Y)));
                 d.Conveyors[i] = s is { } surf ? b with { X = x, Y = surf.Y } : b with { X = x };
+                break;
+            }
+            case Kind.Portal:
+            {
+                var r = Ring(_dragBase, i);
+                var moved = r.Side ? PortalAt(new Vector2(r.X + (_mouse.X - _down.X), r.Y + (_mouse.Y - _down.Y)), r.Dir) : r with { X = r.X + dx, Y = r.Y + dy };
+                var pair = d.Portals[i / 2];
+                d.Portals[i / 2] = i % 2 == 0 ? pair with { A = moved } : pair with { B = moved };
                 break;
             }
             case Kind.Hazard:
@@ -925,6 +937,7 @@ public partial class MapEditorUI : Control
                 break;
             case Kind.Hazard: d.Hazards.RemoveAt(item.I); break;
             case Kind.Belt: d.Conveyors.RemoveAt(item.I); break;
+            case Kind.Portal: d.Portals.RemoveAt(item.I / 2); break;
             case Kind.Saw: d.Saws.RemoveAt(item.I); break;
             case Kind.Mover: d.Movers.RemoveAt(item.I); break;
             case Kind.Drift: d.Drifts.RemoveAt(item.I); break;
@@ -1059,6 +1072,26 @@ public partial class MapEditorUI : Control
                 else Flash("A belt needs the top of a block under it, at least two tiles long.");
                 break;
             }
+            case EditTool.Portal:
+            {
+                if (Hit(_down) is (Kind.Portal, var pi))
+                {
+                    var pair = d.Portals[pi / 2];
+                    d.Portals[pi / 2] = pi % 2 == 0 ? pair with { A = pair.A.Turned() } : pair with { B = pair.B.Turned() };
+                    break;
+                }
+                if (_portalStart is not { } first)
+                {
+                    if (Full(d.Portals.Count, MapDesign.MaxPortals, "portal pairs")) break;
+                    _portalStart = PortalAt(_down);
+                    Flash("Now click where it comes out.");
+                    break;
+                }
+                d.Portals.Add(new PortalPair(first, PortalAt(_down)));
+                Flash("Linked: whatever goes into either ring's bright front comes out of the other.");
+                _portalStart = null;
+                break;
+            }
             case EditTool.Magma or EditTool.Poison:
             {
                 if (Full(d.Hazards.Count, MapDesign.MaxHazards, "pools")) break;
@@ -1142,6 +1175,37 @@ public partial class MapEditorUI : Control
         return new Conveyor(a, s.Y, b - a, drag && _mouse.X < _down.X ? -1 : 1);
     }
 
+    /// <summary>Ring <paramref name="i"/> of a design's portals: pair i / 2, its first ring for even i.</summary>
+    private static PortalRing Ring(MapDesign d, int i) => i % 2 == 0 ? d.Portals[i / 2].A : d.Portals[i / 2].B;
+
+    /// <summary>The first ring of a pair being placed (the next click places the other), or null.</summary>
+    private PortalRing? _portalStart;
+
+    /// <summary>
+    /// Where the Portal tool puts a ring for the pointer at <paramref name="p"/>: a doorway standing on the ground
+    /// below (within reach), facing the longer stretch of it unless <paramref name="dir"/> says; with Shift, or with
+    /// no ground near, exactly there in mid-air.
+    /// </summary>
+    private PortalRing PortalAt(Vector2 p, int dir = -1)
+    {
+        int x = Snap(p.X);
+        if (!_shift && _layout != null && MapDesign.SurfaceBelow(_layout, x, (int)p.Y - PortalRing.Half) is { } s && s.Y - p.Y < 80)
+            return new PortalRing(Math.Clamp(x, s.X1, s.X2), s.Y - PortalRing.Half, dir >= 0 ? dir : x - s.X1 < s.X2 - x ? 0 : 2);
+        return new PortalRing(x, Snap(p.Y), dir >= 0 ? dir : 0);
+    }
+
+    /// <summary>An arrow out of a ring's front: the side that takes you through.</summary>
+    private static void RingFront(Control c, PortalRing r, Color col, float width)
+    {
+        var at = new Vector2(r.X, r.Y);
+        var n = new Vector2(r.Normal.X, r.Normal.Y);
+        var tip = at + n * 12;
+        c.DrawLine(at + n * 4, tip, col, width);
+        var side = new Vector2(-n.Y, n.X) * 3;
+        c.DrawLine(tip, tip - n * 4 + side, col, width);
+        c.DrawLine(tip, tip - n * 4 - side, col, width);
+    }
+
     /// <summary>A belt's box in the editor, for picking and outlining it.</summary>
     private static RectI BeltBox(Conveyor c) => new(c.X - 2, c.Y - 4, c.W + 4, Conveyor.Thick + 4);
 
@@ -1221,6 +1285,9 @@ public partial class MapEditorUI : Control
         // How far each drifting platform can be shoved, faintly (brighter with its tool).
         foreach (var dr in d.Drifts)
             c.DrawRect(ToRect(dr.Range), new Color(0.75f, 1f, 0.8f, _tool == EditTool.Drift ? 0.4f : 0.18f), false, px);
+        // Which rings are linked: a faint line between the two of each pair (brighter with the Portal tool).
+        foreach (var pp in d.Portals)
+            Dashed(c, new Vector2(pp.A.X, pp.A.Y), new Vector2(pp.B.X, pp.B.Y), new Color(0.8f, 0.6f, 1f, _tool == EditTool.Portal ? 0.45f : 0.15f), px);
 
         // Spawns: numbered markers (red when they stand on nothing).
         for (int i = 0; i < d.Spawns.Count; i++)
@@ -1288,6 +1355,13 @@ public partial class MapEditorUI : Control
                 Box(ToRect(BeltBox(d.Conveyors[i])));
                 BeltArrow(c, d.Conveyors[i], col, width * 0.7f);
                 break;
+            case Kind.Portal when i < d.Portals.Count * 2:
+            {
+                var r = Ring(d, i);
+                Box(ToRect(r.Box));
+                RingFront(c, r, col, width);
+                break;
+            }
             case Kind.Saw when i < d.Saws.Count:
                 var s = d.Saws[i];
                 foreach (var p in new[] { new Vector2(s.X1, s.Y1), new Vector2(s.X2, s.Y2) }) c.DrawArc(p, s.Radius + 2, 0, Mathf.Tau, 20, col, width);
@@ -1384,6 +1458,18 @@ public partial class MapEditorUI : Control
                     b = Math.Min(b, s.X2);
                     var pool = _tool == EditTool.Magma ? new Color("#ff7a33") : new Color("#8de04a");
                     c.DrawRect(new Rect2(a, s.Y - Hazard.Depth, b - a, Hazard.Depth), pool with { A = 0.5f });
+                }
+                break;
+            }
+            case EditTool.Portal:
+            {
+                var r = PortalAt(_mouse);
+                Box(ToRect(r.Box));
+                RingFront(c, r, col, px);
+                if (_portalStart is { } first)
+                {
+                    Box(ToRect(first.Box));
+                    Dashed(c, new Vector2(first.X, first.Y), new Vector2(r.X, r.Y), col, px * 1.5f);
                 }
                 break;
             }

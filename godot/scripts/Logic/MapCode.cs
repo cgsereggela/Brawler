@@ -15,8 +15,8 @@ public enum MapCodeError { None, NotACode, Damaged, Newer }
 /// </summary>
 public static class MapCode
 {
-    /// <summary>2 added drifting platforms, hanging platforms and a fourth style bit; 3 added conveyor belts. Older codes still open.</summary>
-    public const int Version = 3;
+    /// <summary>2 added drifting platforms, hanging platforms and a fourth style bit; 3 added conveyor belts; 4 added portals. Older codes still open.</summary>
+    public const int Version = 4;
     private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     public static string Encode(MapDesign d) => Text(Pack(d));
@@ -121,6 +121,15 @@ public static class MapCode
             w.Bits(Math.Clamp((c.W + T / 2) / T, 1, 127), 7);
             w.Bits(c.Dir > 0 ? 1 : 0, 1);
         }
+        // Portals: per pair, each ring's centre to the pixel and which way it faces.
+        Count(w, d.Portals.Count, MapDesign.MaxPortals, 3);
+        foreach (var p in Take(d.Portals, MapDesign.MaxPortals))
+            foreach (var ring in new[] { p.A, p.B })
+            {
+                w.Bits(Math.Clamp(ring.X, 0, 1023), 10);
+                w.Bits(Math.Clamp(ring.Y, 0, 1023), 10);
+                w.Bits(ring.Dir & 3, 2);
+            }
         var bytes = w.Done(1);
         bytes[^1] = Checksum(bytes, bytes.Length - 1);
         return bytes;
@@ -230,6 +239,13 @@ public static class MapCode
                 {
                     int x = r.Bits(7) * T, y = r.Bits(10), w = Math.Max(1, r.Bits(7)) * T;
                     d.Conveyors.Add(new Conveyor(x, y, w, r.Bits(1) == 1 ? 1 : -1));
+                }
+            if (version >= 4)
+                for (int i = r.Bits(3); i > 0; i--)
+                {
+                    PortalRing Ring() => new(r.Bits(10), r.Bits(10), r.Bits(2));
+                    var a = Ring();
+                    d.Portals.Add(new PortalPair(a, Ring()));
                 }
             why = MapCodeError.None;
             return d;

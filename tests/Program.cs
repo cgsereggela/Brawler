@@ -16,6 +16,7 @@ var sections = new (string Name, string Title, Action Run)[]
     ("JumpRules", "Jump rules", JumpRulesTests.Run),
     ("MapGeneration", "Map generation", MapGenerationTests.Run),
     ("ArenaFeatures", "Arena features", ArenaFeaturesTests.Run),
+    ("Portals", "Portals", PortalsTests.Run),
     ("Sweep", "Sweep", SweepTests.Run),
     ("CardStats", "Card stats", CardStatsTests.Run),
     ("Appearance", "Appearance", AppearanceTests.Run),

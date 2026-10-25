@@ -344,6 +344,21 @@ public partial class Main
         if (ed.Design.Conveyors.Count != 0) { Fail("right-click didn't delete the belt"); return; }
         Log.Info("EDITORCHECK belt: lay, turn around, move, share and delete a conveyor belt");
 
+        // A portal pair: click one ring onto the floor, then the other onto the hill; click a ring to turn it; share it; delete it.
+        ed.SetTool(EditTool.Portal);
+        Click(200, 500);
+        Click(840, 500);
+        if (ed.Design.Portals.Count != 1 || ed.Design.Portals[0] is not { A: { X: 200, Dir: 0 } ringA, B: { X: 840, Side: true } ringB } || ringA.Y != MapGenerator.FloorY - PortalRing.Half
+            || !ed.Design.Build(2).Surfaces.Exists(s => PortalMath.StandsOn(ringB, s)))
+        { Fail($"two clicks with Portal made {string.Join(", ", ed.Design.Portals)}"); return; }
+        if (_shotDir != null) { await Wait(1.5); SaveShot("editor_portal"); }
+        Click(ringA.X, ringA.Y);
+        if (ed.Design.Portals[0].A.Dir != 1) { Fail($"clicking a ring didn't turn it: {ed.Design.Portals[0].A}"); return; }
+        if (MapCode.Decode(MapCode.Encode(ed.Design)) is not { } portalBack || !portalBack.Portals.SequenceEqual(ed.Design.Portals)) { Fail("the portals didn't survive the map code"); return; }
+        Click(ringB.X, ringB.Y, MouseButton.Right);
+        if (ed.Design.Portals.Count != 0) { Fail("right-click didn't delete the portal pair"); return; }
+        Log.Info("EDITORCHECK portal: place, turn, share and delete a portal pair");
+
         // A hanging platform: drag one out under the ceiling; it hangs on two chains and lands on the floor.
         ed.SetTool(EditTool.Hang);
         Drag(640, 200, 720, 200);
@@ -615,6 +630,7 @@ public partial class Main
         if (_autoMode == "vantagecheck") PollVantage();
         if (_autoMode == "hangercheck") PollHanger();
         if (_autoMode == "beltcheck") PollBelts();
+        if (_autoMode == "portalcheck") PollPortals();
         if (_autoMode == "driftcheck") PollDrift();
         if (_autoMode == "trainingcheck") PollTraining();
         if (_autoMode == "cardcheck") PollCards();
@@ -1324,6 +1340,67 @@ public partial class Main
         if (_shotDir != null) SaveShot("beltcheck");
         if (Mathf.Abs(rode - want) > want * 0.15f) Finish(1, $"beltcheck: the belt didn't carry the player ({line})");
         else if (Mathf.Abs(pushed + want) > want * 0.15f) Finish(1, $"beltcheck: the belt didn't carry the crate ({line})");
+        else Finish(0, line);
+    }
+
+    // ---------- --portalcheck: a bot walled off from its target, with a portal pair through the wall ----------
+
+    private const float PortalCheckSeconds = 30;
+    private float _pcFight, _pcThrough = -1;
+    private bool _pcPlaced;
+    private int _pcShotThrough;
+
+    // A wall from the ceiling to the floor down the middle; the only way past is the portals, one each side.
+    private static readonly RectI PcWall = new(490, MapGenerator.Wall, 20, MapGenerator.FloorY - MapGenerator.Wall);
+    private static readonly PortalPair PcPortals = new(new PortalRing(260, MapGenerator.FloorY - PortalRing.Half, 0), new PortalRing(740, MapGenerator.FloorY - PortalRing.Half, 2));
+
+    /// <summary>
+    /// One Normal bot on the left of a wall it can't get over, against a player standing still on the right (kept
+    /// alive, lava off). The bot starts behind the left ring, so it has to walk round to its front and in. Fails unless
+    /// it comes out on the right within <see cref="PortalCheckSeconds"/>. Also logs any of its shots that came through.
+    /// </summary>
+    private void StartPortalCheck()
+    {
+        _autoMode = "portalcheck";
+        _game.DisableHitStop = true;
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var d = MapDesign.Empty(ThemeId.NeonNight, 1);
+        d.Blocks.Add(PcWall);
+        d.Portals.Add(PcPortals);
+        d.Spawns.Add(new SpawnPoint(120, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(900, MapGenerator.FloorY));
+        _net.LocalName = "Target";
+        _net.StartOffline();
+        _net.AddBot();
+        _net.SetSettings(new MatchSettings { KillCam = false, Maps = { MapCode.Pack(d) } });
+        _game.HostStartMatch();
+    }
+
+    private void PollPortals()
+    {
+        if (_game.LocalMatchPlayer is { } me && me.Input is not StillInput) me.Input = new StillInput();
+        if (_game.Phase != Phase.Fighting) { _pcPlaced = false; return; }
+        if (_game.LocalMatchPlayer?.Avatar is not { Alive: true } target) return;
+        if (_game.LiveAvatars().FirstOrDefault(a => a != target) is not { } bot) return;
+        if (!_pcPlaced)
+        {
+            // Either spawn can be the player's: the player goes right, the bot left, behind the left ring.
+            target.GlobalPosition = new Vector2(900, MapGenerator.FloorY - target.HalfSize.Y);
+            bot.GlobalPosition = new Vector2(120, MapGenerator.FloorY - bot.HalfSize.Y);
+            target.Velocity = bot.Velocity = Vector2.Zero;
+            _pcPlaced = true;
+            return;
+        }
+        _pcFight += 1f / 60;
+        if (bot.GlobalPosition.X < PcWall.X && target.Hp < target.S[Stat.MaxHp]) _pcShotThrough++;
+        target.Hp = target.S[Stat.MaxHp]; // never let the battle end
+        if (_pcThrough < 0 && bot.GlobalPosition.X > PcWall.Right) _pcThrough = _pcFight;
+        if (_pcThrough < 0 && _pcFight < PortalCheckSeconds) return;
+        if (_shotDir != null) SaveShot("portalcheck");
+        string line = $"the bot {(_pcThrough >= 0 ? $"came through the portal after {_pcThrough:0.0}s" : "never got past the wall")}; {_pcShotThrough} hits from the far side of the wall";
+        Log.Info($"PORTALCHECK {line}");
+        if (_pcThrough < 0) Finish(1, $"portalcheck: the bot never used the portal ({line})");
         else Finish(0, line);
     }
 

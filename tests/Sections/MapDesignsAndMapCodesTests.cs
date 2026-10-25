@@ -15,14 +15,14 @@ static class MapDesignsAndMapCodesTests
             string.Join(",", m.Solids), string.Join(",", m.Surfaces), string.Join(",", m.Slopes), string.Join(",", m.Ground.Select(g => string.Join("/", g))),
             string.Join(",", m.Spawns), string.Join(",", m.Pads), string.Join(",", m.Props), string.Join(",", m.Hazards),
             string.Join(",", m.Movers.Select(v => (v.X1, v.X2, v.Y))), string.Join(",", m.Saws.Select(s => (MathF.Round(s.X1), s.Y1, MathF.Round(s.X2), s.Y2))),
-            string.Join(",", m.Drifts), string.Join(",", m.Hangers), string.Join(",", m.Conveyors));
+            string.Join(",", m.Drifts), string.Join(",", m.Hangers), string.Join(",", m.Conveyors), string.Join(",", m.Portals));
         static string Rounded(MapLayout m)
         {
             // Saws are stored to the pixel and phases to a sixteenth: compare the rest exactly.
             var copy = new MapLayout { Seed = m.Seed, Style = m.Style };
             copy.Solids.AddRange(m.Solids); copy.Surfaces.AddRange(m.Surfaces); copy.Slopes.AddRange(m.Slopes); copy.Ground.AddRange(m.Ground);
             copy.Spawns.AddRange(m.Spawns); copy.Pads.AddRange(m.Pads); copy.Props.AddRange(m.Props); copy.Hazards.AddRange(m.Hazards);
-            copy.Movers.AddRange(m.Movers); copy.Saws.AddRange(m.Saws); copy.Drifts.AddRange(m.Drifts); copy.Hangers.AddRange(m.Hangers); copy.Conveyors.AddRange(m.Conveyors);
+            copy.Movers.AddRange(m.Movers); copy.Saws.AddRange(m.Saws); copy.Drifts.AddRange(m.Drifts); copy.Hangers.AddRange(m.Hangers); copy.Conveyors.AddRange(m.Conveyors); copy.Portals.AddRange(m.Portals);
             return Shape(copy);
         }
 
@@ -77,9 +77,10 @@ static class MapDesignsAndMapCodesTests
         d.Drifts.Add(new Drift(560, MapGenerator.TierY(1) - 40, 48, 8));
         d.Hangers.Add(new Hanger(640, 200, 64, 8));
         d.Conveyors.Add(new Conveyor(480, MapGenerator.FloorY, 96, -1));
+        d.Portals.Add(new PortalPair(new PortalRing(120, MapGenerator.FloorY - PortalRing.Half, 0), new PortalRing(870, 300, 3)));
         var dc = MapCode.Decode(MapCode.Encode(d));
         Check(dc != null && Rounded(dc.Build(4)) == Rounded(d.Build(4)) && dc.Props.Count == 3 && Math.Abs(dc.Saws[0].Phase - 0.25f) < 1e-4f
-            && dc.Drifts.SequenceEqual(d.Drifts) && dc.Hangers.SequenceEqual(d.Hangers) && dc.Conveyors.SequenceEqual(d.Conveyors) && dc.Build(4).Surfaces.Any(s => s.Y == MapGenerator.TierY(1) - 40 && s.X1 == 560),
+            && dc.Drifts.SequenceEqual(d.Drifts) && dc.Hangers.SequenceEqual(d.Hangers) && dc.Conveyors.SequenceEqual(d.Conveyors) && dc.Portals.SequenceEqual(d.Portals) && dc.Build(4).Surfaces.Any(s => s.Y == MapGenerator.TierY(1) - 40 && s.X1 == 560),
             "Map code: a hand-made arena survives the trip", MapCode.Encode(d));
         var built = d.Build(2);
         Check(built.Slopes.Count == 2 && built.Ground.Count == 1, "Design: a hill that runs over a pit is left out", $"{built.Slopes.Count} slopes");
@@ -128,9 +129,10 @@ static class MapDesignsAndMapCodesTests
         for (int i = 0; i < MapDesign.MaxDrifts; i++) full.Drifts.Add(new Drift(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(20)), 8 * (1 + fr.Next(4))));
         for (int i = 0; i < MapDesign.MaxHangers; i++) full.Hangers.Add(new Hanger(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(20)), 8 * (1 + fr.Next(4))));
         for (int i = 0; i < MapDesign.MaxConveyors; i++) full.Conveyors.Add(new Conveyor(8 * (1 + fr.Next(120)), 8 * (1 + fr.Next(60)), 8 * (2 + fr.Next(30)), fr.Next(2) * 2 - 1));
+        for (int i = 0; i < MapDesign.MaxPortals; i++) full.Portals.Add(new PortalPair(new PortalRing(8 + fr.Next(980), 8 + fr.Next(520), fr.Next(4)), new PortalRing(8 + fr.Next(980), 8 + fr.Next(520), fr.Next(4))));
         Check(MapCode.Decode(MapCode.Encode(full)) is { } fullBack && fullBack.Drifts.SequenceEqual(full.Drifts) && fullBack.Hangers.SequenceEqual(full.Hangers)
-              && fullBack.Conveyors.SequenceEqual(full.Conveyors),
-            "Map code: full lists of drifting and hanging platforms and belts survive the trip");
+              && fullBack.Conveyors.SequenceEqual(full.Conveyors) && fullBack.Portals.SequenceEqual(full.Portals),
+            "Map code: full lists of drifting and hanging platforms, belts and portals survive the trip");
         int fullBytes = MapCode.Pack(full).Length;
         Console.WriteLine($"      (largest map: {fullBytes} bytes packed, {MapCode.Encode(full).Length}-character code)");
         Check(fullBytes <= 1500, $"Map code: the largest map packs into {fullBytes} bytes (at most 1500, so 12 fit a lobby sync)");

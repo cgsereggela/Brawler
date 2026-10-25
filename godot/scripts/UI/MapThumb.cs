@@ -115,6 +115,8 @@ public static class MapThumb
             Mark(r, ToRect(h.Rect).Grow(3), h.Kind == HazardKind.Magma ? new Color("#ff7a3c") : new Color("#9cf05a"));
         foreach (var p in map.Pads) Mark(r, new Rect2(p.X1, p.Y - 8, p.X2 - p.X1, 10), Palette.Accent);
         foreach (var c in map.Conveyors) Mark(r, new Rect2(c.X, c.Y - 3, c.W, 8), new Color("#7fd8ff"));
+        for (int i = 0; i < map.Portals.Count; i++)
+            foreach (var ring in new[] { map.Portals[i].A, map.Portals[i].B }) Mark(r, ToRect(ring.Box).Grow(3), PortalArt.ColorOf(i));
         foreach (var s in map.Saws) Dot(r, new Vector2((s.X1 + s.X2) / 2f, (s.Y1 + s.Y2) / 2f), s.Radius + 4, new Color("#e8e2d8"));
         for (int i = 0; i < map.Spawns.Count && i < d.Spawns.Count; i++) Dot(r, new Vector2(d.Spawns[i].X, d.Spawns[i].Y - 12), 12, Palette.Player(i));
         return r.ToTexture();

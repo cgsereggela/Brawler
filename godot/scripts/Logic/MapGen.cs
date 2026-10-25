@@ -51,6 +51,8 @@ public sealed class MapLayout
     public List<Hanger> Hangers { get; } = new();
     /// <summary>Conveyor belts (see <see cref="Conveyor"/>), along the tops of blocks.</summary>
     public List<Conveyor> Conveyors { get; } = new();
+    /// <summary>Linked portal rings (see <see cref="PortalPair"/>): not solids; reachability never relies on them.</summary>
+    public List<PortalPair> Portals { get; } = new();
     // Floor terrain (see TerrainGen): raised flat stretches are rects in Solids (also listed in Terrain), the ramps
     // between levels are Slopes, and Ground holds each terrain-bearing floor segment's top outline for drawing.
     public List<RectI> Terrain { get; } = new();
@@ -816,11 +818,34 @@ public static class MapGenerator
     }
 
     /// <summary>
+    /// <see cref="JumpsTo"/>, or (in a bot's graph, which counts pads) walking into a portal on a that lets you out on b.
+    /// </summary>
+    public static bool CanTraverse(MapLayout map, Surface a, Surface b) =>
+        JumpsTo(map, a, b) || map.UsePads && PortalTo(map, a, b) is not null;
+
+    /// <summary>
+    /// A portal you can walk into from surface a that brings you out standing on b, as (the ring you go in, the one
+    /// you come out of); or null. Both have to be doorways standing on their surfaces, with room in front of each.
+    /// </summary>
+    public static (PortalRing entry, PortalRing exit)? PortalTo(MapLayout map, Surface a, Surface b)
+    {
+        foreach (var p in map.Portals)
+            for (int k = 0; k < 2; k++)
+            {
+                var (en, ex) = k == 0 ? (p.A, p.B) : (p.B, p.A);
+                if (PortalMath.StandsOn(en, a) && PortalMath.StandsOn(ex, b) && RoomInFront(en, a) && RoomInFront(ex, b)) return (en, ex);
+            }
+        return null;
+    }
+
+    private static bool RoomInFront(PortalRing r, Surface s) => r.Dir == 0 ? s.X2 - r.X >= 16 : r.X - s.X1 >= 16;
+
+    /// <summary>
     /// <see cref="CanTraverse"/> plus obstacles: a jump or drop across a horizontal gap needs the space between the
     /// two surfaces (from a little above the higher one down to the lower one) to be free of solids, so a tower
     /// standing between two floor segments really separates them.
     /// </summary>
-    public static bool CanTraverse(MapLayout map, Surface a, Surface b)
+    public static bool JumpsTo(MapLayout map, Surface a, Surface b)
     {
         if (SlopeLinks(map, a, b)) return true;
         if (!CanTraverse(a, b)) return map.UsePads && PadTo(map, a, b) is not null;
@@ -1010,6 +1035,7 @@ public static class MapGenerator
         nav.Saws.AddRange(map.Saws);
         nav.Movers.AddRange(map.Movers);
         nav.Drifts.AddRange(map.Drifts);
+        nav.Portals.AddRange(map.Portals);
         return nav;
     }
 

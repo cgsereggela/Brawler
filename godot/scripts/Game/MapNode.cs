@@ -218,6 +218,13 @@ public partial class MapNode : Node2D
                 Shapes.Hdr(Theme.Edge, 1.2f + _padFlash[i] * 2));
         }
 
+        // Portal rings: each pair in its own colour.
+        for (int i = 0; i < Layout.Portals.Count; i++)
+        {
+            PortalArt.Base(l, Layout.Portals[i].A, PortalArt.ColorOf(i), _t);
+            PortalArt.Base(l, Layout.Portals[i].B, PortalArt.ColorOf(i), _t);
+        }
+
         // Conveyor belts: a dark track set into the ground with a roller at each end, and chevrons running the way it
         // carries you (all of them in one batch).
         if (Layout.Conveyors.Count == 0) return;
@@ -288,6 +295,12 @@ public partial class MapNode : Node2D
                 l.DrawPolyline(new[] { new Vector2(cx - 6, y + 4), new Vector2(cx, y), new Vector2(cx + 6, y + 4) }, col, 1.6f, true);
             }
             if (f > 0) GlowTex.Draw(l, new Vector2(cx, p.Y - 10), 40 * f + 10, c with { A = f * 0.8f });
+        }
+
+        for (int i = 0; i < Layout.Portals.Count; i++)
+        {
+            PortalArt.Glow(l, Layout.Portals[i].A, PortalArt.ColorOf(i), _t);
+            PortalArt.Glow(l, Layout.Portals[i].B, PortalArt.ColorOf(i), _t);
         }
     }
 

@@ -14,7 +14,7 @@ public sealed class MapDesign
 {
     public const int MaxName = 24;
     public const int MaxSpawns = 8;
-    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24, MaxHangers = 8, MaxConveyors = 8;
+    public const int MaxBlocks = 120, MaxHills = 8, MaxPads = 8, MaxProps = 60, MaxHazards = 8, MaxSaws = 8, MaxMovers = 8, MaxPits = 12, MaxDrifts = 24, MaxHangers = 8, MaxConveyors = 8, MaxPortals = 4;
     private const int Wall = MapGenerator.Wall, FloorY = MapGenerator.FloorY, Width = MapLayout.Width, Height = MapLayout.Height;
 
     public string Name = "";
@@ -37,6 +37,8 @@ public sealed class MapDesign
     public List<Hanger> Hangers = new();
     /// <summary>Conveyor belts (see <see cref="Conveyor"/>).</summary>
     public List<Conveyor> Conveyors = new();
+    /// <summary>Portal pairs (see <see cref="PortalPair"/>).</summary>
+    public List<PortalPair> Portals = new();
 
     public ThemeId Theme => ThemeRules.ForSeed(Seed);
 
@@ -81,6 +83,7 @@ public sealed class MapDesign
         d.Drifts.AddRange(map.Drifts);
         d.Hangers.AddRange(map.Hangers);
         d.Conveyors.AddRange(map.Conveyors);
+        d.Portals.AddRange(map.Portals);
         return d;
     }
 
@@ -141,6 +144,7 @@ public sealed class MapDesign
         map.Movers.AddRange(Movers);
         map.Hangers.AddRange(Hangers);
         map.Conveyors.AddRange(Conveyors);
+        map.Portals.AddRange(Portals);
         return map;
     }
 
@@ -243,6 +247,11 @@ public sealed class MapDesign
         foreach (var c in Conveyors)
             if (!Conveyor.OnBlock(map, c)) loose++;
         if (loose > 0) list.Add(loose == 1 ? "A conveyor belt isn't along the top of a block." : $"{loose} conveyor belts aren't along the top of a block.");
+        int buried = 0;
+        foreach (var p in Portals)
+            foreach (var r in new[] { p.A, p.B })
+                if (map.Solids.Exists(o => o.Intersects(r.Box))) buried++;
+        if (buried > 0) list.Add(buried == 1 ? "A portal is inside a block." : $"{buried} portals are inside blocks.");
         return list;
     }
 
@@ -269,6 +278,7 @@ public sealed class MapDesign
         d.Drifts.AddRange(Drifts);
         d.Hangers.AddRange(Hangers);
         d.Conveyors.AddRange(Conveyors);
+        d.Portals.AddRange(Portals);
         return d;
     }
 
