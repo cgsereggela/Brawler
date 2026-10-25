@@ -44,6 +44,12 @@ public partial class Main
             case "sky": await DemoDrift(MapDesign.Generate(MapStyle.Sky, ThemeId.SunsetPeaks, 1)); break;
             case "customcards": await DemoCustomCards(); break;
             case "editor": await DemoEditor(); break;
+            case "wardrobe": await DemoWardrobe(); break;
+            case "daily": await DemoDaily(); break;
+            case "training": await DemoTraining(); break;
+            case "stats": await DemoStats(); break;
+            case "cardicons": await DemoCardIcons(); break;
+            case "portals": await DemoPortals(); break;
             default: Finish(1, $"--demo: no demo called {name}"); return;
         }
         Finish(0, $"demo {name} done");
@@ -762,4 +768,248 @@ public partial class Main
             m.Groups[1].Success
                 ? (m.Groups[2].Success ? $"[color=#8ec7ff]{m.Groups[1].Value}[/color]{m.Groups[2].Value}" : $"[color=#f2d58a]{m.Groups[1].Value}[/color]")
                 : $"[color=#c9a0ff]{m.Value}[/color]");
+
+    // Every look: everything earned, then each part of the Customize screen stepped all the way round (colors a few
+    // swatches each), Randomize a few times, and a battle to show the trails off.
+    private async Task DemoWardrobe()
+    {
+        _game.DisableKillCam = true;
+        _game.AutopilotLocal = true;
+        CareerBook.Set(new Career { Matches = 40, Wins = 15, Kills = 250, BestWave = 6, GunGameWins = 1 });
+        CareerBook.Enabled = true;
+        Press(_menu, "Customize Character");
+        await DemoWait(1.5);
+        DemoMark("editor");
+        var grid = FindChild<GridContainer>(_custom, _ => true);
+        foreach (var row in grid.GetChildren().OfType<HBoxContainer>().ToList())
+        {
+            var name = FindAll<Label>(row, _ => true).Select(l => l.Text).FirstOrDefault() ?? "?";
+            DemoMark($"row {name}");
+            if (FindButton(row, ">") is { } next)
+            {
+                // All the way round, back to where it started (the value is the row's last label).
+                string Value() => FindAll<Label>(row, l => l.IsVisibleInTree()).Select(l => l.Text).LastOrDefault();
+                var start = Value();
+                for (int i = 0; i < 40; i++)
+                {
+                    next.EmitSignal(BaseButton.SignalName.Pressed);
+                    await DemoWait(0.38);
+                    if (Value() == start) break;
+                }
+            }
+            else
+            {
+                var rng = new Rng((ulong)name.Length * 977);
+                for (int i = 0; i < 4; i++)
+                {
+                    var dots = row.GetChildren().OfType<Button>().Where(b => !b.IsQueuedForDeletion()).ToList();
+                    if (dots.Count == 0) break;
+                    dots[rng.Range(0, dots.Count - 1)].EmitSignal(BaseButton.SignalName.Pressed);
+                    await DemoWait(0.45);
+                }
+            }
+            await DemoWait(0.3);
+        }
+        DemoMark("randomize");
+        for (int i = 0; i < 5; i++)
+        {
+            Press(_custom, "Randomize");
+            await DemoWait(0.9);
+        }
+        await DemoWait(1.0);
+        Press(_custom, "DONE");
+        await DemoWait(0.6);
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 6) _net.AddBot();
+        await DemoWait(1.5);
+        DemoMark("fight");
+        _game.HostStartMatch();
+        await DemoWait(18.0);
+        DemoMark("end");
+    }
+
+    // Daily Challenge: the menu line with today's mode and cards, the match against three Hard bots, the result, and
+    // the best of the day back on the menu.
+    private async Task DemoDaily()
+    {
+        _game.AutopilotLocal = true;
+        CareerBook.Enabled = true;
+        await DemoWait(1.0);
+        DemoMark("menu");
+        await DemoWait(3.0);
+        Press(_menu, "Daily Challenge");
+        DemoMark("match");
+        _game.KillCamStarted += () => DemoMark("killcam");
+        for (double t = 0; _game.Phase != Phase.MatchOver && t < 240; t += 0.1) await DemoWait(0.1);
+        DemoMark("over");
+        await DemoWait(5.0);
+        Press(_over, "Leave");
+        await DemoWait(1.5);
+        DemoMark("best");
+        await DemoWait(4.0);
+        DemoMark("end");
+    }
+
+    // Training Range: hold a few cards from the browser, put it away and shoot the dummies; then another build.
+    private async Task DemoTraining()
+    {
+        _game.AutopilotLocal = true;
+        _game.DisableHitStop = true;
+        await DemoWait(0.8);
+        Press(_menu, "Training Range");
+        await DemoWait(2.0);
+        void Tab()
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Tab, Pressed = true });
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Tab, Pressed = false });
+        }
+        foreach (var build in new[] { new[] { "Bouncy", "Splitter", "Explosive" }, new[] { "Shotgun", "Homing", "Big Bullet" } })
+        {
+            DemoMark("browser");
+            Press(_training, "Clear Cards");
+            await DemoWait(0.8);
+            foreach (var card in build)
+            {
+                Press(_training, card);
+                DemoMark($"hold {card}");
+                await DemoWait(1.0);
+            }
+            await DemoWait(0.8);
+            Tab();
+            DemoMark("shoot");
+            await DemoWait(11.0);
+            Tab();
+            await DemoWait(0.8);
+        }
+        DemoMark("end");
+    }
+
+    // End-of-match stats: a quick match against five bots, the results, then the Stats tab.
+    private async Task DemoStats()
+    {
+        _game.AutopilotLocal = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 6) _net.AddBot();
+        _net.SetSettings(new MatchSettings { BattlesPerRound = 2, RoundsToWin = 1 });
+        await DemoWait(1.0);
+        DemoMark("match");
+        _game.HostStartMatch();
+        while (_game.Phase != Phase.MatchOver) await DemoWait(0.1);
+        DemoMark("results");
+        await DemoWait(3.5);
+        _over.ShowStats();
+        DemoMark("stats");
+        await DemoWait(7.0);
+        DemoMark("end");
+    }
+
+    // Card icons: every built-in card, a page at a time, then a match up to its first two card picks.
+    private async Task DemoCardIcons()
+    {
+        var layer = new CanvasLayer { Layer = 50 };
+        AddChild(layer);
+        layer.AddChild(new ColorRect { Color = new Color(0.05f, 0.03f, 0.1f), Size = GetViewport().GetVisibleRect().Size });
+        var cards = CardRegistry.All;
+        const int perPage = 24;
+        for (int page = 0; page * perPage < cards.Count; page++)
+        {
+            var grid = new GridContainer { Columns = 8 };
+            grid.AddThemeConstantOverride("h_separation", 8);
+            grid.AddThemeConstantOverride("v_separation", 8);
+            foreach (var c in cards.Skip(page * perPage).Take(perPage))
+            {
+                var view = new CardView(c, 0, 0) { MouseFilter = Control.MouseFilterEnum.Ignore };
+                var cell = new Control { CustomMinimumSize = view.CustomMinimumSize };
+                cell.AddChild(view);
+                grid.AddChild(cell);
+            }
+            var size = GetViewport().GetVisibleRect().Size;
+            float fit = Mathf.Min((size.X - 24) / (8 * 140f), (size.Y - 24) / (3 * 196f));
+            var holder = new Control { Scale = Vector2.One * fit, Position = new Vector2(12, 12) };
+            holder.AddChild(grid);
+            layer.AddChild(holder);
+            DemoMark($"page {page + 1}");
+            await DemoWait(4.0);
+            holder.QueueFree();
+        }
+        layer.QueueFree();
+        _game.AutopilotLocal = true;
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        await DemoWait(0.8);
+        DemoMark("match");
+        _game.HostStartMatch();
+        int picks = 0;
+        for (double t = 0; picks < 2 && t < 120; t += 0.1)
+        {
+            bool picking = _game.Phase == Phase.CardPick;
+            await DemoWait(0.1);
+            if (!picking && _game.Phase == Phase.CardPick) DemoMark($"pick {++picks}");
+        }
+        await DemoWait(4.0);
+        DemoMark("end");
+    }
+
+    // Portals: a wall down the middle with a pair of portals through it, and another pair between two ledges. First
+    // the player shoots into the near ring and the bullets come out of the far one into the bots; then everyone fights,
+    // running through to get at each other.
+    private async Task DemoPortals()
+    {
+        _game.DisableKillCam = true;
+        _game.LavaOverride = 0;
+        var d = MapDesign.Empty(ThemeId.NeonNight, 3);
+        d.Name = "Portal Demo";
+        d.Blocks.Add(new RectI(490, MapGenerator.Wall, 20, MapGenerator.FloorY - MapGenerator.Wall));
+        d.Blocks.Add(new RectI(120, 400, 160, 12));
+        d.Blocks.Add(new RectI(720, 400, 160, 12));
+        int ground = MapGenerator.FloorY - PortalRing.Half;
+        d.Portals.Add(new PortalPair(new PortalRing(420, ground, 2), new PortalRing(900, ground, 2)));
+        d.Portals.Add(new PortalPair(new PortalRing(200, 400 - PortalRing.Half, 0), new PortalRing(800, 400 - PortalRing.Half, 2)));
+        d.Spawns.Add(new SpawnPoint(150, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(640, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(760, MapGenerator.FloorY));
+        d.Spawns.Add(new SpawnPoint(330, MapGenerator.FloorY));
+        MapLibrary.LobbyMaps = new() { MapCode.Encode(d) };
+        Press(_menu, "PLAY VS BOTS");
+        await DemoWait(0.6);
+        while (_net.Lobby.Players.Count < 4) _net.AddBot();
+        _net.SetSettings(new MatchSettings { KillCam = false, LavaAfter = 0, RoundsToWin = 5, Maps = { MapCode.Pack(d) } });
+        await DemoWait(1.0);
+        DemoMark("match");
+        _game.HostStartMatch();
+        while (_game.Phase != Phase.Fighting) await DemoWait(0.1);
+        // The player stands left of the near ring and fires into its front; the bots stand still on the far side.
+        var me = _game.LocalMatchPlayer;
+        me.Input = new RingShooter(new Vector2(420, ground - 4));
+        foreach (var a in _game.LiveAvatars())
+        {
+            bool mine = a == me.Avatar;
+            a.GlobalPosition = new Vector2(mine ? 160 : 560 + 70 * a.Player.Slot, MapGenerator.FloorY - a.HalfSize.Y);
+            a.Velocity = Vector2.Zero;
+            if (!mine) a.Player.Input = new StillInput();
+        }
+        DemoMark("shoot");
+        for (double t = 0; t < 7; t += 0.1)
+        {
+            if (me.Avatar is { Alive: true } av) av.Hp = av.S[Stat.MaxHp];
+            await DemoWait(0.1);
+        }
+        DemoMark("fight");
+        _game.AutopilotLocal = true;
+        foreach (var p in _game.Slots.Where(p => p != null)) p.Input = new BotBrain(_game);
+        await DemoWait(35.0);
+        DemoMark("end");
+    }
+
+    /// <summary>Stands still, aims at a point and fires in bursts.</summary>
+    private sealed class RingShooter : IInputSource
+    {
+        private readonly Vector2 _at;
+        private int _n;
+        public RingShooter(Vector2 at) => _at = at;
+        public InputFrame Next(Avatar self, float dt) => new() { Aim = _at, Shoot = _n++ % 20 < 10 };
+    }
 }
