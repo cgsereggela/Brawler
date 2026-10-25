@@ -3,7 +3,6 @@ issues to fix:
 features to add:
 
 shorts to make:
-- remake the cosmestics short going over more of the cosmetics
 - daily challenge
 - training range
 - end game stats
