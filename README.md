@@ -13,6 +13,7 @@ You don't need anything else installed. Step-by-step guides:
 - **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.
 - **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
 
+| | |
 |---|---|
 | <img src="docs/media/battle.gif" alt="A battle starting in Toxic Grove, with the YOU marker over your character"> | <img src="docs/media/card-pick.gif" alt="Picking a card after losing a round, with a cursed deal on the right"> |
 | Every battle is on a freshly generated arena, in one of ten themes. Rings and a YOU arrow show where you start. | Lose a round, pick a card. They stack, and your shots get flashier the more you hold. |
