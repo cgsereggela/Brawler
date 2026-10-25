@@ -1,3 +1,10 @@
+## New in 2.0.1
+
+- **Faster:** frames take over a third less time (5.0 ms down to 3.1 on Vulkan, 7.9 to 5.0 on D3D12). The heads on
+  the HUD's player chips now breathe and blink a dozen times a second instead of every frame. On the themes whose
+  decorations move (grass, ferns, candles, chains, lava drips, LEDs), the decorations go to the GPU in a couple of
+  batches instead of hundreds of small draws. Elder Forest and Dungeon Depths gain the most.
+
 ## New in 2.0.0
 
 - **Portals:** pairs of glowing rings stand on the ground. Walk or fall into one from the front and you come out of
