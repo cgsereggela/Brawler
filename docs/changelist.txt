@@ -1,7 +1,6 @@
 issues to fix:
 
 features to add:
-- portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
 
 shorts to make:
 - remake the cosmestics short going over more of the cosmetics
