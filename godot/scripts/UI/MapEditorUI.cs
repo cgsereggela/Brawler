@@ -1084,7 +1084,8 @@ public partial class MapEditorUI : Control
                 }
                 else if (MapDesign.SurfaceBelow(_layout, (int)_mouse.X, (int)_mouse.Y) is { } s)
                 {
-                    float a = Math.Max(s.X1 + 10, Snap(_mouse.X) - 48), b = Math.Min(s.X2 - 10, Snap(_mouse.X) + 48);
+                    float edge = r + ArenaFeatures.SawEdge; // the whole blade stays on the platform
+                    float a = Math.Max(s.X1 + edge, Snap(_mouse.X) - 48), b = Math.Min(s.X2 - edge, Snap(_mouse.X) + 48);
                     if (b > a) d.Saws.Add(new SawTrack(a, s.Y - 2, b, s.Y - 2, r, MapDesign.SawPeriod(a, 0, b, 0), 0));
                 }
                 break;

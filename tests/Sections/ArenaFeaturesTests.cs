@@ -43,6 +43,10 @@ static class ArenaFeaturesTests
             {
                 saws++;
                 if (!m.Surfaces.Any(sf => Math.Abs(sf.Y - 2 - sw.Y1) < 0.01f && sw.X1 >= sf.X1 && sw.X2 <= sf.X2)) Bad(seed, "saw off its surface");
+                // The whole blade, end to end of its run, stays over ground with a little to spare.
+                int top = (int)MathF.Round(sw.Y1 + 2);
+                for (int x = (int)MathF.Floor(sw.X1 - sw.Radius - 4); x < (int)MathF.Ceiling(sw.X2 + sw.Radius + 4); x++)
+                    if (!m.Solids.Any(r => r.Y == top && x >= r.X && x < r.Right)) { Bad(seed, $"saw overhangs its platform at x={x} ({sw})"); break; }
                 if (m.Spawns.Any(sp => sp.X > sw.X1 - 40 && sp.X < sw.X2 + 40 && Math.Abs(sp.Y - sw.Y1) < 30)) Bad(seed, "saw near a spawn");
             }
             foreach (var mv in m.Movers)

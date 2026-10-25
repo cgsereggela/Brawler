@@ -394,8 +394,9 @@ public static class ArenaFeatures
         for (int i = 0; i < 40 && map.Saws.Count < want; i++)
         {
             var s = map.Surfaces[rng.Range(0, map.Surfaces.Count - 1)];
-            if (s.Width < 48) continue;
-            float x1 = s.X1 + 10, x2 = s.X2 - 10;
+            // The blade's whole run, rim to rim plus a margin, stays over ground: never past the edge of a short platform.
+            float x1 = s.X1 + r + SawEdge, x2 = s.X2 - r - SawEdge;
+            if (x2 - x1 < 24 || !Backed(map, s.Y, (int)(x1 - r - SawEdge), (int)(x2 + r + SawEdge))) continue;
             if (x2 - x1 > 140)
             {
                 float len = rng.Range(75f, 140f);
@@ -410,6 +411,24 @@ public static class ArenaFeatures
             map.Saws.Add(new SawTrack(x1, y, x2, y, r, period, rng.Range(0f, 1f)));
             keep.Add(zone);
         }
+    }
+
+    /// <summary>Space kept between a sawblade's rim and the end of its platform.</summary>
+    public const float SawEdge = 4;
+
+    /// <summary>Whether every column in [x1, x2) has a solid whose top is at y underneath it.</summary>
+    private static bool Backed(MapLayout map, int y, int x1, int x2)
+    {
+        int x = x1;
+        while (x < x2)
+        {
+            int next = x;
+            foreach (var o in map.Solids)
+                if (o.Y == y && x >= o.X && x < o.Right) next = Math.Max(next, o.Right);
+            if (next == x) return false;
+            x = next;
+        }
+        return true;
     }
 
     // ---------- drifting platforms ----------
