@@ -43,16 +43,27 @@ public partial class Crosshair : Node2D
     public Crosshair(GameManager game) => _game = game;
     public Crosshair() { }
 
+    // While the window is out of focus, or the mouse is outside it (windowed or borderless), no mouse positions arrive:
+    // a crosshair at the mouse would sit frozen where the pointer left, so it steps aside and the OS pointer is back.
+    private bool _mouseIn = true, _focused = true;
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMMouseExit) _mouseIn = false;
+        else if (what == NotificationWMMouseEnter) _mouseIn = true;
+        else if (what == NotificationApplicationFocusOut) _focused = false;
+        else if (what == NotificationApplicationFocusIn) _focused = true;
+    }
+
     public override void _Process(double delta)
     {
         float dt = (float)delta;
         _t += dt;
-        bool active = ShouldShow();
-        if (active != Active)
-        {
-            Active = active;
-            Visible = active;
-        }
+        // On autopilot (test runs and recordings) or a controller the crosshair rides the aim line, not the mouse.
+        bool byMouse = !_game.AutopilotLocal && _game.LocalMatchPlayer?.Input is not LocalInput { UsingPad: true };
+        bool active = ShouldShow() && (!byMouse || (_mouseIn && _focused));
+        if (active != Active) Active = active;
+        Visible = active; // every frame, so nothing else can leave it showing
         // Only touch the mouse mode on a change of need, so a mode set elsewhere (none today) isn't fought every frame.
         var want = Active ? Input.MouseModeEnum.Hidden : Input.MouseModeEnum.Visible;
         if (Input.MouseMode != want && Input.MouseMode is Input.MouseModeEnum.Visible or Input.MouseModeEnum.Hidden)

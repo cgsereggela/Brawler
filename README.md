@@ -51,7 +51,7 @@ Defaults; rebind them in Options → Controls.
 |---|---|
 | Move | A / D (or arrows) |
 | Jump / wall jump | W / Space / Up (walk off a ledge and you keep your jump for the whole fall) |
-| Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload. Once you are down it disappears, since your ghost follows the mouse |
+| Aim | Mouse. In a fight the pointer becomes a crosshair in your color: the ring around it is your magazine (one segment per bullet, a gauge plus a number for big magazines) and a yellow arc sweeps round it while you reload. Once you are down it disappears, since your ghost follows the mouse. It also steps aside (the normal pointer comes back) while the mouse is outside the window or the game is in the background |
 | Shoot | Left mouse (hold) |
 | Reload | R: reload before the magazine is empty. It reloads by itself only once you run dry |
 | Block | Right mouse / Shift |
@@ -402,6 +402,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --artbench                                    # C# time and memory to draw one character (32 looks, many poses), plus a hash of every triangle drawn, so a speed-up can be checked to draw exactly the same
 "$GODOT" --headless --path godot -- --makeicon                         # rebuilds godot/icon.svg and godot/icon.ico (the exe icon) from the avatar art
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first, crosshair gives way to the pointer
+"$GODOT" --path godot --fixed-fps 60 -- --autotest --leavecheck=pick    # leaves the match at fight, killcam, pick or over (add --rounds=1 for over): back in the menu with the pointer, no crosshair left behind
 "$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
 "$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect
 "$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked

@@ -53,6 +53,8 @@ namespace Brawler;
 //                         overlay with local input muted until a card pick, tries Leave match then No, closes it with
 //                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
 //                         you fight (not under the overlay or the card pick)
+//   --leavecheck=WHEN     (with --autotest) leaves the match at WHEN (fight, killcam, pick or over) and checks you land
+//                         in the menu with the normal pointer back and no crosshair left on screen
 //   --lava=SECS           sudden-death lava rises after SECS seconds of fighting (0 = off) in the matches this run hosts
 //   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
 //                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle
@@ -153,6 +155,7 @@ public partial class Main
             else if (a.StartsWith("--statsdir=")) _game.Stats.Dir = a["--statsdir=".Length..].Replace('\\', '/');
             else if (a == "--stats") forceStats = true;
             else if (a == "--overlaycheck") _overlayCheck = true;
+            else if (a.StartsWith("--leavecheck=")) _leaveWhen = a["--leavecheck=".Length..];
             else if (a == "--killcamskip") _game.KillCamStarted += () => GetTree().CreateTimer(0.5, true, false, true).Timeout += _game.SkipKillCam;
             else if (a.StartsWith("--dropat=") && int.TryParse(a["--dropat=".Length..], out int drop)) _dropAt = drop;
             else if (a == "--clipcheck")

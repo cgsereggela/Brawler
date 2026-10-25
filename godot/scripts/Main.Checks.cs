@@ -608,6 +608,7 @@ public partial class Main
     {
         if (_autoMode == null) return;
         if (_overlayCheck && _ocStage != OcDone) OverlayCheckStep();
+        if (_leaveWhen != null && _leaveStage < 2) LeaveCheckStep();
         if (_chatCheck) PollGhosts();
         if (_lavaCheck) PollLava();
         if (_autoMode == "hazardcheck") PollHazards();
@@ -888,6 +889,39 @@ public partial class Main
         var got = _net.Lobby.Settings.DisabledCards;
         if (!got.SetEquals(AutoDisabled)) { Finish(1, $"poolcheck: client got disabled [{string.Join(",", got.OrderBy(id => id))}]"); return; }
         Log.Info($"POOLCHECK client has the host's disabled list: {string.Join(",", got.OrderBy(id => id))}");
+    }
+
+    // ---------- --leavecheck=WHEN: leaving a match puts the pointer back ----------
+
+    private string _leaveWhen;
+    private int _leaveStage;
+    private long _leaveFrames;
+
+    private void LeaveCheckStep()
+    {
+        _leaveFrames++;
+        if (_leaveStage == 0)
+        {
+            bool now = _leaveWhen switch
+            {
+                "killcam" => _game.KillCam.Playing && _leaveFrames > 30,
+                "pick" => _pick.Visible && _leaveFrames > 30,
+                "over" => _over.Visible && _leaveFrames > 5, // test runs quit half a second into this screen
+                _ => _game.Phase == Phase.Fighting && _crosshair.Active && _leaveFrames > 90,
+            };
+            if (!_game.KillCam.Playing && !_pick.Visible && !_over.Visible && _game.Phase != Phase.Fighting) _leaveFrames = 0;
+            if (!now) return;
+            Log.Info($"LEAVECHECK leaving at {_leaveWhen} ({_game.Phase}, crosshair {_crosshair.Active})");
+            _dropping = true;
+            _net.Leave();
+            (_leaveStage, _leaveFrames) = (1, 0);
+            return;
+        }
+        if (_leaveFrames < 20) return;
+        if (_shotDir != null) SaveShot();
+        string state = $"menu {_menu.Visible} hud {_hud.Visible} crosshair active {_crosshair.Active} visible {_crosshair.Visible} pointer {Input.MouseMode}";
+        if (!_menu.Visible || _crosshair.Visible || Input.MouseMode != Input.MouseModeEnum.Visible) Finish(1, $"leavecheck {_leaveWhen}: {state}");
+        else Finish(0, $"leavecheck {_leaveWhen}: back in the menu with the pointer ({state})");
     }
 
     // ---------- --overlaycheck: the Esc options overlay over a running match ----------
