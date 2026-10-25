@@ -13,7 +13,7 @@ public static class SfxBank
 {
     public static readonly string[] Names =
     {
-        "shoot", "shoot_light", "shoot_heavy", "shoot_shotgun", "hit", "death", "explode", "block", "blocked",
+        "shoot", "shoot_light", "shoot_heavy", "shoot_shotgun", "hit", "death", "death_soft", "explode", "block", "blocked",
         "bounce", "jump", "blink", "pad", "tick", "go", "pick", "win", "crate", "glass", "saw", "sizzle", "emote", "ping", "combo",
     };
 
@@ -42,6 +42,7 @@ public static class SfxBank
         "shoot_heavy" => 1f,
         "hit" => 0.85f,
         "death" or "explode" => 1f,
+        "death_soft" => 0.55f,
         "block" => 0.55f,
         "blocked" => 0.7f,
         "bounce" => 0.4f,
@@ -69,6 +70,7 @@ public static class SfxBank
         "shoot_shotgun" => Gun(seed, new GunVoice { Boom = 80, BoomTau = 0.06f, BoomGain = 1.05f, BodyTau = 0.05f, Bright = 5800, Crack = 1.05f, TailTau = 0.24f, TailGain = 0.48f, Length = 0.95f, Mech = 0.3f, MechAt = 0.38f, MechTwice = true }),
         "hit" => Hit(seed),
         "death" => Death(seed),
+        "death_soft" => Death(seed, soft: true),
         "explode" => Explode(seed),
         "block" => Block(seed),
         "blocked" => Ricochet(seed, 2100, 0.45f, 1f),
@@ -162,10 +164,16 @@ public static class SfxBank
         return o;
     }
 
-    private static float[] Death(uint seed)
+    /// <summary>
+    /// A player going down: a pitched thud with a sub drop, a filtered whoomp and a few sparks, echoing. The soft take
+    /// (for modes where people respawn and die all the time) is the same voice cut short: half the length, a smaller
+    /// boom, a quick tail and no echo.
+    /// </summary>
+    private static float[] Death(uint seed, bool soft = false)
     {
         var n = new Noise(seed);
-        var o = Buf(1.1f);
+        float k = soft ? 0.55f : 1f; // how long each part rings
+        var o = Buf(soft ? 0.45f : 1.1f);
         var whoomp = new Svf(2500, 0.7f);
         var crackle = new Svf(2800, 1.5f);
         var thud = new Osc();
@@ -173,15 +181,15 @@ public static class SfxBank
         for (int i = 0; i < o.Length; i++)
         {
             float t = i / (float)Rate, w = n.Next();
-            if ((i & 15) == 0) whoomp.Set(160 + 3200 * Decay(t, 0.09f), 0.8f);
-            float s = thud.Sine(95 * (1 + 1.2f * Decay(t, 0.015f))) * Perc(t, 0.001f, 0.07f);
-            s += sub.Sine(48 * (1 + 0.6f * Decay(t, 0.05f))) * Perc(t, 0.004f, 0.22f) * 0.8f;
-            s += whoomp.LowPass(w) * Perc(t, 0.002f, 0.2f) * 1.1f;
-            float spark = n.Unit() < 0.006f * Decay(t, 0.25f) ? n.Next() * 6 : 0;
+            if ((i & 15) == 0) whoomp.Set(160 + 3200 * Decay(t, 0.09f * k), 0.8f);
+            float s = thud.Sine(95 * (1 + 1.2f * Decay(t, 0.015f))) * Perc(t, 0.001f, 0.07f * k);
+            s += sub.Sine(48 * (1 + 0.6f * Decay(t, 0.05f))) * Perc(t, 0.004f, 0.22f * k) * (soft ? 0.5f : 0.8f);
+            s += whoomp.LowPass(w) * Perc(t, 0.002f, 0.2f * k) * 1.1f;
+            float spark = n.Unit() < 0.006f * Decay(t, 0.25f * k) ? n.Next() * 6 : 0;
             s += crackle.BandPass(spark) * 0.8f;
             o[i] = MathF.Tanh(1.6f * s);
         }
-        Echo(o, 0.11f, 0.22f, 900);
+        if (!soft) Echo(o, 0.11f, 0.22f, 900);
         return o;
     }
 

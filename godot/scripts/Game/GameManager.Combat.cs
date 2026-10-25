@@ -578,8 +578,10 @@ public partial class GameManager
             }
         }
 
-        Sfx.Play("death");
-        if (tier >= 3 || st.Has(Flavor.Fire)) Sfx.Play("explode", 0.6f);
+        // Where deaths come every few seconds (respawn modes, Survival's waves) the full boom wears thin: a short, quiet one.
+        bool often = GameModes.Respawns(Mode) || Mode == GameMode.Survival;
+        Sfx.Play(often ? "death_soft" : "death");
+        if (tier >= 3 || st.Has(Flavor.Fire)) Sfx.Play("explode", often ? 0.35f : 0.6f);
         Shake(0.7f + tier * 0.08f);
         HitStop(70 + Mathf.Min(tier, 4) * 20);
     }
