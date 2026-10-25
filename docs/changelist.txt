@@ -3,7 +3,6 @@ issues to fix:
 features to add:
 
 shorts to make:
-- training range
 - end game stats
 
 longs to make:
