@@ -108,16 +108,6 @@ public partial class MenuUI : Control
         bottomRow.AddChild(quit);
         body.AddChild(bottomRow);
 
-        // The player's own bindings; refreshed whenever the menu comes back (for example after Options).
-        static string Controls() => Keybinds.Summary() + "   Esc options";
-        var hint = UiKit.Label(Controls(), UiKit.Tiny, Palette.TextDim with { A = 0.8f }, HorizontalAlignment.Center);
-        VisibilityChanged += () => { if (Visible) hint.Text = Controls(); };
-        hint.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom);
-        hint.OffsetTop = -26;
-        hint.OffsetBottom = -8;
-        hint.GrowHorizontal = GrowDirection.Both;
-        AddChild(hint);
-
         var version = UiKit.Label($"v{NetworkManager.Version}", UiKit.Tiny, Palette.TextDim with { A = 0.6f }, HorizontalAlignment.Right);
         version.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomRight);
         version.OffsetLeft = -120;
@@ -127,7 +117,7 @@ public partial class MenuUI : Control
         AddChild(version);
 
         // The tip card steps aside when the menu grows into its corner and it would cover something (a big UI scale, a
-        // small window): the character, the play panel or the controls line.
+        // small window): the character or the play panel.
         var tip = TipCard();
         AddChild(tip);
         void FitTip()
@@ -136,10 +126,7 @@ public partial class MenuUI : Control
             Callable.From(() =>
             {
                 var r = Local(tip);
-                // The controls line is a full-width label with its text centred: only the text itself counts.
-                float slack = Mathf.Max(0, hint.Size.X - hint.GetMinimumSize().X) / 2;
-                var hintText = Local(hint).GrowIndividual(-slack, 0, -slack, 0);
-                tip.Visible = !r.Intersects(Local(body)) && !r.Intersects(Local(left)) && !r.Intersects(hintText);
+                tip.Visible = !r.Intersects(Local(body)) && !r.Intersects(Local(left));
             }).CallDeferred();
         }
         Resized += FitTip;

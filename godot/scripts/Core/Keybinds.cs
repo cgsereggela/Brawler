@@ -104,10 +104,6 @@ public static class Keybinds
     public static string Hint(string action) =>
         string.Join("/", Current.Row(action).Where(b => !b.IsNone).Select(Label).DefaultIfEmpty("unbound"));
 
-    /// <summary>One-line control summary for menus, e.g. "A/Left  D/Right move   W/Space/Up jump   ...".</summary>
-    public static string Summary() =>
-        $"{Hint("move_left")} · {Hint("move_right")} move   {Hint("jump")} jump   {Hint("shoot")} shoot   {Hint("block")} block";
-
     // ---- save / load ----
 
     // Key names are the engine's names for the physical (US-layout) position, so the file reads the same on any layout.
