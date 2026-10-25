@@ -5,7 +5,6 @@ features to add:
 shorts to make:
 
 longs to make:
-- full match with new graphics / music
 
 performance improvements
 - bake static map decorations into the ground texture. MapNode's solids layer only redraws on change, but Godot still replays every cached command each frame (~140 draw calls for shadows and decos). Painting them into the ground image once costs one textured rect
