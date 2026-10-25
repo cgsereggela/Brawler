@@ -25,6 +25,7 @@ namespace Brawler;
 //   --arenashots          (with --shots=DIR) screenshot battles on seeds rich in crates, pools, saws and movers
 //   --terrainshots        (with --shots=DIR) screenshot battles on hilly seeds, one per map style and per arena theme
 //   --hudshots            (with --shots=DIR, and --cards=) screenshot each player chip's hover card (cards and stats)
+//   --cardshots           (with --shots=DIR) every card, 24 to a page, to check their icons side by side
 //   --readmeshots         (with --shots=DIR, run with --fixed-fps 60) the README media: a match with generated names,
 //                         a GIF clip + screenshot per battle and card pick, the first kill cams, hover cards and the match-over
 //                         screen, then quit
@@ -255,6 +256,7 @@ public partial class Main
             else if (a == "--fxbench") FxBench();
             else if (a == "--artbench") ArtBench();
             else if (a == "--fxshots" && _shotDir != null) FxShots();
+            else if (a == "--cardshots" && _shotDir != null) CardShots();
             else if (a == "--arenashots" && _shotDir != null) ArenaShots();
             else if (a == "--layoutshots" && _shotDir != null) LayoutShots();
             else if (a == "--hudshots" && _shotDir != null) HudShots();

@@ -322,7 +322,7 @@ public partial class CardView : Control
         var header = Shapes.RoundRect(new Rect2(0, 0, W, 76), 14, 6);
         for (int i = 0; i < header.Length; i++) if (header[i].Y > 30) header[i].Y = 76;
         Shapes.Gradient(this, header, col.Lightened(0.25f), col.Darkened(0.2f));
-        DrawIcon(new Vector2(W / 2, 47), col);
+        CardIcons.Draw(this, _card, new Vector2(W / 2, 47), col, _t);
         if (_card.IsRare) DrawSparkles(gold);
 
         float pulse = 0.5f + 0.5f * Mathf.Sin(_t * 4);
@@ -387,106 +387,5 @@ public partial class CardView : Control
         Shapes.Gradient(this, pts, curseCol.Darkened(0.55f), new Color(0.12f, 0.02f, 0.05f));
         float flicker = 0.75f + 0.25f * Mathf.Sin(_t * 5.3f) * Mathf.Sin(_t * 2.1f);
         Shapes.DrawClosed(this, pts, Shapes.Hdr(curseCol, 0.9f + 0.3f * _hover) with { A = flicker }, 1.5f + _hover);
-    }
-
-    /// <summary>A simple glyph per category, drawn in white on the header.</summary>
-    private void DrawIcon(Vector2 c, Color col)
-    {
-        var ink = new Color(1, 1, 1, 0.95f);
-        var shadow = col.Darkened(0.55f) with { A = 0.6f };
-        float spin = _t * 0.8f;
-        switch (_card.Category)
-        {
-            case CardCategory.Gun:
-                for (int i = 3; i >= 1; i--)
-                    DrawCircle(c + new Vector2(-i * 9, 0), 6 - i * 1.2f, ink with { A = 0.25f * (4 - i) }, true, -1, true);
-                DrawCircle(c + new Vector2(2, 2), 10, shadow, true, -1, true);
-                DrawCircle(c, 10, ink, true, -1, true);
-                DrawCircle(c + new Vector2(-3, -3), 3.5f, col.Lightened(0.6f), true, -1, true);
-                break;
-            case CardCategory.Body:
-            {
-                var heart = new List<Vector2>();
-                for (int i = 0; i < 40; i++)
-                {
-                    float t = i / 40f * Mathf.Tau;
-                    heart.Add(c + new Vector2(16 * Mathf.Pow(Mathf.Sin(t), 3), -(13 * Mathf.Cos(t) - 5 * Mathf.Cos(2 * t) - 2 * Mathf.Cos(3 * t) - Mathf.Cos(4 * t))) * 0.75f);
-                }
-                var pts = heart.ToArray();
-                DrawColoredPolygon(Shapes.Offset(pts, new Vector2(2, 2)), shadow);
-                DrawColoredPolygon(pts, ink);
-                break;
-            }
-            case CardCategory.Movement:
-            {
-                // A bouncing double chevron with speed lines.
-                float hop = Mathf.Abs(Mathf.Sin(_t * 3)) * -4;
-                for (int k = 0; k < 2; k++)
-                {
-                    var o = c + new Vector2(-4 + k * 11, hop);
-                    var chev = new[] { o + new Vector2(-6, -12), o + new Vector2(6, 0), o + new Vector2(-6, 12) };
-                    DrawPolyline(Shapes.Offset(chev, new Vector2(2, 2)), shadow, 4.5f, true);
-                    DrawPolyline(chev, ink with { A = k == 0 ? 0.6f : 0.95f }, 4.5f, true);
-                }
-                for (int i = 0; i < 3; i++)
-                    DrawLine(c + new Vector2(-24, -7 + i * 7 + hop), c + new Vector2(-14 + (i % 2) * 3, -7 + i * 7 + hop), ink with { A = 0.5f }, 2f, true);
-                break;
-            }
-            case CardCategory.Block:
-            {
-                // A shield with a gentle sway and a glint across it.
-                float sway = Mathf.Sin(_t * 2) * 0.08f;
-                var shield = new List<Vector2>();
-                for (int i = 0; i <= 12; i++)
-                {
-                    float x = -13 + 26 * i / 12f;
-                    shield.Add(new Vector2(x, -13 + 2.5f * (1 - Mathf.Pow(x / 13, 2))));
-                }
-                for (int i = 1; i < 12; i++)
-                {
-                    float k = i / 12f;
-                    shield.Add(new Vector2(13 * (1 - k) * Mathf.Cos(k * 0.9f), -2 + 17 * Mathf.Sin(k * Mathf.Pi / 2)));
-                }
-                shield.Add(new Vector2(0, 15));
-                for (int i = 11; i >= 1; i--)
-                {
-                    float k = i / 12f;
-                    shield.Add(new Vector2(-13 * (1 - k) * Mathf.Cos(k * 0.9f), -2 + 17 * Mathf.Sin(k * Mathf.Pi / 2)));
-                }
-                var pts = shield.Select(p => c + p.Rotated(sway)).ToArray();
-                DrawColoredPolygon(Shapes.Offset(pts, new Vector2(2, 2)), shadow);
-                DrawColoredPolygon(pts, ink);
-                var boss = c + new Vector2(0, 0).Rotated(sway);
-                DrawLine(c + new Vector2(0, -11).Rotated(sway), c + new Vector2(0, 12).Rotated(sway), col with { A = 0.7f }, 2.5f, true);
-                DrawCircle(boss, 4, col, true, -1, true);
-                DrawCircle(boss + new Vector2(-1.2f, -1.2f), 1.4f, col.Lightened(0.7f), true, -1, true);
-                break;
-            }
-            case CardCategory.Curse:
-            {
-                // A skull that leans slowly side to side.
-                float lean = Mathf.Sin(_t * 1.6f) * 0.12f;
-                Vector2 P(float x, float y) => c + new Vector2(x, y).Rotated(lean);
-                var skull = new List<Vector2>();
-                for (int i = 0; i <= 20; i++)
-                {
-                    float a = Mathf.Pi * (0.85f + 1.3f * i / 20f); // the dome, left to right over the top
-                    skull.Add(P(14 * Mathf.Cos(a), -3 + 13 * Mathf.Sin(a)));
-                }
-                skull.AddRange(new[] { P(8, 9), P(7, 14), P(-7, 14), P(-8, 9) });
-                var pts = skull.ToArray();
-                DrawColoredPolygon(Shapes.Offset(pts, new Vector2(2, 2)), shadow);
-                DrawColoredPolygon(pts, ink);
-                DrawCircle(P(-5.5f, -2), 3.6f, col.Darkened(0.5f), true, -1, true);
-                DrawCircle(P(5.5f, -2), 3.6f, col.Darkened(0.5f), true, -1, true);
-                DrawColoredPolygon(new[] { P(0, 3), P(2, 7), P(-2, 7) }, col.Darkened(0.5f));
-                for (int i = -1; i <= 1; i++) DrawLine(P(i * 3.2f, 10), P(i * 3.2f, 14), col.Darkened(0.5f), 1.4f, true);
-                break;
-            }
-            default:
-                DrawColoredPolygon(Shapes.Star(c + new Vector2(2, 2), 17, 7, 5, spin - Mathf.Pi / 2), shadow);
-                DrawColoredPolygon(Shapes.Star(c, 17, 7, 5, spin - Mathf.Pi / 2), ink);
-                break;
-        }
     }
 }

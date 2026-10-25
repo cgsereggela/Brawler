@@ -311,6 +311,7 @@ The host is authoritative. Clients send one `InputFrame` per physics tick, and t
 3. If it needs a new number, add it to the `Stat` enum (and `StatBlock.Base()` if it is not 0) in `Stats.cs`, then read it where it applies. Bullet behaviors that every peer must simulate the same way go on `Bullet` and its wire format in `BulletSystem.cs`; host-only rules (damage, revives, chain hits) go in `GameManager.HostDamage` and friends.
 4. Never reuse or renumber an id: the stats log refers to cards by id.
 5. Optional: give it an effect flavor in `CardFlavors` in `godot/scripts/Game/FxStyle.cs`. Every card adds power on its own, flavored or not.
+6. Give it an icon: a `case` with its id in `CardIcons.Glyph` (`godot/scripts/UI/CardIcons.cs`), built from the `Pen` kit there (`Bullet`, `Body`, `Boot`, `Shield`, `Heart`, `Mag`, `Flame`, arrows, dots and lines). Without one it shows its category's glyph. Check it next to the others with `--cardshots` (see Tests).
 
 ## Adding a face part, hairstyle or hat
 Character art is vector shapes drawn in code, so there are no image files to manage. [docs/AVATAR_ART.md](docs/AVATAR_ART.md) explains how it is rendered and how to draw parts well.
@@ -396,6 +397,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --shots=C:/tmp/shots # windowed, saves screenshots
 "$GODOT" --path godot -- --shots=C:/tmp/shots --menushots              # menu, editor, lobby + a gallery page per look part
 "$GODOT" --path godot -- --shots=C:/tmp/shots --fxshots                # hit + kill effects at each power tier (0 to 12 cards)
+"$GODOT" --path godot -- --shots=C:/tmp/shots --cardshots              # every card, 24 to a page, to compare their icons
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --cards=random:5  # every battle deals 5 random cards to each player
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --cards=57,62,69    # everyone holds these card ids (offline only)
 "$GODOT" --path godot -- --themebench                                  # frame time per arena theme (vsync off)

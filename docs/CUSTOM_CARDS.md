@@ -65,7 +65,7 @@ To put several cards in one file, wrap them in square brackets with commas betwe
 | `id` | yes | A whole number from **1000 to 32767**, different for every card. Numbers below 1000 belong to the built-in cards. |
 | `name` | yes | The card's title, up to 24 letters. |
 | `description` | no | The text on the card. Either one piece of text (use `\n` for a new line) or a list of lines as in the example. Up to 160 letters; about four short lines fit. The game does not write this for you, so make it match your mods. |
-| `category` | no | `Gun`, `Body`, `Movement`, `Chaos`, `Block` or `Curse`. It sets the card's colour and icon. A `Curse` card is only ever offered as the downside of a cursed deal. Default: `Chaos`. |
+| `category` | no | `Gun`, `Body`, `Movement`, `Chaos`, `Block` or `Curse`. It sets the card's colour and icon (custom cards show their category's icon). A `Curse` card is only ever offered as the downside of a cursed deal. Default: `Chaos`. |
 | `rarity` | no | `Common` or `Rare`. Rare cards get a gold frame, turn up only at the lobby's rare-card chance, and are the prize in cursed deals. Default: `Common`. |
 | `mods` | see below | The list of stat changes. Each one is `{ "stat": ..., "op": ..., "value": ... }`. At most 12. |
 | `effect` | no | A special behaviour that numbers alone can't do (see [Effects](#effects)). |

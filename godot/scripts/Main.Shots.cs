@@ -215,6 +215,44 @@ public partial class Main
         tree.CreateTimer(2.6).Timeout += () => { Burst(); Second(); };
     }
 
+    // --cardshots: Every card, 24 to a page scaled to fill the screen, so their icons can be checked side by side, then quit.
+    private void CardShots()
+    {
+        _autoMode = "cards";
+        var layer = new CanvasLayer { Layer = 50 };
+        AddChild(layer);
+        layer.AddChild(new ColorRect { Color = new Color(0.05f, 0.03f, 0.1f), Size = GetViewport().GetVisibleRect().Size });
+        var tree = GetTree();
+        var cards = CardRegistry.All;
+        const int perPage = 24;
+        int page = 0;
+        Control holder = null;
+        void Next()
+        {
+            holder?.QueueFree();
+            if (page * perPage >= cards.Count) { tree.Quit(0); return; }
+            var grid = new GridContainer { Columns = 8 };
+            grid.AddThemeConstantOverride("h_separation", 8);
+            grid.AddThemeConstantOverride("v_separation", 8);
+            foreach (var c in cards.Skip(page * perPage).Take(perPage))
+            {
+                // A cell per card: a card sets its own Y as it rises into view, which would undo the grid's rows.
+                var view = new CardView(c, 0, 0) { MouseFilter = Control.MouseFilterEnum.Ignore };
+                var cell = new Control { CustomMinimumSize = view.CustomMinimumSize };
+                cell.AddChild(view);
+                grid.AddChild(cell);
+            }
+            var size = GetViewport().GetVisibleRect().Size;
+            float fit = Mathf.Min((size.X - 24) / (8 * 140f), (size.Y - 24) / (3 * 196f));
+            holder = new Control { Scale = Vector2.One * fit, Position = new Vector2(12, 12) };
+            holder.AddChild(grid);
+            layer.AddChild(holder);
+            page++;
+            tree.CreateTimer(0.8, true, false, true).Timeout += () => { SaveShot($"cards_{page:D2}"); Next(); };
+        }
+        tree.CreateTimer(0.5, true, false, true).Timeout += Next;
+    }
+
     // --fxshots: Screenshot hit and kill effects at every power tier (0 to 12 cards, flavors piling up), then quit.
     private void FxShots()
     {
