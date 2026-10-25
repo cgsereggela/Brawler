@@ -94,6 +94,10 @@ public sealed class StatBlock
 
     public int Int(Stat s) => (int)MathF.Round(_v[(int)s]);
 
+    /// <summary>"Cannot block" cards (Berserk, Iron Will, All In) add 999 s of block cooldown; no real loadout gets near this.</summary>
+    public const float NoBlockCooldown = 100;
+    public bool CannotBlock => this[Stat.BlockCooldown] >= NoBlockCooldown;
+
     public static StatBlock Base()
     {
         var b = new StatBlock();

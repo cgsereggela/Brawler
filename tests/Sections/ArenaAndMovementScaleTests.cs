@@ -75,6 +75,10 @@ static class ArenaAndMovementScaleTests
             var lines = StatSummary.Lines(StatBlock.Compute([Named("Riposte"), Named("Absorb")]));
             Check(lines.Any(l => l.Label == "Counter" && l.Value == "60%") && lines.Any(l => l.Label == "Block heal" && l.Value == "75%"),
                 "Block cards show in the HUD stats", string.Join(", ", lines.Select(l => $"{l.Label}={l.Value}")));
+            // "Cannot block" is 999 s of cooldown underneath, multiplied by any block cards held with it: say so instead.
+            var noBlock = StatSummary.Lines(StatBlock.Compute([Named("All In"), Named("Reflector"), Named("Riposte")]));
+            Check(noBlock.Any(l => l.Label == "Block" && l.Value == "can't") && StatSummary.Lines(StatBlock.Base()).Any(l => l.Label == "Block" && l.Value == "4.0s"),
+                "The HUD stats say a cannot-block loadout can't block (not 1000+ seconds)", string.Join(", ", noBlock.Select(l => $"{l.Label}={l.Value}")));
         }
     }
 }

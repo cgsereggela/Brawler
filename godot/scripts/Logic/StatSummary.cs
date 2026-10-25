@@ -28,7 +28,7 @@ public static class StatSummary
         ("Bullet speed", [Stat.BulletSpeed], s => N(s[Stat.BulletSpeed], "0")),
         ("Move speed", [Stat.MoveSpeed], s => N(s[Stat.MoveSpeed], "0")),
         ("Jump", [Stat.JumpVelocity, Stat.Gravity], s => N(s[Stat.JumpVelocity] * s[Stat.JumpVelocity] / (2 * s[Stat.Gravity]), "0") + "px"),
-        ("Block", [Stat.BlockCooldown], s => Sec(s[Stat.BlockCooldown])),
+        ("Block", [Stat.BlockCooldown], s => s.CannotBlock ? "can't" : Sec(s[Stat.BlockCooldown])),
     };
 
     /// <summary>Shown only once cards change them from base.</summary>
