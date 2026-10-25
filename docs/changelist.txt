@@ -1,5 +1,4 @@
 issues to fix:
-- we always play the same song on load, can we randomize the song that is played first, also lets add a hotkey to switch to the next song
 - the on death sound effect gets a little tiresome in modes where respawns happen, can we tune it down in those modes (shorter / quieter)
 - make killcams 2s longer
 
