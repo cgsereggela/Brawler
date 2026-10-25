@@ -1,3 +1,32 @@
+## New in 2.0.0
+
+- **Portals:** pairs of glowing rings stand on the ground. Walk or fall into one from the front and you come out of
+  its partner at the same speed, and bullets go through too, so you can shoot round a wall. Each pair in an arena
+  has its own colour. About one arena in four gets a pair, and bots use them to reach you. The map editor has a
+  **Portal** tool (N): click two spots to place a linked pair (Shift places a ring in mid-air), and click a ring to
+  turn it. Map codes with portals need 2.0.
+- **New character art:** every hat, hairstyle, face, body, pair of legs and the gun were redrawn with proper shading:
+  light and shadow tinted towards warm and cool hues, seams, folds, highlights and glints. The gun arm follows your
+  aim more naturally.
+- **Card icons:** every built-in card has its own icon, drawn in code, in place of the shared category glyph.
+  Custom cards keep their category's glyph.
+- **New looks:** Crying eyes (lose 10 matches) and Nerdy Glasses eyes (play 25 matches).
+- **Music:** three new synthwave songs (Drift, Rift and Ember), so there are now three lobby and five battle tracks.
+  Each launch opens on a different menu song, and **M** skips to the next one.
+- **Lock mouse in matches:** a new Video option keeps the pointer inside the window during a match, so a windowed or
+  borderless player can't click out of the game mid-fight. Menus leave it free, and Alt+Tab still works.
+- **Crosshair:** it hides and gives the normal pointer back while the mouse is outside the window or the game is in
+  the background, instead of staying frozen on screen.
+- **Quieter deaths in busy modes:** King of the Hill, Capture the Flag, Gun Game and Survival play a short, soft death
+  sound. Elimination keeps the full one.
+- **Kill cam:** two seconds longer.
+- **Main menu:** opens on a random scene each launch, and the list of controls along the bottom is gone (it's all in
+  Options).
+- **Fixes:** sawblades stay over their platform from end to end instead of hanging off short ones, and a player's
+  card shows "can't" for block instead of a 1000+ second cooldown.
+- **Testing:** `--portalcheck` checks a bot crosses a wall through a portal, and `--leavecheck` checks that leaving a
+  match at any point lands back in the menu with the pointer free.
+
 ## New in 1.7.0
 
 - **Conveyor belts:** strips along the tops of blocks and the floor, chevrons showing which way they run. They carry
