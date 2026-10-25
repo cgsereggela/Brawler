@@ -1,15 +1,27 @@
 issues to fix:
 - sawblades sometimes extend past platforms that aren't large enough to hold the width of the obstacle, ensure the platform is wide enough for the whole path the sawblade can travel
-- all of the avatar graphics need to be improved according to the AVATAR_ART.md guide
 - sometimes the in-match crosshair gets drawn in the menu and doesn't move / gets stuck somewhere
+- the blocked stat in the player card looks weird, is it correct (it reads 1000s of seconds in some games)
+- we always show the same initial scene on load, can we randomize which scene is loaded into the menu first
+- we always play the same song on load, can we randomize the song that is played first, also lets add a hotkey to switch to the next song
+- the on death sound effect gets a little tiresome in modes where respawns happen, can we tune it down in those modes (shorter / quieter)
+- make killcams 2s longer
 
 features to add:
+- cards should have unique icons that reflect the theme/stats of the card rather than a generic icon for their class
+- add some more songs to the pool of music to play in the same theme as the existing ones
+- add an option to lock the mouse to the window so windowed / borderless players don't accidentally click out of the game
+- add crying eyes that unlock after some achievement
 - portal pairs: two linked rings. A player or bullet that enters one comes out of the other with the same speed, turned to match the exit's facing. Seeded, plus a map editor tool and map code support; bots path through them
 
 shorts to make:
-- how to make custom arenas
+- remake the cosmestics short going over more of the cosmetics
 - daily challenge
 - training range
+- end game stats
+
+longs to make:
+- full match with new graphics / music
 
 performance improvements
 - bake static map decorations into the ground texture. MapNode's solids layer only redraws on change, but Godot still replays every cached command each frame (~140 draw calls for shadows and decos). Painting them into the ground image once costs one textured rect

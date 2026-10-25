@@ -1,11 +1,18 @@
 # Brawler
 
-A ROUNDS-style 2–8 player platform shooter: lose a round, pick a card, come back stronger.
+A 2–8 player PVP Roguelike platform shooter: lose a round, pick a card, come back stronger.
 Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch co-op, procedurally generated themed arenas plus a map editor whose arenas share as a short code, and effects that get flashier the more cards you hold.
 
 <p align="center"><img src="docs/media/chaos.gif" alt="Four players trading split, bouncing and exploding shots late in a match in Candy Clouds" width="720"></p>
 
-| | |
+## Download and play
+
+**Just want to play?** Grab the zip for your system from the **[Releases](https://github.com/cgsereggela/Brawler/releases/latest)** page, extract it and run it.
+You don't need anything else installed. Step-by-step guides:
+
+- **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.
+- **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
+
 |---|---|
 | <img src="docs/media/battle.gif" alt="A battle starting in Toxic Grove, with the YOU marker over your character"> | <img src="docs/media/card-pick.gif" alt="Picking a card after losing a round, with a cursed deal on the right"> |
 | Every battle is on a freshly generated arena, in one of ten themes. Rings and a YOU arrow show where you start. | Lose a round, pick a card. They stack, and your shots get flashier the more you hold. |
@@ -22,14 +29,6 @@ Godot 4.7 (.NET / C#), LAN or direct-IP multiplayer, bots, controllers and couch
 
 <p align="center"><img src="docs/media/map-editor.png" alt="The map editor: a generated Sunset Peaks arena with its spawns, pads, saws and crates, ready to edit" width="720"><br>
 <em>The map editor: start from a generated arena or an empty one, then share it as a map code (see <a href="#map-editor-and-map-codes">Map editor and map codes</a>).</em></p>
-
-## Download and play
-
-**Just want to play?** Grab the zip for your system from the **[Releases](https://github.com/cgsereggela/Brawler/releases/latest)** page, extract it and run it.
-You don't need anything else installed. Step-by-step guides:
-
-- **[Install and run](docs/INSTALL.md)**: Windows, macOS and Linux, plus the "unknown publisher" warnings.
-- **[Playing online](docs/PLAYING_ONLINE.md)**: friends on different home networks, via Tailscale, automatic port opening or manual port forwarding.
 
 Found a bug? **Report Bug** on the main menu opens the [issues page](https://github.com/cgsereggela/Brawler/issues) in your browser.
 

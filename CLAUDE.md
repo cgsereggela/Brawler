@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Brawler: a ROUNDS-style 2–8 player platform shooter in **Godot 4.7.2 .NET (C#, net9.0)**. The Godot project lives in `godot/`; `README.md` is the authoritative, detailed reference (rules, cards, every test flag, release process) and is kept up to date with features.
+Brawler: a 2–8 player PVP Roguelike platform shooter in **Godot 4.7.2 .NET (C#, net9.0)**. The Godot project lives in `godot/`; `README.md` is the authoritative, detailed reference (rules, cards, every test flag, release process) and is kept up to date with features.
 
 ## Commands
 
