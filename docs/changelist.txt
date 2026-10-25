@@ -1,5 +1,4 @@
 issues to fix:
-- sometimes the in-match crosshair gets drawn in the menu and doesn't move / gets stuck somewhere
 - we always show the same initial scene on load, can we randomize which scene is loaded into the menu first
 - we always play the same song on load, can we randomize the song that is played first, also lets add a hotkey to switch to the next song
 - the on death sound effect gets a little tiresome in modes where respawns happen, can we tune it down in those modes (shorter / quieter)
