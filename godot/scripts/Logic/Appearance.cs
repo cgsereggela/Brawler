@@ -18,7 +18,7 @@ public enum LookPart { Eyes, Nose, Mouth, Hair, HairColor, Hat, HatColor, Trail 
 /// </summary>
 public sealed class Appearance
 {
-    public static readonly string[] EyeNames = { "Round", "Big", "Dots", "Sleepy", "Angry", "Visor", "Cyclops", "Shades", "Happy", "Crying" };
+    public static readonly string[] EyeNames = { "Round", "Big", "Dots", "Sleepy", "Angry", "Visor", "Cyclops", "Shades", "Happy", "Crying", "Nerdy Glasses" };
     // Noses were retired: the part keeps its slot so saved profiles and lobby data still line up, and every look reads "None".
     public static readonly string[] NoseNames = { "None" };
     public static readonly string[] MouthNames = { "Smile", "Flat", "Open", "Grin", "Frown", "Fangs", "Tongue", "Mustache", "Cat" };

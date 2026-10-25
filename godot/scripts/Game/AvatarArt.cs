@@ -593,6 +593,29 @@ public static class AvatarArt
                 }
                 break;
             }
+            case 10: // Nerdy glasses: big round black frames, taped at the bridge, eyes a little magnified behind them.
+            {
+                Eye(l + new Vector2(0.1f, 0.1f), 1.15f, 1.55f);
+                Eye(r + new Vector2(0, 0.1f), 1.15f, 1.55f);
+                var frame = c.H(new Color("#1b1822"));
+                var lens = new Color("#cfe6ff") with { A = 0.22f };
+                foreach (var e in new[] { l + new Vector2(-0.2f, 0), r + new Vector2(0.15f, 0) })
+                {
+                    c.Poly(Shapes.Ellipse(e, 2.45f, 2.35f, 22), lens);
+                    c.Arc(e, 2.45f, 0, Mathf.Tau, 26, frame, 0.9f);
+                    // Glare: a short bright stroke across the upper front of each lens.
+                    c.Line(e + new Vector2(0.2f, -1.6f), e + new Vector2(1.4f, -0.6f), new Color(1, 1, 1, p.Hurt ? 0 : 0.55f), 0.45f);
+                }
+                // The bridge, with a strip of white tape wrapped round it, and the arm running back over the ear.
+                var bridgeA = l + new Vector2(2.2f, -0.4f);
+                var bridgeB = r + new Vector2(-2.3f, -0.4f);
+                c.Line(bridgeA, bridgeB, frame, 0.8f);
+                var mid = (bridgeA + bridgeB) * 0.5f;
+                c.Fill(Shapes.RoundRect(new Rect2(mid.X - 0.55f, mid.Y - 0.75f, 1.1f, 1.5f), 0.25f), c.H(White), c.H(OffWhite.Darkened(0.3f)), 0.3f);
+                c.Line(new Vector2(mid.X - 0.4f, mid.Y - 0.2f), new Vector2(mid.X + 0.4f, mid.Y - 0.35f), c.H(OffWhite.Darkened(0.2f)) with { A = 0.6f }, 0.3f);
+                c.Line(l + new Vector2(-2.6f, -0.6f), new Vector2(-7.2f, -4.6f), frame, 0.7f);
+                break;
+            }
         }
     }
 

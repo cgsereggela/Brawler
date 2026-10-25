@@ -58,6 +58,7 @@ public static class Unlocks
         new(LookPart.Trail, 5, "Clear wave 5 in Survival", c => c.BestWave >= 5), // Stars
         new(LookPart.Trail, 3, "Win a Gun Game", c => c.GunGameWins >= 1),       // Rainbow
         new(LookPart.Eyes, 9, "Lose 10 matches", c => c.Matches - c.Wins >= 10), // Crying
+        new(LookPart.Eyes, 10, "Play 25 matches", c => c.Matches >= 25),        // Nerdy Glasses
     };
 
     /// <summary>The milestone behind an option, or null if it's free.</summary>

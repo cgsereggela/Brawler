@@ -22,6 +22,7 @@ static class CosmeticUnlocksTests
         Check(Enumerable.Range(1, Appearance.Count(LookPart.Trail) - 1).All(t => Unlocks.For(LookPart.Trail, t) != null), "Unlocks: every trail but None is earned");
         Check(Unlocks.All.All(u => !u.Met(new Career())), "Unlocks: a new player has none");
         Check(!Unlocks.Has(new Career { Matches = 12, Wins = 3 }, LookPart.Eyes, 9) && Unlocks.Has(new Career { Matches = 13, Wins = 3 }, LookPart.Eyes, 9), "Unlocks: Crying eyes come with the tenth match lost");
+        Check(!Unlocks.Has(new Career { Matches = 24 }, LookPart.Eyes, 10) && Unlocks.Has(new Career { Matches = 25 }, LookPart.Eyes, 10), "Unlocks: Nerdy Glasses come with the 25th match played");
 
         var look = Appearance.Default();
         look[LookPart.Hat] = 12;   // Laurel: win 10 matches
