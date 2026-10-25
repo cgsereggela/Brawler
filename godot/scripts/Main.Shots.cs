@@ -395,7 +395,7 @@ public partial class Main
 
     // --videomatch: A full match for a video, recorded with Godot's --write-movie: generated names, the lobby for a few
     // seconds, the match played out by autopilot, then the match-over screen with a hover card, then quit.
-    private void VideoMatch()
+    private async void VideoMatch()
     {
         _autoMode = "video";
         _game.AutopilotLocal = true;
@@ -404,6 +404,7 @@ public partial class Main
         var names = FunNames.Pick(rng, _playersArg ? _simMax : 6);
         _net.LocalName = names[0];
         _net.LocalLook = Appearance.Random(rng);
+        if (OS.GetCmdlineUserArgs().Contains("--customize")) await VideoCustomize(rng); // read here: --videomatch starts as soon as it's parsed
         _net.StartOffline();
         AddCouch(); // --couch=N: guests on autopilot alongside us (a Survival run with a full team of humans)
         for (int i = 1 + _couch; i < names.Count; i++) _net.AddBot();
@@ -426,6 +427,56 @@ public partial class Main
             };
         };
         tree.CreateTimer(3.0, true, false, true).Timeout += _game.HostStartMatch;
+    }
+
+    // --customize (with --videomatch): before the lobby, the Customize screen tries on looks: Randomize a few times, then
+    // a few steps through each part and a couple of colors in each row, in the order they're on screen, keeping where
+    // it lands. Saved to a profile of its own (never the player's), with every hat and trail earned.
+    private async System.Threading.Tasks.Task VideoCustomize(Rng rng)
+    {
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        Profile.Path = "user://video/profile.cfg";
+        DirAccess.MakeDirRecursiveAbsolute("user://video");
+        DirAccess.RemoveAbsolute(Profile.Path);
+        CareerBook.Set(new Career { Matches = 40, Wins = 15, Kills = 250, BestWave = 6, GunGameWins = 1 });
+        _net.SetLocalColor(rng.Range(0, Palette.Players.Length - 1));
+        _menu.NameEdit.Text = _net.LocalName; // the generated name, not the one the menu was made with
+        await Wait(1.5);
+        Press(_menu, "Customize Character");
+        await Wait(1.8);
+        for (int i = 0; i < 3; i++)
+        {
+            Press(_custom, "Randomize");
+            await Wait(1.0);
+        }
+        var grid = FindChild<GridContainer>(_custom, _ => true);
+        foreach (var row in grid.GetChildren().OfType<HBoxContainer>().ToList())
+        {
+            if (FindButton(row, ">") is { } next)
+            {
+                for (int i = rng.Range(2, 4); i > 0; i--)
+                {
+                    next.EmitSignal(BaseButton.SignalName.Pressed);
+                    await Wait(0.45);
+                }
+            }
+            else
+            {
+                // A color row: its swatches are made again on every pick, so look them up each time.
+                for (int i = 0; i < 2; i++)
+                {
+                    var dots = row.GetChildren().OfType<Button>().Where(b => !b.IsQueuedForDeletion()).ToList();
+                    if (dots.Count == 0) break;
+                    dots[rng.Range(0, dots.Count - 1)].EmitSignal(BaseButton.SignalName.Pressed);
+                    await Wait(0.5);
+                }
+            }
+            await Wait(0.3);
+        }
+        await Wait(2.0);
+        Press(_custom, "DONE");
+        await Wait(1.0);
     }
 
     // --focuslog: For cropping a recording to portrait: one line per drawn frame with the phase, whether the kill cam

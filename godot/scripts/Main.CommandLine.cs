@@ -30,7 +30,8 @@ namespace Brawler;
 //                         screen, then quit
 //   --videomatch          a full match to record with --write-movie: generated names (6 players, or --players=N), the
 //                         lobby, the match played by autopilot, the match-over screen with a hover card, then quit;
-//                         takes --mode, --teams, --rounds and --couch (the lobby on screen already shows them)
+//                         takes --mode, --teams, --rounds and --couch (the lobby on screen already shows them); with --customize it
+//                         first tries on looks in the Customize screen (on a profile of its own) and plays in the last one
 //   --demo=NAME           a scripted walk through one feature (thumbs), paced for recording with --write-movie for a
 //                         Short; logs "DEMO <frame> <label>" at the moments to cut to
 //   --botskills=A,B,..    bots get these skills (easy, normal, hard) as they are added, in turn
