@@ -983,6 +983,9 @@ public partial class Main
         while (_game.Phase != Phase.Fighting) await DemoWait(0.1);
         // The player stands left of the near ring and fires into its front; the bots stand still on the far side.
         var me = _game.LocalMatchPlayer;
+        // Sniper shots fly flat, so they reach the ring instead of dropping into the floor.
+        me.Cards.Add(30);
+        me.RecomputeStats();
         me.Input = new RingShooter(new Vector2(420, ground - 4));
         foreach (var a in _game.LiveAvatars())
         {
