@@ -295,8 +295,159 @@ public static class MusicGen
         return s;
     }
 
+    /// <summary>Menu and lobby: G minor, 96 BPM. Pads and arp, then a dotted-eighth bass and drums, then the lead. ~60 s loop.</summary>
+    public static Song Drift()
+    {
+        var s = new Song { Name = "drift", Kind = "lobby", Bpm = 96, Bars = 24 };
+        string[] cycle = { "Gm", "Eb", "Bb", "F", "Gm", "Eb", "Cm", "D" };
+        int[] dotted = { 0, 3, 6, 10, 13 };
+        for (int block = 0; block < 3; block++)
+        {
+            int b0 = block * 8;
+            for (int bar = 0; bar < 8; bar++)
+            {
+                int b = b0 + bar;
+                string ch = cycle[bar];
+                Pad(s, b, 1, ch, block == 0 ? 0.3f + bar * 0.05f : 0.65f);
+                Arp(s, b, ch, new[] { 0, 2, 3, 2, 1, 2, 4, 2 }, block == 0 ? 0.32f + bar * 0.03f : 0.45f);
+                if (block == 0) continue;
+                // Bass: a dotted-eighth pulse, the last note of each bar up an octave.
+                int root = BassRoot(ch);
+                for (int k = 0; k < dotted.Length; k++)
+                    s.Events.Add(new NoteEv(Inst.Bass, b * 16 + dotted[k], 2.2f, root + (k == dotted.Length - 1 ? 12 : 0), k == 0 ? 0.8f : 0.6f));
+                Hit(s, Inst.Kick, b, 0, 1f);
+                Hit(s, Inst.Kick, b, 6, 0.65f);
+                Hit(s, Inst.Snare, b, 8, 0.9f);
+                Hit(s, Inst.Kick, b, 13, 0.6f);
+                for (int h = 0; h < 16; h += 2) Hit(s, Inst.HatClosed, b, h, h % 4 == 2 ? 0.5f : 0.26f);
+                Hit(s, Inst.HatOpen, b, 14, 0.3f);
+                if (bar == 0) Hit(s, Inst.Crash, b, 0, block == 1 ? 0.8f : 1f);
+                if (bar == 7) for (int f = 12; f < 16; f++) Hit(s, Inst.Tom, b, f, 0.5f + (f - 12) * 0.1f, 57 - (f - 12) * 3);
+            }
+        }
+        Melody(s, 16 * 16, Inst.Lead, 0.8f, 0,
+            "D5/8 G5/8 | Bb5/12 A5/4 | G5/8 F5/4 D5/4 | C5/16 | D5/8 G5/8 | Bb5/6 C6/2 Bb5/4 G5/4 | Eb5/8 G5/4 C6/4 | A5/8 F#5/8");
+        return s;
+    }
+
+    /// <summary>In a match: B minor, 128 BPM. A drum-and-arp intro, the theme over a pumping offbeat bass, a half-time breakdown with a counter-line, the theme in octaves. ~60 s loop.</summary>
+    public static Song Rift()
+    {
+        var s = new Song { Name = "rift", Kind = "battle", Bpm = 128, Bars = 32 };
+        string[] main = { "Bm", "G", "D", "A", "Bm", "G", "Em", "F#" };
+        string[] down = { "G", "A", "Bm", "Bm", "G", "A", "F#", "F#" };
+        for (int block = 0; block < 4; block++)
+        {
+            bool breakdown = block == 2;
+            var chords = breakdown ? down : main;
+            int b0 = block * 8;
+            for (int bar = 0; bar < 8; bar++)
+            {
+                int b = b0 + bar;
+                string ch = chords[bar];
+                int root = BassRoot(ch);
+                Pad(s, b, 1, ch, breakdown ? 0.8f : block == 0 ? 0.45f : 0.55f);
+                Arp(s, b, ch, block == 0 ? new[] { 0, 1, 2, 3, 0, 1, 2, 4 } : new[] { 0, 2, 1, 3, 2, 4, 3, 2 }, block == 0 ? 0.55f : 0.42f);
+                if (breakdown)
+                {
+                    if (bar < 6)
+                    {
+                        // Half time: a long bass note, kick on one, snare on three.
+                        s.Events.Add(new NoteEv(Inst.Bass, b * 16, 7f, root, 0.7f));
+                        s.Events.Add(new NoteEv(Inst.Bass, b * 16 + 10, 5f, root + 12, 0.5f));
+                        Hit(s, Inst.Kick, b, 0, 1f);
+                        Hit(s, Inst.Kick, b, 10, 0.7f);
+                        Hit(s, Inst.Snare, b, 8, 0.9f);
+                        for (int h = 0; h < 16; h += 4) Hit(s, Inst.HatClosed, b, h + 2, 0.4f);
+                    }
+                    else
+                    {
+                        // The build: eighth bass rising to the octave, kicks then snares doubling into the drop.
+                        for (int e = 0; e < 8; e++) s.Events.Add(new NoteEv(Inst.Bass, b * 16 + e * 2, 1.7f, root + (bar == 7 && e >= 4 ? 12 : 0), 0.55f + e * 0.04f));
+                        for (int q = 0; q < 16; q += 4) Hit(s, Inst.Kick, b, q, 0.9f);
+                        for (int q = 0; q < 16; q += bar == 7 ? 1 : 4) Hit(s, Inst.Snare, b, q, 0.35f + (bar - 6) * 0.2f + q * 0.02f);
+                    }
+                    continue;
+                }
+                // Drive: root on the beat, octave on every offbeat eighth, four on the floor.
+                for (int q = 0; q < 16; q++)
+                    s.Events.Add(new NoteEv(Inst.Bass, b * 16 + q, 0.8f, root + (q % 4 == 2 ? 12 : 0), q % 4 == 0 ? 0.85f : q % 4 == 2 ? 0.75f : 0.45f));
+                for (int q = 0; q < 16; q += 4) Hit(s, Inst.Kick, b, q, 1f);
+                Hit(s, Inst.Snare, b, 4, 1f);
+                Hit(s, Inst.Snare, b, 12, 1f);
+                if (bar % 2 == 1) Hit(s, Inst.Snare, b, 15, 0.45f);
+                for (int h = 0; h < 16; h++) if (h % 4 != 2) Hit(s, Inst.HatClosed, b, h, h % 2 == 0 ? 0.4f : 0.2f);
+                for (int h = 2; h < 16; h += 4) Hit(s, Inst.HatOpen, b, h, 0.4f);
+                if (bar == 0) Hit(s, Inst.Crash, b, 0, 1f);
+                if (bar == 7)
+                {
+                    Hit(s, Inst.Tom, b, 8, 0.85f, 57);
+                    Hit(s, Inst.Tom, b, 10, 0.85f, 52);
+                    Hit(s, Inst.Tom, b, 12, 0.9f, 47);
+                    Hit(s, Inst.Tom, b, 14, 0.9f, 43);
+                }
+            }
+        }
+        const string theme = "F#4/4 B4/4 D5/4 F#5/4 | G5/8 F#5/4 D5/4 | A5/6 F#5/2 D5/4 A4/4 | C#5/12 E5/4 | F#4/4 B4/4 D5/4 F#5/4 | B5/6 A5/2 G5/4 D5/4 | E5/4 G5/4 B5/4 E6/4 | ";
+        Melody(s, 8 * 16, Inst.Lead, 0.85f, 0, theme + "C#6/12 A#5/4");
+        Melody(s, 16 * 16, Inst.Lead, 0.55f, 0, "B4/16 | C#5/16 | D5/16 F#5/16 | B4/16 | C#5/16 | A#4/32");
+        Melody(s, 24 * 16, Inst.Lead, 0.9f, 0, theme + "C#6/8 A#5/4 F#5/4");
+        Melody(s, 24 * 16, Inst.Lead, 0.5f, -12, theme + "C#6/8 A#5/4 F#5/4");
+        return s;
+    }
+
+    /// <summary>In a match: F minor, 136 BPM, the fastest track. A galloping bass from the first bar, the theme, a lifted second theme, the theme in octaves. ~56 s loop.</summary>
+    public static Song Ember()
+    {
+        var s = new Song { Name = "ember", Kind = "battle", Bpm = 136, Bars = 32 };
+        string[] main = { "Fm", "Db", "Ab", "Eb", "Fm", "Db", "Bbm", "C" };
+        string[] lift = { "Db", "Eb", "Fm", "Fm", "Db", "Eb", "C", "C" };
+        for (int block = 0; block < 4; block++)
+        {
+            bool lifted = block == 2;
+            var chords = lifted ? lift : main;
+            int b0 = block * 8;
+            for (int bar = 0; bar < 8; bar++)
+            {
+                int b = b0 + bar;
+                string ch = chords[bar];
+                int root = BassRoot(ch);
+                Pad(s, b, 1, ch, lifted ? 0.75f : 0.55f);
+                Arp(s, b, ch, lifted ? new[] { 4, 2, 3, 1, 2, 0, 1, 2 } : new[] { 0, 1, 2, 1, 3, 2, 4, 3 }, block == 0 ? 0.55f : 0.4f);
+                // Gallop: an eighth and two sixteenths per beat, the last one up an octave.
+                for (int q = 0; q < 16; q++)
+                {
+                    if (q % 4 == 1) continue;
+                    s.Events.Add(new NoteEv(Inst.Bass, b * 16 + q, q % 4 == 0 ? 1.7f : 0.8f, root + (q % 4 == 3 ? 12 : 0), q % 4 == 0 ? 0.75f : 0.48f));
+                }
+                for (int q = 0; q < 16; q += 4) Hit(s, Inst.Kick, b, q, 1f);
+                if (!lifted) Hit(s, Inst.Kick, b, 7, 0.55f);
+                Hit(s, Inst.Snare, b, 4, 1f);
+                Hit(s, Inst.Snare, b, 12, 1f);
+                for (int h = 0; h < 16; h++) if (h % 4 != 2) Hit(s, Inst.HatClosed, b, h, h % 2 == 0 ? 0.38f : 0.2f);
+                for (int h = 2; h < 16; h += 4) Hit(s, Inst.HatOpen, b, h, lifted ? 0.5f : 0.38f);
+                if (bar == 0 || lifted && bar == 4) Hit(s, Inst.Crash, b, 0, 1f);
+                if (bar == 7)
+                {
+                    Hit(s, Inst.Tom, b, 12, 0.85f, 53);
+                    Hit(s, Inst.Tom, b, 13, 0.8f, 50);
+                    Hit(s, Inst.Tom, b, 14, 0.85f, 46);
+                    Hit(s, Inst.Snare, b, 15, 0.85f);
+                }
+            }
+        }
+        const string theme = "C5/4 F5/4 Ab5/4 C6/4 | Db6/8 C6/4 Ab5/4 | Eb5/6 F5/2 Ab5/4 C6/4 | Bb5/12 G5/4 | C5/4 F5/4 Ab5/4 C6/4 | F6/6 Eb6/2 Db6/4 Ab5/4 | Bb5/4 Db6/4 F6/4 Db6/4 | E6/12 C6/4";
+        Melody(s, 8 * 16, Inst.Lead, 0.85f, 0, theme);
+        const string soar = "F5/16 | G5/16 | Ab5/24 C6/8 | Db6/16 | Bb5/16 | C6/16 E5/16";
+        Melody(s, 16 * 16, Inst.Lead, 0.85f, 0, soar);
+        Melody(s, 16 * 16, Inst.Lead, 0.45f, -12, soar);
+        Melody(s, 24 * 16, Inst.Lead, 0.9f, 0, theme);
+        Melody(s, 24 * 16, Inst.Lead, 0.5f, -12, theme);
+        return s;
+    }
+
     /// <summary>Every song, lobby tracks first.</summary>
-    public static Song[] All() => new[] { Lobby(), Keep(), Battle(), Spire(), Tide() };
+    public static Song[] All() => new[] { Lobby(), Keep(), Drift(), Battle(), Spire(), Tide(), Rift(), Ember() };
 
     // ---------- writing helpers ----------
 
