@@ -1,5 +1,4 @@
 issues to fix:
-- sawblades sometimes extend past platforms that aren't large enough to hold the width of the obstacle, ensure the platform is wide enough for the whole path the sawblade can travel
 - sometimes the in-match crosshair gets drawn in the menu and doesn't move / gets stuck somewhere
 - the blocked stat in the player card looks weird, is it correct (it reads 1000s of seconds in some games)
 - we always show the same initial scene on load, can we randomize which scene is loaded into the menu first
