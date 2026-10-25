@@ -24,6 +24,8 @@ public partial class HudUI : Control
     private readonly List<(Rect2 Chip, MatchPlayer P)> _chips = new();
     private bool _compact;
     private Control _base;
+    private Control _heads;
+    private float _headsT;
     private Control _hover;
     private int _baseKey;
     private readonly TriBatch _batch = new();
@@ -44,6 +46,12 @@ public partial class HudUI : Control
         _base.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _base.Draw += DrawBase;
         AddChild(_base);
+        // The chip heads breathe and blink, so they get a layer of their own over the chips, redrawn a few times a second
+        // rather than every frame: a full character per player each frame cost a millisecond for a subtle breath.
+        _heads = new Control { ShowBehindParent = true, MouseFilter = MouseFilterEnum.Ignore };
+        _heads.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _heads.Draw += DrawHeads;
+        AddChild(_heads);
         // The hover card goes on top of every screen in this layer (the match-over screen included), so a player's cards
         // and stats can still be read over it.
         _hover = new Control { ZIndex = 1, MouseFilter = MouseFilterEnum.Ignore };
@@ -69,10 +77,19 @@ public partial class HudUI : Control
             _baseKey = key;
             Layout(vs);
             _base.QueueRedraw();
+            _headsT = 0;
+        }
+        _headsT -= (float)delta;
+        if (_headsT <= 0)
+        {
+            _headsT = 1f / HeadsPerSecond;
+            _heads.QueueRedraw();
         }
         QueueRedraw();
         _hover.QueueRedraw();
     }
+
+    private const float HeadsPerSecond = 12;
 
     /// <summary>A hash of everything the cached layer shows; when it changes, the chips are laid out and the layer redrawn.</summary>
     private int BaseKey(Vector2 vs)
@@ -226,20 +243,23 @@ public partial class HudUI : Control
     {
         var vs = Size;
 
-        // The chip heads breathe and blink, so they're drawn every frame, over the cached chips. The chips fade out
-        // under the kill cam's letterbox bars.
+        // The chips fade out under the kill cam's letterbox bars.
         _base.Modulate = Colors.White with { A = 1 - _camShow };
-        if (_camShow < 0.5f)
-            foreach (var (chip, p) in _chips)
-                AvatarArt.Draw(this, chip.Position + (_compact ? new Vector2(17, 25) : new Vector2(19, 27)), new AvatarPose
-                {
-                    Body = ChipColor(p), Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = _compact ? 1f : 1.15f, Time = _t,
-                    Grounded = true,
-                });
+        _heads.Visible = _camShow < 0.5f;
 
         DrawBanner(vs);
         DrawGhostHint(vs);
         DrawKillCam(vs);
+    }
+
+    private void DrawHeads()
+    {
+        foreach (var (chip, p) in _chips)
+            AvatarArt.Draw(_heads, chip.Position + (_compact ? new Vector2(17, 25) : new Vector2(19, 27)), new AvatarPose
+            {
+                Body = ChipColor(p), Look = p.Info.Look, Facing = 1, Aim = Vector2.Right, Scale = _compact ? 1f : 1.15f, Time = _t,
+                Grounded = true,
+            });
     }
 
     private float _camShow, _camRealT; // kill cam bars: 0..1 slid in; real seconds since it began
