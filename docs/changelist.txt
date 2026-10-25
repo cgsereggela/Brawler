@@ -1,5 +1,4 @@
 issues to fix:
-- make killcams 2s longer
 
 features to add:
 - cards should have unique icons that reflect the theme/stats of the card rather than a generic icon for their class
