@@ -67,6 +67,8 @@ namespace Brawler;
 //                         player input, and a card pick chosen on each controller; exits 0 on success
 //   --clipcheck           (windowed) an offline match on autopilot until a kill cam is kept, then saves it as a GIF from
 //                         the Esc overlay and checks the file, then quits
+//   --musiccheck          (windowed) waits for the menu music, checks an M typed into the name box doesn't skip it and a
+//                         plain M does, then quits
 //   --lobbycheck          fills the lobby (a couch guest and bots) and walks every game mode and team size, then every
 //                         Options tab (menu and in-match overlay), failing if
 //                         anything ends up off screen (with --shots=DIR, saves each layout), then quits
@@ -162,6 +164,11 @@ public partial class Main
             {
                 _autoMode = "clipcheck";
                 ClipCheck();
+            }
+            else if (a == "--musiccheck")
+            {
+                _autoMode = "musiccheck";
+                MusicCheck();
             }
             else if (a == "--lobbycheck")
             {

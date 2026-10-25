@@ -1414,6 +1414,33 @@ public partial class Main
     /// options on every tab, all at every UI scale: fails if any button or label ends up off screen. With --shots=DIR,
     /// saves each layout.
     /// </summary>
+    // ---------- --musiccheck: M skips to the next song, but not while typing ----------
+
+    private async void MusicCheck()
+    {
+        var tree = GetTree();
+        async System.Threading.Tasks.Task Wait(double s) => await ToSignal(tree.CreateTimer(s), SceneTreeTimer.SignalName.Timeout);
+        void PressM()
+        {
+            foreach (bool down in new[] { true, false })
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.M, PhysicalKeycode = Key.M, Unicode = 'm', Pressed = down });
+        }
+        for (int i = 0; i < 300 && _music.Track == null; i++) await Wait(0.1);
+        string first = _music.Track;
+        if (first == null) { Finish(1, "musiccheck: no music started"); return; }
+        // Typing an M into the name box goes into the box.
+        _menu.NameEdit.GrabFocus();
+        PressM();
+        await Wait(1.5);
+        if (_music.Track != first) { Finish(1, $"musiccheck: typing M in a text box skipped the song ({first} -> {_music.Track})"); return; }
+        _menu.NameEdit.ReleaseFocus();
+        await Wait(8); // the second song of the kind has rendered by now
+        PressM();
+        await Wait(1.5);
+        if (_music.Track == first) { Finish(1, $"musiccheck: M did not skip {first}"); return; }
+        Finish(0, $"musiccheck: M skipped {first} -> {_music.Track}; typing M in the name box didn't");
+    }
+
     private async void LobbyCheck()
     {
         var tree = GetTree();

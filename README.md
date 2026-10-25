@@ -60,6 +60,7 @@ Defaults; rebind them in Options → Controls.
 | Options in a match | Esc (an overlay; the game keeps running) |
 | Leave match | Esc → Leave match → Yes |
 | Windowed ⇄ full screen | Alt+Enter |
+| Next song | M, anywhere (not while typing in a text box, or if you've bound M to something). The game also opens on a different menu song from last time |
 
 ### Controllers and couch co-op
 Any controller works too, with a fixed layout (shown in Options → Controls). A controller nobody has claimed drives
@@ -403,6 +404,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --headless --path godot -- --makeicon                         # rebuilds godot/icon.svg and godot/icon.ico (the exe icon) from the avatar art
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first, crosshair gives way to the pointer
 "$GODOT" --path godot --fixed-fps 60 -- --autotest --leavecheck=pick    # leaves the match at fight, killcam, pick or over (add --rounds=1 for over): back in the menu with the pointer, no crosshair left behind
+"$GODOT" --path godot -- --musiccheck                                  # M skips to the next song; an M typed into the name box doesn't
 "$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
 "$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect
 "$GODOT" --path godot -- --aimshots=C:/tmp/shots                       # avatars aiming every way, with the aim line and muzzle point marked
