@@ -41,7 +41,7 @@ public sealed record Unlock(LookPart Part, int Option, string Goal, Func<Career,
 }
 
 /// <summary>
-/// The cosmetics players earn: hats and trails behind milestones in their <see cref="Career"/>. Everything else is free
+/// The cosmetics players earn: hats, trails and eyes behind milestones in their <see cref="Career"/>. Everything else is free
 /// from the start. Purely visual, like every look option. A look with an option not yet earned is never saved or sent.
 /// </summary>
 public static class Unlocks
@@ -57,6 +57,7 @@ public static class Unlocks
         new(LookPart.Hat, 13, "Take out 200 players", c => c.Kills >= 200),     // Horns
         new(LookPart.Trail, 5, "Clear wave 5 in Survival", c => c.BestWave >= 5), // Stars
         new(LookPart.Trail, 3, "Win a Gun Game", c => c.GunGameWins >= 1),       // Rainbow
+        new(LookPart.Eyes, 9, "Lose 10 matches", c => c.Matches - c.Wins >= 10), // Crying
     };
 
     /// <summary>The milestone behind an option, or null if it's free.</summary>

@@ -564,6 +564,35 @@ public static class AvatarArt
                     c.Poly(pts.ToArray(), hole);
                 }
                 break;
+            case 9: // Crying: hollows drooping outward under sad lids, tears streaming down the cheeks, a drop falling.
+            {
+                Eye(l + new Vector2(0, 0.2f), 1.5f, 2.1f, 0.25f);
+                Eye(r + new Vector2(0, 0.2f), 1.5f, 2.1f, -0.25f);
+                if (!p.Blink)
+                {
+                    // Angry's lids mirrored: the inner ends high, the outer ends low.
+                    Lid(l + look + new Vector2(-1.9f, -1.1f), l + look + new Vector2(1.7f, -2.5f), 1.6f);
+                    Lid(r + look + new Vector2(-1.7f, -2.5f), r + look + new Vector2(1.9f, -1.1f), 1.6f);
+                }
+                var tear = c.H(new Color("#5cc4ff"));
+                var tearLine = c.H(new Color("#2c78c0"));
+                int k = 0;
+                foreach (var e in new[] { l, r })
+                {
+                    // A stream from under the eye down the cheek, widening a little as it runs.
+                    float x = e.X + look.X * 0.5f + (k == 0 ? -0.5f : 0.6f), y0 = e.Y + 1.7f;
+                    var stream = new[] { new Vector2(x - 0.3f, y0), new Vector2(x + 0.3f, y0), new Vector2(x + 0.55f, y0 + 2.6f), new Vector2(x, y0 + 3.1f), new Vector2(x - 0.55f, y0 + 2.6f) };
+                    c.Fill(stream, tear with { A = 0.85f }, tearLine, 0.4f);
+                    c.Line(new Vector2(x - 0.05f, y0 + 0.3f), new Vector2(x + 0.05f, y0 + 2.2f), new Color(1, 1, 1, 0.45f), 0.35f);
+                    // A drop sliding down the stream and off the jaw, each eye on its own beat.
+                    float u = (p.Time * 0.7f + k * 0.45f) % 1f, dy = y0 + 2.4f + u * 3.2f;
+                    var drop = Shapes.Ellipse(new Vector2(x, dy), 0.55f, 0.75f, 12);
+                    drop[0] = new Vector2(x, dy - 1.1f); // pointed top: a teardrop
+                    c.Fill(drop, tear with { A = 1 - u * 0.6f }, tearLine with { A = 1 - u * 0.6f }, 0.35f);
+                    k++;
+                }
+                break;
+            }
         }
     }
 
