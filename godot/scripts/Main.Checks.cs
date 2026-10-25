@@ -911,7 +911,11 @@ public partial class Main
             };
             if (!_game.KillCam.Playing && !_pick.Visible && !_over.Visible && _game.Phase != Phase.Fighting) _leaveFrames = 0;
             if (!now) return;
-            Log.Info($"LEAVECHECK leaving at {_leaveWhen} ({_game.Phase}, crosshair {_crosshair.Active})");
+            // --lockmouse: the pointer is kept in the window through the match (hidden under the crosshair in a fight),
+            // as long as the window has focus (a background window lets go of it).
+            var inMatch = _crosshair.Active ? Input.MouseModeEnum.ConfinedHidden : Input.MouseModeEnum.Confined;
+            if (DisplaySettings.LockMouse && DisplayServer.WindowIsFocused() && Input.MouseMode != inMatch) { Finish(1, $"leavecheck {_leaveWhen}: mouse lock on but the pointer is {Input.MouseMode}"); return; }
+            Log.Info($"LEAVECHECK leaving at {_leaveWhen} ({_game.Phase}, crosshair {_crosshair.Active}, pointer {Input.MouseMode})");
             _dropping = true;
             _net.Leave();
             (_leaveStage, _leaveFrames) = (1, 0);

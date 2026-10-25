@@ -22,6 +22,12 @@ public static class DisplaySettings
 
     public static WindowChoice Mode { get; private set; } = WindowChoice.Windowed;
 
+    /// <summary>
+    /// Keeps the pointer inside the window during a match (video/lock_mouse), so a windowed or borderless player can't
+    /// click out of the game mid-fight. Menus leave it free; Alt+Tab still works. The crosshair applies it.
+    /// </summary>
+    public static bool LockMouse { get; private set; }
+
     /// <summary>Fired after the mode changes (menu or Alt+Enter), so an open menu can refresh.</summary>
     public static event Action Changed;
 
@@ -36,7 +42,12 @@ public static class DisplaySettings
     public static void Init()
     {
         var cfg = new ConfigFile();
-        if (cfg.Load(Path) == Error.Ok) Mode = Parse(cfg.GetValue("video", "window_mode", Keys[0]).ToString());
+        if (cfg.Load(Path) == Error.Ok)
+        {
+            Mode = Parse(cfg.GetValue("video", "window_mode", Keys[0]).ToString());
+            LockMouse = (bool)cfg.GetValue("video", "lock_mouse", false);
+        }
+        if (OS.GetCmdlineUserArgs().Contains("--lockmouse")) LockMouse = true; // for this run only (tests)
         if (Mode != WindowChoice.Windowed) _lastFull = Mode;
         if (!Available) return;
 
@@ -60,12 +71,19 @@ public static class DisplaySettings
     /// <summary>Alt+Enter: Windowed to the last full-screen choice (Borderless by default) and back.</summary>
     public static void Toggle() => Set(Mode == WindowChoice.Windowed ? _lastFull : WindowChoice.Windowed);
 
+    public static void SetLockMouse(bool on)
+    {
+        LockMouse = on;
+        Save();
+    }
+
     private static void Save()
     {
         if (_dryRun) return;
         var cfg = new ConfigFile();
         cfg.Load(Path); // keep any other sections
         cfg.SetValue("video", "window_mode", Keys[(int)Mode]);
+        cfg.SetValue("video", "lock_mouse", LockMouse);
         var err = cfg.Save(Path);
         if (err != Error.Ok) Log.Info($"could not save settings: {err}");
     }

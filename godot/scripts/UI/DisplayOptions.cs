@@ -4,7 +4,7 @@ using WindowChoice = Brawler.Core.DisplaySettings.WindowChoice;
 
 namespace Brawler.UI;
 
-/// <summary>The window-mode row of the Video tab in OptionsUI: three toggle buttons that apply and save at once.</summary>
+/// <summary>The window rows of the Video tab in OptionsUI: three window-mode buttons and the mouse lock, applied and saved at once.</summary>
 public static class DisplayOptions
 {
     public static void Build(Container parent)
@@ -51,5 +51,13 @@ public static class DisplayOptions
         parent.AddChild(row);
 
         parent.AddChild(UiKit.Label("Alt+Enter switches between windowed and full screen", UiKit.Small, Palette.TextDim));
+
+        var lockMouse = new CheckButton { Text = "Lock mouse in matches", ButtonPressed = DisplaySettings.LockMouse };
+        lockMouse.AddThemeFontSizeOverride("font_size", UiKit.Body);
+        lockMouse.TooltipText = "Keeps the pointer inside the game window while a match is on, so a click can't land on another window. Menus leave it free; Alt+Tab still works.";
+        lockMouse.Toggled += DisplaySettings.SetLockMouse;
+        var lockRow = UiKit.HBox(16); // natural width, like the Accessibility toggles
+        lockRow.AddChild(lockMouse);
+        parent.AddChild(lockRow);
     }
 }

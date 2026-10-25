@@ -54,7 +54,8 @@ namespace Brawler;
 //                         Esc, then finishes the match; also checks the crosshair replaces the pointer only while
 //                         you fight (not under the overlay or the card pick)
 //   --leavecheck=WHEN     (with --autotest) leaves the match at WHEN (fight, killcam, pick or over) and checks you land
-//                         in the menu with the normal pointer back and no crosshair left on screen
+//                         in the menu with the normal pointer back and no crosshair left on screen; with --lockmouse
+//                         (mouse lock on for this run, not saved) also checks the pointer is held in the window till then
 //   --lava=SECS           sudden-death lava rises after SECS seconds of fighting (0 = off) in the matches this run hosts
 //   --lavacheck           (with --autotest, --autohost or --autojoin) lava after 3 s; checks it rises on every peer, that
 //                         nobody survives long in it, and (with --shots=DIR) screenshots it once a battle

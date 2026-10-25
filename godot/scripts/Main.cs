@@ -117,6 +117,7 @@ public partial class Main : Node
         {
             Name = "Crosshair",
             ShouldShow = () => _hud.Visible && !_training.Visible && !_pick.Visible && !_over.Visible && !_options.Visible && !_game.KillCam.Playing,
+            InMatch = () => _hud.Visible,
         };
         aimLayer.AddChild(_crosshair);
 

@@ -82,7 +82,7 @@ click **+ Local Player** and the new player presses **A** on their pad. They get
 offline, hosted and joined games alike (a client's guests come with it), and pick their cards on the shared screen after
 yours ("NAME, CHOOSE A CARD"). Remove one with their *remove* button in the lobby.
 
-Options also has window mode (Windowed / Borderless / Fullscreen) and bloom strength (default 50%). Everything is saved to
+Options also has window mode (Windowed / Borderless / Fullscreen), **Lock mouse in matches** (keeps the pointer inside the window while a match is on, so a stray click can't land on another window; menus leave it free and Alt+Tab still works) and bloom strength (default 50%). Everything is saved to
 `%APPDATA%\Godot\app_userdata\Brawler\settings.cfg`.
 
 **Accessibility** (Options → Video):
@@ -403,7 +403,7 @@ GODOT=".../Godot_v4.7.2-stable_mono_win64_console.exe"
 "$GODOT" --path godot -- --artbench                                    # C# time and memory to draw one character (32 looks, many poses), plus a hash of every triangle drawn, so a speed-up can be checked to draw exactly the same
 "$GODOT" --headless --path godot -- --makeicon                         # rebuilds godot/icon.svg and godot/icon.ico (the exe icon) from the avatar art
 "$GODOT" --headless --path godot --fixed-fps 60 -- --autotest --overlaycheck  # Esc options overlay mid-match: game keeps running, input muted, Leave asks first, crosshair gives way to the pointer
-"$GODOT" --path godot --fixed-fps 60 -- --autotest --leavecheck=pick    # leaves the match at fight, killcam, pick or over (add --rounds=1 for over): back in the menu with the pointer, no crosshair left behind
+"$GODOT" --path godot --fixed-fps 60 -- --autotest --leavecheck=pick    # leaves the match at fight, killcam, pick or over (add --rounds=1 for over): back in the menu with the pointer, no crosshair left behind; add --lockmouse to also check the mouse lock holds the pointer in the window until then
 "$GODOT" --path godot -- --musiccheck                                  # M skips to the next song; an M typed into the name box doesn't
 "$GODOT" --headless --path godot -- --rebindcheck                      # rebinds jump to K, saves, reloads, checks the InputMap and bad-data fallback
 "$GODOT" --path godot -- --windowcheck                                 # windowed: cycles Windowed/Borderless/Fullscreen and Alt+Enter, checks the window rect

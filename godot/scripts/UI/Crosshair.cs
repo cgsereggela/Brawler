@@ -33,6 +33,8 @@ public partial class Crosshair : Node2D
     private readonly GameManager _game;
     /// <summary>Set by Main: whether the crosshair should replace the pointer this frame.</summary>
     public Func<bool> ShouldShow = () => false;
+    /// <summary>Set by Main: whether a match is on screen (card picks and the Esc overlay included), for the mouse lock.</summary>
+    public Func<bool> InMatch = () => false;
     public bool Active { get; private set; }
 
     private Avatar _tracked;
@@ -65,8 +67,16 @@ public partial class Crosshair : Node2D
         if (active != Active) Active = active;
         Visible = active; // every frame, so nothing else can leave it showing
         // Only touch the mouse mode on a change of need, so a mode set elsewhere (none today) isn't fought every frame.
-        var want = Active ? Input.MouseModeEnum.Hidden : Input.MouseModeEnum.Visible;
-        if (Input.MouseMode != want && Input.MouseMode is Input.MouseModeEnum.Visible or Input.MouseModeEnum.Hidden)
+        // With "Lock mouse in matches" on, the pointer is also kept inside the window for the whole match.
+        bool confine = DisplaySettings.LockMouse && InMatch() && _focused;
+        var want = (Active, confine) switch
+        {
+            (true, true) => Input.MouseModeEnum.ConfinedHidden,
+            (true, false) => Input.MouseModeEnum.Hidden,
+            (false, true) => Input.MouseModeEnum.Confined,
+            _ => Input.MouseModeEnum.Visible,
+        };
+        if (Input.MouseMode != want && Input.MouseMode is not Input.MouseModeEnum.Captured)
             Input.MouseMode = want;
         if (!Active) return;
 
@@ -93,7 +103,7 @@ public partial class Crosshair : Node2D
 
     public override void _ExitTree()
     {
-        if (Input.MouseMode == Input.MouseModeEnum.Hidden) Input.MouseMode = Input.MouseModeEnum.Visible;
+        if (Input.MouseMode != Input.MouseModeEnum.Visible) Input.MouseMode = Input.MouseModeEnum.Visible;
     }
 
     public override void _Draw()
