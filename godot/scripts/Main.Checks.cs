@@ -765,6 +765,7 @@ public partial class Main
 
     private void PollGhosts()
     {
+        if (_game.KillCam.Playing) return; // a replay shows ghosts as they were, not floating now
         foreach (var p in _game.Slots)
             if (p?.Avatar is { GhostUp: true } a)
                 _ghosts[a.GetInstanceId()] = (p.Info.Name, a.GhostAge, a.GhostTravel);
