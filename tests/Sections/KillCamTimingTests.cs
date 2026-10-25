@@ -23,6 +23,6 @@ static class KillCamTimingTests
         }
         Check(positive && smooth, "Kill cam: speed is positive and has no jumps");
         float real = KillCamTiming.RealSeconds();
-        Check(real > 3f && real < 4.5f, "Kill cam: takes 3-4.5 s to watch", $"{real:0.00}s");
+        Check(real > 5f && real < 6.5f, "Kill cam: takes 5-6.5 s to watch", $"{real:0.00}s");
     }
 }

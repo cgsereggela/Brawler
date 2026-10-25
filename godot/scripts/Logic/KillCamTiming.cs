@@ -10,7 +10,7 @@ namespace Brawler.Logic;
 public static class KillCamTiming
 {
     /// <summary>Seconds replayed before the kill, and after it.</summary>
-    public const float Pre = 1.6f, Post = 0.5f;
+    public const float Pre = 3.6f, Post = 0.5f;
     /// <summary>Battle seconds the replay covers (it plays them back in <see cref="RealSeconds"/>).</summary>
     public const float Length = Pre + Post;
     public const float Fast = 1f, Slow = 0.3f, Exit = 0.7f;
