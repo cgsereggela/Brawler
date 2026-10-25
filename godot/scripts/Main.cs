@@ -68,7 +68,8 @@ public partial class Main : Node
         AddChild(bgLayer);
         _menuBackdrop = new Backdrop { Name = "Backdrop" };
         bgLayer.AddChild(_menuBackdrop);
-        _menuBackdrop.Set(ArenaTheme.All[0], 7);
+        // A different theme from the last launch's, so the game doesn't open on the same scene every time.
+        _menuBackdrop.Set(ArenaTheme.All[StartupVariety.Pick("menu_theme", ArenaTheme.All.Length)], (int)GD.Randi());
 
         _net = new NetworkManager { Name = "Net" };
         AddChild(_net);
