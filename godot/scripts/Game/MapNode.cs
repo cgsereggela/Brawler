@@ -199,14 +199,14 @@ public partial class MapNode : Node2D
         if (_ground != null) l.DrawTextureRect(_ground, full, false, new Color(1, 1, 1, _groundFade));
 
         if (!DecoAnimated)
-            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
+            DrawDecos(l, glowPass: false);
     }
 
     private void DrawAnim(DrawLayer l)
     {
         if (Layout == null) return;
         if (DecoAnimated)
-            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: false);
+            DrawDecos(l, glowPass: false);
 
         // Jump pad bases.
         for (int i = 0; i < Layout.Pads.Count; i++)
@@ -268,7 +268,7 @@ public partial class MapNode : Node2D
         }
 
         if (!DecoAnimated)
-            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: true);
+            DrawDecos(l, glowPass: true);
     }
 
     private void DrawAnimGlow(DrawLayer l)
@@ -276,7 +276,7 @@ public partial class MapNode : Node2D
         if (Layout == null) return;
         var t = Theme;
         if (DecoAnimated)
-            foreach (var d in _decos) DrawDeco(l, d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass: true);
+            DrawDecos(l, glowPass: true);
 
         for (int i = 0; i < Layout.Pads.Count; i++)
         {
@@ -365,9 +365,32 @@ public partial class MapNode : Node2D
         _bake = System.Threading.Tasks.Task.Run(() => TerrainPainter.Bake(shapes, theme, seed));
     }
 
-    private void DrawDeco(DrawLayer l, Vector2 p, float size, int kind, float phase, bool below, bool glowPass)
+    // Decorations go out as two batches per pass (shapes, and glow sprites in the glow pass) instead of a draw call
+    // each: on the themes whose decorations move, they're redrawn every frame, and a few hundred little lines and
+    // polygons cost the slowest themes up to two milliseconds a frame.
+    private readonly TriBatch _decoTris = new(), _decoGlows = new(textured: true);
+    private static readonly Color GrassTint = new("#8fa860"), MushroomStem = new("#e9f5d0"), Icicle = new Color("#dff6ff") with { A = 0.9f },
+        Chain = new("#6b5a52"), Candle = new("#e8dcc0"), CandleTop = new("#fff6e0"), Vine = new("#4f6b3a"), FernTint = new("#7f9e54");
+    private static readonly Color[] SprinkleColors = { new("#ff5f9e"), new("#7af7ff"), new("#fff27a"), new("#9dff7a") };
+
+    /// <summary>Draws every decoration into <paramref name="l"/>, the glow parts or the solid ones.</summary>
+    private void DrawDecos(DrawLayer l, bool glowPass)
+    {
+        var b = _decoTris;
+        b.Begin(l);
+        b.Feather = 0.5f; // the soft rim of Godot's antialiased circles
+        b.SoftLines = true;
+        if (glowPass) _decoGlows.Begin(l, GlowTex.Tex);
+        foreach (var d in _decos) DrawDeco(d.P, d.Size, d.Kind, d.Phase, d.Below, glowPass);
+        b.Flush();
+        if (glowPass) _decoGlows.Flush();
+    }
+
+    private void DrawDeco(Vector2 p, float size, int kind, float phase, bool below, bool glowPass)
     {
         var t = Theme;
+        var b = _decoTris;
+        var g = _decoGlows;
         var a = kind == 0 ? t.MoteA : t.MoteB;
         switch (t.Deco)
         {
@@ -375,35 +398,34 @@ public partial class MapNode : Node2D
                 if (!below) return;
                 // String lights under platforms.
                 float on = 0.55f + 0.45f * Mathf.Sin(_t * 3 + phase * 3);
-                if (glowPass) GlowTex.Draw(l, p + new Vector2(0, 2.5f), 7, a with { A = 0.35f * on });
-                else l.DrawCircle(p + new Vector2(0, 2.5f), 1.3f, Shapes.Hdr(a, 1 + on), true, -1, true);
+                if (glowPass) g.Sprite(p + new Vector2(0, 2.5f), 7, a with { A = 0.35f * on });
+                else b.Circle(p + new Vector2(0, 2.5f), 1.3f, Shapes.Hdr(a, 1 + on));
                 break;
             case Deco.Grass:
                 if (below || glowPass) return;
-                var grass = t.Block.Lerp(new Color("#8fa860"), 0.6f);
+                var grass = t.Block.Lerp(GrassTint, 0.6f);
                 for (int i = -1; i <= 1; i++)
                 {
                     float sway = Mathf.Sin(_t * 2 + phase + i) * 1.2f;
                     var basePt = p + new Vector2(i * 2.2f, 0);
-                    l.DrawColoredPolygon(new[] { basePt + new Vector2(-1.1f, 0), basePt + new Vector2(sway + i, -5.5f * size - (i == 0 ? 2 : 0)), basePt + new Vector2(1.1f, 0) },
+                    b.Triangle(basePt + new Vector2(-1.1f, 0), basePt + new Vector2(sway + i, -5.5f * size - (i == 0 ? 2 : 0)), basePt + new Vector2(1.1f, 0),
                         i == 0 ? grass : grass.Darkened(0.2f));
                 }
                 break;
             case Deco.Weeds:
-                if (below) return;
-                var pts = new Vector2[6];
+                if (below || glowPass) return;
+                Span<Vector2> pts = stackalloc Vector2[6];
                 for (int i = 0; i < 6; i++)
                     pts[i] = p + new Vector2(Mathf.Sin(_t * 1.6f + phase + i * 0.8f) * i * 0.6f, -i * 2.6f * size);
-                if (glowPass) return;
-                l.DrawPolyline(pts, a.Darkened(0.2f) with { A = 0.85f }, 1.6f, true);
+                b.Stroke(pts, 1.6f, a.Darkened(0.2f) with { A = 0.85f });
                 break;
             case Deco.Mushrooms:
                 if (below) return;
                 float glowK = 0.6f + 0.4f * Mathf.Sin(_t * 1.5f + phase);
                 var cap = p + new Vector2(0, -4 * size);
-                if (glowPass) { GlowTex.Draw(l, cap, 9 * size, a with { A = 0.35f * glowK }); return; }
-                l.DrawLine(p, cap, new Color("#e9f5d0"), 1.4f, true);
-                l.DrawColoredPolygon(Shapes.Ellipse(cap, 3.2f * size, 2f * size, 14), Shapes.Hdr(a, 1 + glowK * 0.4f));
+                if (glowPass) { g.Sprite(cap, 9 * size, a with { A = 0.35f * glowK }); return; }
+                b.Line(p, cap, 1.4f, MushroomStem);
+                b.Polygon(Shapes.Ellipse(cap, 3.2f * size, 2f * size, 14), Shapes.Hdr(a, 1 + glowK * 0.4f));
                 break;
             case Deco.Cracks:
                 // Glowing lava drips that swell and fall from under platforms.
@@ -412,21 +434,20 @@ public partial class MapNode : Node2D
                 float swell = Mathf.Min(1, cycle * 1.6f);
                 var drip = p + new Vector2(0, 1 + swell * 2.2f + Mathf.Max(0, cycle - 0.62f) * 60);
                 float dr = 0.6f + 0.9f * swell;
-                if (glowPass) GlowTex.Draw(l, drip, dr * 6, a with { A = 0.4f });
-                else l.DrawColoredPolygon(Shapes.Ellipse(drip, dr, dr * 1.35f, 10), Shapes.Hdr(a, 1.5f));
+                if (glowPass) g.Sprite(drip, dr * 6, a with { A = 0.4f });
+                else b.Polygon(Shapes.Ellipse(drip, dr, dr * 1.35f, 10), Shapes.Hdr(a, 1.5f));
                 break;
             case Deco.Icicles:
                 if (!below || glowPass) return;
                 float len = 4 + 6 * size;
-                l.DrawColoredPolygon(new[] { p + new Vector2(-1.6f, 0), p + new Vector2(1.6f, 0), p + new Vector2(0, len) }, new Color("#dff6ff") with { A = 0.9f });
-                l.DrawLine(p + new Vector2(-0.6f, 0.5f), p + new Vector2(-0.1f, len * 0.6f), new Color(1, 1, 1, 0.9f), 0.6f, true);
+                b.Triangle(p + new Vector2(-1.6f, 0), p + new Vector2(1.6f, 0), p + new Vector2(0, len), Icicle);
+                b.Line(p + new Vector2(-0.6f, 0.5f), p + new Vector2(-0.1f, len * 0.6f), 0.6f, new Color(1, 1, 1, 0.9f));
                 break;
             case Deco.Sprinkles:
                 if (below || glowPass) return;
-                var cols = new[] { new Color("#ff5f9e"), new Color("#7af7ff"), new Color("#fff27a"), new Color("#9dff7a") };
-                var col = cols[(int)(phase * 10) % cols.Length];
+                var col = SprinkleColors[(int)(phase * 10) % SprinkleColors.Length];
                 var dir = Vector2.FromAngle(phase) * 1.6f;
-                l.DrawLine(p + new Vector2(0, -2.2f) - dir, p + new Vector2(0, -2.2f) + dir, col, 1.3f, true);
+                b.Line(p + new Vector2(0, -2.2f) - dir, p + new Vector2(0, -2.2f) + dir, 1.3f, col);
                 break;
             case Deco.Torches:
                 if (below)
@@ -438,7 +459,7 @@ public partial class MapNode : Node2D
                     for (int i = 0; i < links; i++)
                     {
                         var c = p.Lerp(tip, (i + 0.5f) / links);
-                        l.DrawArc(c, i % 2 == 0 ? 1.4f : 0.9f, 0, Mathf.Tau, 8, new Color("#6b5a52"), 0.8f, true);
+                        b.Arc(c, i % 2 == 0 ? 1.4f : 0.9f, 0, Mathf.Tau, 8, Chain, 0.8f);
                     }
                     return;
                 }
@@ -449,12 +470,12 @@ public partial class MapNode : Node2D
                 var flame = p + new Vector2(Mathf.Sin(_t * 5 + phase) * 0.3f, -ch - 1.6f);
                 if (glowPass)
                 {
-                    GlowTex.Draw(l, flame, 14 * flick, a with { A = 0.3f * flick });
-                    l.DrawColoredPolygon(Shapes.Ellipse(flame, 0.9f, 1.7f * flick, 10), Shapes.Hdr(t.MoteB, 1.8f));
+                    g.Sprite(flame, 14 * flick, a with { A = 0.3f * flick });
+                    b.Polygon(Shapes.Ellipse(flame, 0.9f, 1.7f * flick, 10), Shapes.Hdr(t.MoteB, 1.8f));
                     return;
                 }
-                l.DrawRect(new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, ch), new Color("#e8dcc0"));
-                l.DrawRect(new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, 0.7f), new Color("#fff6e0"));
+                Rect(b, new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, ch), Candle);
+                Rect(b, new Rect2(p.X - 1.1f, p.Y - ch, 2.2f, 0.7f), CandleTop);
                 break;
             case Deco.Ferns:
                 if (glowPass) return;
@@ -462,19 +483,19 @@ public partial class MapNode : Node2D
                 {
                     // Vines trailing from platforms.
                     if (size < 1.1f) return;
-                    var vine = new Vector2[5];
+                    Span<Vector2> vine = stackalloc Vector2[5];
                     for (int i = 0; i < 5; i++)
                         vine[i] = p + new Vector2(Mathf.Sin(_t * 1.1f + phase + i * 0.7f) * i * 0.5f, i * 2.4f * size);
-                    l.DrawPolyline(vine, new Color("#4f6b3a"), 1f, true);
+                    b.Stroke(vine, 1f, Vine);
                     return;
                 }
-                var leaf = t.Block.Lerp(new Color("#7f9e54"), 0.65f);
+                var leaf = t.Block.Lerp(FernTint, 0.65f);
                 if (kind == 1 && size > 1.1f)
                 {
                     // A small flower on a stalk.
                     var head = p + new Vector2(Mathf.Sin(_t * 1.7f + phase) * 0.8f, -5 * size);
-                    l.DrawLine(p, head, leaf.Darkened(0.2f), 0.9f, true);
-                    l.DrawCircle(head, 1.3f, t.MoteA, true, -1, true);
+                    b.Line(p, head, 0.9f, leaf.Darkened(0.2f));
+                    b.Circle(head, 1.3f, t.MoteA);
                     return;
                 }
                 // A fern: three arching fronds.
@@ -483,7 +504,7 @@ public partial class MapNode : Node2D
                     float sway = Mathf.Sin(_t * 1.5f + phase + i * 0.5f) * 0.8f;
                     var mid = p + new Vector2(i * 2.6f * size + sway * 0.5f, -4.5f * size);
                     var end = p + new Vector2(i * 4.4f * size + sway, -(i == 0 ? 6.5f : 3f) * size);
-                    l.DrawPolyline(new[] { p, mid, end }, i == 0 ? leaf : leaf.Darkened(0.18f), 1.3f, true);
+                    b.Stroke(stackalloc Vector2[] { p, mid, end }, 1.3f, i == 0 ? leaf : leaf.Darkened(0.18f));
                 }
                 break;
             case Deco.Circuits:
@@ -492,9 +513,12 @@ public partial class MapNode : Node2D
                 bool lit = Mathf.Sin(_t * (1.5f + size * 2) + phase * 4) > -0.2f;
                 var led = p + new Vector2(0, below ? 1.6f : -1.4f);
                 var ledCol = size > 1.1f ? t.MoteB : a;
-                if (glowPass) { if (lit) GlowTex.Draw(l, led, 6, ledCol with { A = 0.35f }); }
-                else l.DrawRect(new Rect2(led - new Vector2(1, 0.7f), new Vector2(2, 1.4f)), lit ? Shapes.Hdr(ledCol, 1.6f) : ledCol.Darkened(0.6f));
+                if (glowPass) { if (lit) g.Sprite(led, 6, ledCol with { A = 0.35f }); }
+                else Rect(b, new Rect2(led - new Vector2(1, 0.7f), new Vector2(2, 1.4f)), lit ? Shapes.Hdr(ledCol, 1.6f) : ledCol.Darkened(0.6f));
                 break;
         }
     }
+
+    private static void Rect(TriBatch b, Rect2 r, Color c) =>
+        b.Polygon(stackalloc Vector2[] { r.Position, new Vector2(r.End.X, r.Position.Y), r.End, new Vector2(r.Position.X, r.End.Y) }, c);
 }
